@@ -1,0 +1,172 @@
+<!doctype html>
+<!-- (v159) A build tool, not part of the game. The successor of bake-seated.html: the same seated pose and head cut,
+     plus a PROPER GRIP on the steering wheel. The rigs have no finger bones, so the grip is done in two parts:
+       1. the wrist is put against the rim's tube and the palm turned onto it — an explicit alignment of the hand's own
+          measured frame (finger direction, palm normal, width) onto the tube, instead of the old "spin the hand 180°";
+       2. the fingers are CURLED round the tube at the vertex level: every vertex past the knuckle line is bent onto an
+          arc of the tube's radius about the tube's axis, so the fingers wrap the rim the way a hand holds a wheel.
+     ?report=1 measures, renders close-ups of both hands and posts them (no file written); ?bake=1 also writes
+     chars/<name>.glb through the receiver on 8199. ?only=foxino limits it. ?knuckle=.5&contact=35&wrap=1 tune it. -->
+<meta charset="utf-8"><title>bake seated characters 2</title>
+<script type="importmap">{ "imports": { "three": "../lib/three.module.min.js" } }</script>
+<body style="background:#223;color:#fff;font:13px monospace;margin:0"><pre id="log" style="margin:8px;white-space:pre-wrap">starting…</pre>
+<script type="module">
+import * as THREE from 'three';
+import { GLTFLoader } from '../lib/GLTFLoader.js';
+import { GLTFExporter } from 'https://unpkg.com/three@0.170.0/examples/jsm/exporters/GLTFExporter.js';
+const Q = new URLSearchParams(location.search), log = (t) => { document.getElementById('log').textContent += '\n' + t; console.log(t); };
+const post = (name, body) => fetch('http://127.0.0.1:8199/?name=' + name, { method: 'POST', body }).then((r) => r.text()).catch((e) => 'post failed ' + e.message);
+const V3 = (...a) => new THREE.Vector3(...a), num = (k, d) => (Q.has(k) ? +Q.get(k) : d);
+window.RESULT = {};
+
+/* --- the game's constants, so model space ↔ kart space is exact (all measured in the game, v158) --- */
+const FIT = { foxino: { s: 1.55, seat: [0, .19, -.2] }, stella: { s: 1.55, seat: [0, .19, -.2] }, pix: { s: 1.35, seat: [0, .19, -.2] }, rob: { s: 1.15, seat: [0, .19, -.24] } };
+const SEAT_SHIFT = V3(0, .206, -.161);   // BASE.seatShift: the body sits at fit.seat − hips·S inside a group at HF_PIVOT, itself at foxPos + seatShift (= HF_PIVOT + seatShift)
+// the steering wheel's rim in kart space: the tube's centre circle (centre, plane normal, radius) and the tube's own radius
+const WHEEL = { c: V3(.003, .657, .103), n: V3(0, .707, -.707).normalize(), R: .186, tubeR: .032 };
+const KNUCKLE = num('knuckle', .5), CONTACT = num('contact', 35) * Math.PI / 180, WRAP = num('wrap', 1), LEAN = num('lean', .3);
+const PALM_OVERRIDE = { foxino: {}, stella: {}, pix: {}, rob: {} };   // ?palmL=-1&palmR=1 forces the palm side for every character
+
+async function bake(name, texSize, dry) {
+  const gltf = await new GLTFLoader().loadAsync(`src/${name}.glb`);
+  const root = gltf.scene, mixer = new THREE.AnimationMixer(root);
+  const clip = gltf.animations.find((a) => a.name === 'sit'); mixer.clipAction(clip).play();
+  for (const extra of ['tail_sit', 'face_happy']) { const c = gltf.animations.find((a) => a.name === extra); if (c) mixer.clipAction(c).play(); }
+  mixer.setTime(clip.duration - .04); root.updateMatrixWorld(true);
+  const bn = (n) => root.getObjectByName(n), wp = (b) => b.getWorldPosition(new THREE.Vector3());
+  let sk = null; root.traverse((o) => { if (o.isSkinnedMesh) sk = o; });
+  const fit = FIT[name], S = fit.s, seat = V3(...fit.seat), hips = wp(bn('Hips'));
+  // kart = (model − hips)·S + seat + SEAT_SHIFT   ⇔   model = (kart − seat − SEAT_SHIFT)/S + hips
+  const toModel = (k) => k.clone().sub(seat).sub(SEAT_SHIFT).multiplyScalar(1 / S).add(hips);
+  const rotWorld = (b, axis, ang) => { const q = new THREE.Quaternion().setFromAxisAngle(axis, ang); setWorldQ(b, q.multiply(b.getWorldQuaternion(new THREE.Quaternion()))); };
+  const setWorldQ = (b, bw) => { const pw = b.parent.getWorldQuaternion(new THREE.Quaternion()); b.quaternion.copy(pw.invert().multiply(bw)); b.updateMatrixWorld(true); };
+  const X = V3(1, 0, 0);
+  for (const sp of ['Spine02', 'Spine01']) if (bn(sp)) rotWorld(bn(sp), X, LEAN);   // lean forward a little
+
+  /* --- 1. the hand's own frame, measured from the vertices the Hand bone owns (in the bone's local space) --- */
+  const bones = sk.skeleton.bones, geo0 = sk.geometry, idxA = geo0.attributes.skinIndex, wA = geo0.attributes.skinWeight, posA = geo0.attributes.position, nV = posA.count;
+  const owner = new Int32Array(nV);   // the bone with the biggest weight on each vertex
+  for (let i = 0; i < nV; i++) { let best = 0, bi = 0; for (let k = 0; k < 4; k++) { const w = wA.getComponent(i, k); if (w > best) { best = w; bi = idxA.getComponent(i, k); } } owner[i] = bi; }
+  const handFrame = (side) => {
+    const H = bn(side + 'Hand'), hb = bones.indexOf(H), inv = H.matrixWorld.clone().invert(), v = new THREE.Vector3(), pts = [];
+    for (let i = 0; i < nV; i++) if (owner[i] === hb) { v.fromBufferAttribute(posA, i); sk.applyBoneTransform(i, v); v.applyMatrix4(sk.matrixWorld).applyMatrix4(inv); pts.push(v.clone()); }
+    // finger direction: where the far end of the hand is
+    const byD = pts.slice().sort((a, b) => b.length() - a.length()), far = byD.slice(0, Math.max(6, Math.round(pts.length * .12)));
+    const f = far.reduce((a, p) => a.add(p), V3()).normalize(), L = byD[0].length();
+    // the palm normal: the thinnest direction across the hand, perpendicular to the fingers
+    let thin = null; const anyP = Math.abs(f.y) < .9 ? V3(0, 1, 0) : V3(1, 0, 0), a1 = V3().crossVectors(f, anyP).normalize(), a2 = V3().crossVectors(f, a1).normalize();
+    for (let a = 0; a < 180; a += 2) { const r = a * Math.PI / 180, d = a1.clone().multiplyScalar(Math.cos(r)).addScaledVector(a2, Math.sin(r)); let lo = 1e9, hi = -1e9; for (const p of pts) { const t = p.dot(d); lo = Math.min(lo, t); hi = Math.max(hi, t); } if (!thin || hi - lo < thin.sp) thin = { d, sp: hi - lo }; }
+    let p = thin.d.clone(), w = V3().crossVectors(f, p).normalize();
+    // the thumb side: in the palm band the hand bulges more on one side of the width axis
+    let plus = 0, minus = 0; for (const q of pts) { const t = q.dot(f); if (t > L * .2 && t < L * .65) { const s = q.dot(w); plus = Math.max(plus, s); minus = Math.max(minus, -s); } }
+    const thumbSign = Math.sign(plus - minus) || 1, asym = +((plus - minus) / Math.max(plus, minus)).toFixed(2);
+    // left hand: the thumb lies on f × p; right hand: on p × f. Choose the palm side to match (a palm faces the thumb's way round)
+    const want = side === 'Left' ? 1 : -1, over = PALM_OVERRIDE[name][side[0]] ?? (Q.has('palm' + side[0]) ? +Q.get('palm' + side[0]) : 0);
+    if (over) { if (over < 0) { p.negate(); w = V3().crossVectors(f, p).normalize(); } }
+    else if (thumbSign * want < 0) { p.negate(); w = V3().crossVectors(f, p).normalize(); }
+    let wlo = 1e9, whi = -1e9, plo = 1e9, phi = -1e9; for (const q of pts) { const s = q.dot(w), t = q.dot(p); wlo = Math.min(wlo, s); whi = Math.max(whi, s); plo = Math.min(plo, t); phi = Math.max(phi, t); }
+    return { H, hb, f, p, w, L, thick: phi - plo, width: whi - wlo, asym, thumbSign, count: pts.length };
+  };
+  const frames = { Left: handFrame('Left'), Right: handFrame('Right') };
+
+  /* --- 2. where each hand goes on the rim: 10 and 2 o'clock, the palm on the top-rear of the tube --- */
+  const Y = V3(0, 1, 0), u = Y.clone().addScaledVector(WHEEL.n, -Y.dot(WHEEL.n)).normalize(), wside = V3().crossVectors(WHEEL.n, u).normalize();   // u: up in the ring's plane; wside: the ring's left (+X of the kart)
+  const grip = (side, fr) => {
+    const phi = (side === 'Left' ? 1 : -1) * Math.PI / 3, rhat = u.clone().multiplyScalar(Math.cos(phi)).addScaledVector(wside, Math.sin(phi));
+    const tubeC = toModel(WHEEL.c.clone().addScaledVector(rhat, WHEEL.R));   // the tube's centre at the grip point (model space)
+    const tubeR = WHEEL.tubeR / S, tang = u.clone().multiplyScalar(-Math.sin(phi)).addScaledVector(wside, Math.cos(phi)).normalize();   // the tube's axis there
+    // the cross-section: contact is CONTACT° from the driver's side (n) towards the outside (rhat); the fingers head on over the top
+    const contact = WHEEL.n.clone().multiplyScalar(Math.cos(CONTACT)).addScaledVector(rhat, Math.sin(CONTACT)).normalize();
+    const F = WHEEL.n.clone().multiplyScalar(-Math.sin(CONTACT)).addScaledVector(rhat, Math.cos(CONTACT)).normalize();   // finger direction at the contact
+    const P = contact.clone().negate();   // out of the palm, into the tube
+    const surface = tubeC.clone().addScaledVector(contact, tubeR);
+    const wrist = surface.clone().addScaledVector(P, -fr.thick * .5).addScaledVector(F, -fr.L * KNUCKLE * .9);   // the bone sits half a hand's thickness off the rim, most of a palm behind the knuckles
+    return { tubeC, tubeR, tang, contact, F, P, surface, wrist, Rc: tubeR + fr.thick * .5 + .002 };
+  };
+  const reach = (side, target) => {
+    const A = bn(side + 'Arm'), Fo = bn(side + 'ForeArm'), H = bn(side + 'Hand'); if (!A || !Fo || !H) return;
+    rotWorld(A, X, 1.2);
+    for (let it = 0; it < 80; it++) for (const b of [Fo, A]) {
+      const bp = wp(b), ep = wp(H), v1 = ep.sub(bp).normalize(), v2 = target.clone().sub(bp).normalize();
+      const q = new THREE.Quaternion().setFromUnitVectors(v1, v2); setWorldQ(b, q.multiply(b.getWorldQuaternion(new THREE.Quaternion())));
+    }
+  };
+  const gaps = {}, grips = {};
+  for (const side of ['Left', 'Right']) {
+    const fr = frames[side], g = grip(side, fr); grips[side] = g;
+    reach(side, g.wrist);
+    // align the hand's measured frame (f, p, f×p) onto the grip's (F, P, F×P)
+    const H = fr.H, qb = H.getWorldQuaternion(new THREE.Quaternion());
+    const cf = fr.f.clone().applyQuaternion(qb), cp = fr.p.clone().applyQuaternion(qb), cw = V3().crossVectors(cf, cp).normalize();
+    const tw = V3().crossVectors(g.F, g.P).normalize();
+    const Mc = new THREE.Matrix4().makeBasis(cf, cp, cw), Mt = new THREE.Matrix4().makeBasis(g.F, g.P, tw);
+    const R = new THREE.Matrix4().multiplyMatrices(Mt, Mc.clone().transpose()), qR = new THREE.Quaternion().setFromRotationMatrix(R);
+    setWorldQ(H, qR.multiply(qb));
+    gaps[side[0]] = +wp(H).distanceTo(g.wrist).toFixed(4);
+  }
+  root.updateMatrixWorld(true);
+
+  /* --- 3. bake, curling the fingers round the tube as the vertices come out of the skin --- */
+  const n = nV, pos = new Float32Array(n * 3), v = new THREE.Vector3(), curlInfo = { L: 0, R: 0 };
+  const curl = {};
+  for (const side of ['Left', 'Right']) {
+    const fr = frames[side], g = grips[side], H = fr.H, m = H.matrixWorld, qb = H.getWorldQuaternion(new THREE.Quaternion());
+    const F = fr.f.clone().applyQuaternion(qb), P = fr.p.clone().applyQuaternion(qb), W = V3().crossVectors(F, P).normalize();
+    const knuckle = wp(H).addScaledVector(F, fr.L * KNUCKLE), C = knuckle.clone().addScaledVector(P, g.Rc);   // the bend's centre: Rc into the tube from the knuckle line
+    curl[fr.hb] = { F, P, W, knuckle, C, Rc: g.Rc, side };
+  }
+  for (let i = 0; i < n; i++) {
+    v.fromBufferAttribute(posA, i); sk.applyBoneTransform(i, v); v.applyMatrix4(sk.matrixWorld);
+    const c = curl[owner[i]];
+    if (c && WRAP > 0) {
+      const d = v.clone().sub(c.knuckle), a = d.dot(c.F), h = d.dot(c.P), s = d.dot(c.W);
+      if (a > 0) {   // past the knuckle line: onto the arc. θ = a / Rc, radius Rc − h (the palm side bends tighter)
+        const th = Math.min(a / c.Rc * WRAP, 3.4), rho = c.Rc - h;
+        v.copy(c.C).addScaledVector(c.F, rho * Math.sin(th)).addScaledVector(c.P, -rho * Math.cos(th)).addScaledVector(c.W, s);
+        curlInfo[c.side[0]]++;
+      }
+    }
+    pos[i * 3] = v.x; pos[i * 3 + 1] = v.y; pos[i * 3 + 2] = v.z;
+  }
+  const geo = new THREE.BufferGeometry(); geo.setAttribute('position', new THREE.BufferAttribute(pos, 3)); geo.setAttribute('uv', geo0.attributes.uv.clone()); if (geo0.index) geo.setIndex(geo0.index.clone());
+  geo.computeVertexNormals();
+  const img = sk.material.map.image, cv = document.createElement('canvas'); cv.width = cv.height = texSize; cv.getContext('2d').drawImage(img, 0, 0, texSize, texSize);
+  const tex = new THREE.CanvasTexture(cv); tex.flipY = false; tex.colorSpace = THREE.SRGBColorSpace; tex.userData.mimeType = 'image/jpeg';
+  const mesh = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ map: tex, roughness: .8, metalness: 0 })); mesh.name = name;
+
+  /* --- 4. measurements: the head (unchanged from the first tool), and how many hand vertices sit inside the tube --- */
+  geo.computeBoundingBox(); const bb = geo.boundingBox;
+  const bone = (b) => { const o = bn(b); if (!o) return null; return wp(o).toArray().map((x) => +x.toFixed(3)); };
+  const headTop = bone('head_end') || bone('Head'), head = bone('Head'), neck = bone('neck');
+  let hw = 0, hz0 = 1e9, hz1 = -1e9; if (head) for (let i = 0; i < n; i++) { const y = pos[i * 3 + 1]; if (y > head[1] - .02 && y < head[1] + .25) { hw = Math.max(hw, Math.abs(pos[i * 3] - head[0])); hz0 = Math.min(hz0, pos[i * 3 + 2]); hz1 = Math.max(hz1, pos[i * 3 + 2]); } }
+  const inside = { L: 0, R: 0 }; for (let i = 0; i < n; i++) { const c = curl[owner[i]]; if (!c) continue; const g = grips[c.side]; const q = V3(pos[i * 3], pos[i * 3 + 1], pos[i * 3 + 2]).sub(g.tubeC); const t = q.dot(g.tang); const r = q.addScaledVector(g.tang, -t).length(); if (r < g.tubeR * .9) inside[c.side[0]]++; }
+  const fr = (s) => ({ L: +frames[s].L.toFixed(3), thick: +frames[s].thick.toFixed(3), width: +frames[s].width.toFixed(3), asym: frames[s].asym, thumbSign: frames[s].thumbSign, verts: frames[s].count, f: frames[s].f.toArray().map((x) => +x.toFixed(2)), p: frames[s].p.toArray().map((x) => +x.toFixed(2)) });
+  const info = { name, verts: n, handGap: gaps, hand: { L: fr('Left'), R: fr('Right') }, curled: curlInfo, insideTube: inside, tubeR: +grips.Left.tubeR.toFixed(4), Rc: +grips.Left.Rc.toFixed(4),
+    box: { min: bb.min.toArray().map((x) => +x.toFixed(3)), max: bb.max.toArray().map((x) => +x.toFixed(3)) }, head, headTop, neck, headHalfWidth: +hw.toFixed(3), headZ: [+hz0.toFixed(3), +hz1.toFixed(3)], hips: hips.toArray().map((x) => +x.toFixed(3)) };
+  window.RESULT[name] = info; log(name + ' ' + JSON.stringify(info));
+
+  /* --- 5. close-ups of each hand on a stand-in rim, posted as pictures --- */
+  const scene = new THREE.Scene(); scene.background = new THREE.Color('#9fb3c8');
+  scene.add(new THREE.HemisphereLight('#ffffff', '#667', 1.4)); const sun = new THREE.DirectionalLight('#fff4e0', 2.2); sun.position.set(2, 4, 3); scene.add(sun);
+  scene.add(mesh);
+  // the rim: the whole tube in model space, so the picture shows what the game shows
+  { const cM = toModel(WHEEL.c), nM = WHEEL.n, torus = new THREE.Mesh(new THREE.TorusGeometry(WHEEL.R / S, WHEEL.tubeR / S, 14, 72), new THREE.MeshStandardMaterial({ color: '#202228', roughness: .5 }));
+    torus.position.copy(cM); torus.quaternion.setFromUnitVectors(V3(0, 0, 1), nM); scene.add(torus); }
+  const r = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true }); r.setSize(960, 540); r.outputColorSpace = THREE.SRGBColorSpace; document.body.appendChild(r.domElement);
+  const cam = new THREE.PerspectiveCamera(30, 960 / 540, .01, 50);
+  const shots = [];
+  for (const side of ['Left', 'Right']) {
+    const g = grips[side], at = g.tubeC, s = side === 'Left' ? 1 : -1;
+    const views = { front: at.clone().add(g.contact.clone().multiplyScalar(.28)), side: at.clone().addScaledVector(g.tang, s * .26).addScaledVector(g.contact, .06), top: at.clone().addScaledVector(g.F, .22).addScaledVector(g.contact, .14) };
+    for (const [k, pcam] of Object.entries(views)) { cam.position.copy(pcam); cam.lookAt(at); r.render(scene, cam); shots.push(await post(`hand-${name}-${side[0]}-${k}.png`, r.domElement.toDataURL('image/png'))); }
+  }
+  log(name + ' pictures: ' + shots.length);
+  if (!dry) { const buf = await new Promise((ok, no) => new GLTFExporter().parse(mesh, ok, no, { binary: true })); log(name + ' glb ' + buf.byteLength + ' → ' + await post(name + '.glb', buf)); }
+  r.dispose();
+}
+try {
+  const only = Q.get('only'), dry = !Q.has('bake');
+  for (const [name, sz] of [['foxino', 1024], ['stella', 1024], ['rob', 1024], ['pix', 1024]]) if (!only || only === name) await bake(name, sz, dry);
+  await post('bake2-info.json', JSON.stringify(window.RESULT, null, 1)); log((dry ? 'REPORT' : 'BAKE') + ' DONE'); window.DONE = true;
+} catch (e) { log('ERROR ' + e.message + '\n' + e.stack); window.DONE = 'error'; }
+</script>
