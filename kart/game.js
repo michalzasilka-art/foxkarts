@@ -3721,6 +3721,7 @@ function crewStart() {
 const _cm = new THREE.Matrix4(), _cm2 = new THREE.Matrix4(), _cax = new THREE.Vector3();
 const _cw = new THREE.Vector3(), _cw2 = new THREE.Vector3(), _cw3 = new THREE.Vector3(), _cw4 = new THREE.Vector3(), _cup = new THREE.Vector3(0, 1, 0);
 function updateCrew(dt) {
+  glowTick(dt);   // (v253) the glow on the part being worked on
   const W = WORLD, C = W && W.crew; if (!C) return;
   if (!race || !C.on || C.player !== race.player) { crewWheelsReset(C); if (C.g.visible) C.g.visible = false; C.on = false; if (race) race.pitLift = 0; return; }
   dt = Math.min(dt, .05); C.t += dt;
@@ -3853,12 +3854,13 @@ function runQuiz(sets, tag, onDone) {
       return;
     }
     const q = flat[j], S = PIT_SETS[q.k]; race.pitPhase = q.k;   // (v162) the crew work on what is being asked
+    partGlow(P, (PART_GLOW[q.k] || [])[q.i % 4]);   // (v253) that part of the kart lights up yellow
     if (q.i === 0 && j) L.say(S.say);
     const it = L.pickPit(TDEF.words || TDEF.id, 1, lr)[0]; lr.asked.push(it.id); lr.askedAt[it.id] = lr.asked.length;
     D.innerHTML = '<div class="veil pit"></div>';
     questionCard(D.firstChild, `${tag} · ${S.name}`, L.makeQuestion(it), (ok, fast) => {
       const g = got[q.k]; g.n++; g.res.push(!!ok); if (ok) g.sum += PIT_RIGHT + PIT_FAST * clamp(fast || 0, 0, 1);
-      step(j + 1);
+      partGlow(P, null); step(j + 1);
     }, TUNE.pitSecs + (L.level() === 0 ? 2 : 0), null, true);
     // (v160) where you are in the set: three dots in the set's colour; the phone sheet slides up only on the first card
     const card = D.querySelector(".qcard"), top = card && card.querySelector(".qtop");
@@ -3887,6 +3889,49 @@ function pitScoreCard(D, keys, pct, tag, done) {
     run();
   }, 180 + i * 900));
   setTimeout(done, 180 + keys.length * 900 + 900);
+}
+/* (v253, the user) THE PART BEING FIXED LIGHTS UP: while you answer a pit question, the part of your kart the crew is
+   working on glows yellow (a soft pulsing light on the 3D kart, seen through the body); when the question is done it
+   fades back to normal. MAINTENANCE: engine, steering, nose; SPEED: engine and exhaust; REPLACING TYRES: each wheel. */
+const PART_GLOW = { fix: ['engine', 'steer', 'nose', 'engine'], spd: ['engine', 'exhaust', 'engine', 'exhaust'], imm: ['fl', 'fr', 'rl', 'rr'] };
+let GLOW_TEX = null;
+function partSpot(m, part) {
+  const B = m.body, v = new THREE.Vector3(); B.updateMatrixWorld(true);
+  const W = (m.spins || []).map((s) => B.worldToLocal(s.getWorldPosition(new THREE.Vector3())));
+  if (W.length < 4) {   // the starship: no wheels, use its box
+    const bx = new THREE.Box3().setFromObject(B), c = B.worldToLocal(bx.getCenter(new THREE.Vector3())), h = (bx.max.y - bx.min.y) / 2;
+    return { engine: c.clone().setY(c.y + h * .3), exhaust: c.clone(), steer: c.clone().setY(c.y + h * .5), nose: c.clone() }[part] || c;
+  }
+  const F = (m.fronts || []).map((f) => B.worldToLocal(f.getWorldPosition(new THREE.Vector3())));
+  const az = W.reduce((a, w) => a + w.z, 0) / 4, fz = F.length ? F.reduce((a, w) => a + w.z, 0) / F.length : az + 1, nz = fz >= az ? 1 : -1;
+  const front = W.filter((w) => (w.z - az) * nz > 0).sort((a, b) => a.x - b.x), rear = W.filter((w) => (w.z - az) * nz <= 0).sort((a, b) => a.x - b.x);
+  const y0 = W.reduce((a, w) => a + w.y, 0) / 4, zf = front.length ? front[0].z : az + nz * .7, zr = rear.length ? rear[0].z : az - nz * .7;
+  switch (part) {
+    case 'fl': return front[0] || v; case 'fr': return front[1] || front[0] || v;
+    case 'rl': return rear[0] || v; case 'rr': return rear[1] || rear[0] || v;
+    case 'engine': return v.set(0, y0 + .3, zr + (zf - zr) * .08);
+    case 'exhaust': return v.set(0, y0 + .12, zr - (zf - zr) * .12);
+    case 'steer': return v.set(0, y0 + .42, az + (zf - az) * .35);
+    case 'nose': return v.set(0, y0 + .02, zf + (zf - zr) * .22);
+  }
+  return v;
+}
+function partGlow(P, part) {
+  const m = P && P.model; if (!m || !m.body) return;
+  if (!m.glow) {
+    GLOW_TEX = GLOW_TEX || canvasTex(128, 128, (g) => { const r = g.createRadialGradient(64, 64, 0, 64, 64, 62); r.addColorStop(0, 'rgba(255,250,200,1)'); r.addColorStop(.25, 'rgba(255,214,50,.9)'); r.addColorStop(.6, 'rgba(255,170,0,.35)'); r.addColorStop(1, 'rgba(255,150,0,0)'); g.fillStyle = r; g.fillRect(0, 0, 128, 128); });
+    const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: GLOW_TEX, transparent: true, opacity: 0, depthTest: false, depthWrite: false, blending: THREE.AdditiveBlending, toneMapped: false, fog: false }));
+    s.renderOrder = 998; s.visible = false; m.body.add(s); m.glow = { s, k: 0, want: 0, t: 0, size: .9 };
+  }
+  const G = m.glow; G.want = part ? 1 : 0;
+  if (part) { G.s.position.copy(partSpot(m, part)); G.size = /^[fr][lr]$/.test(part) ? .85 : part === 'steer' ? .7 : 1; G.part = part; }
+}
+function glowTick(dt) {
+  const P = race && race.player, G = P && P.model && P.model.glow; if (!G) return;
+  if (!(race.dialog === 'pitstop' || race.pitHold)) G.want = 0;   // never left on after a stop
+  G.k += (G.want - G.k) * Math.min(1, dt * (G.want ? 10 : 5)); G.t += dt;
+  const on = G.k > .02; G.s.visible = on; if (!on) return;
+  G.s.material.opacity = G.k * (.75 + .25 * Math.sin(G.t * 7)); G.s.scale.setScalar(G.size * (1 + .12 * Math.sin(G.t * 7)));
 }
 const PIT_SETS = {
   fix: { name: 'MAINTENANCE', icon: 'icon-wrench', col: '#ffc324', say: 'Maintenance!', won: 'GRIP' },
