@@ -1599,6 +1599,9 @@ body.portrait .tk .tkbar{bottom:40px;height:18px}body.portrait .tk .tkbar b{font
 #loading.ld3 .ldtip{color:#221a4e;font-weight:700}
 @media (orientation:portrait){#loading.ld3 .ldhero{top:calc(clamp(40px,7vh,58px) + 3%);bottom:calc(5% + 240px)}}
 @media (max-height:460px){.ldringw{width:92px;height:92px}#loading.ld3 #loadPct{top:46px;font-size:22px}#loading.ld3 .ldhero{bottom:calc(4% + 160px)}#loading.ld3 .ldbox{bottom:4%}}
+/* (v254) the black-out between the garage and the grid */
+#blackout{position:absolute;inset:0;z-index:80;background:#000;opacity:0;pointer-events:none;transition:opacity .45s ease}
+#blackout.on{opacity:1;pointer-events:auto}
 </style>
 </head>
 <body>
@@ -1722,6 +1725,6 @@ body.portrait .tk .tkbar{bottom:40px;height:18px}body.portrait .tk .tkbar b{font
 <script src="packages.js?v=1"></script>
 <script src="/shared/pack-picker.js?v=8"></script>
 <script type="importmap">{"imports":{"three":"./lib/three.module.min.js"}}</script>
-<script type="module" src="game.js?v=253"></script>
+<script type="module" src="game.js?v=254"></script>
 </body>
 </html>

@@ -5785,7 +5785,7 @@ function rocketStart(R0) {
   else if (save.races < 4 && !R0.tips.rocket) { R0.tips.rocket = 1; setTimeout(() => { if (race === R0) toast('Tip: tap the screen\nat GO! for a rocket start', '#fff', 22); }, 3500); }
 }
 // (v170) the garage stop before the race: the crew comes out and works while you answer four of each
-function garageStop(R0) {
+function garageStop(R0, stayIn = false) {
   return new Promise((res) => {
     const P = race.player; race.dialog = 'pitstop'; race.pitHold = true;
     const go = () => {
@@ -5795,7 +5795,8 @@ function garageStop(R0) {
       if (race !== R0) return res();
       race.dialog = null; race.pitHold = false; race.pitPhase = 'out'; drawPitHud();
       for (const r of race.racers) if (!r.player) for (const k of ['fix', 'spd', 'imm']) pitAward(r, k, rand(55, 88));   // the rivals' crews were busy too
-      for (const r of race.racers) if (!r.player && r.inGarage) { rollDoor(r, true, 550); driveOutOfGarage(r, () => setTimeout(() => rollDoor(r, false), 400), false); }   // (v199) everyone rolls out together, through their own door
+      if (!stayIn) for (const r of race.racers) if (!r.player && r.inGarage) { rollDoor(r, true, 550); driveOutOfGarage(r, () => setTimeout(() => rollDoor(r, false), 400), false); }   // (v199) everyone rolls out together, through their own door
+      if (stayIn) return res();   // (v254) the screen goes black and everyone is put on the grid instead of rolling out
       if (P.inGarage) { toast('ROLL OUT!', '#4fc84a', 34); driveOutOfGarage(P, () => res()); } else res();   // (v195) out of the garage onto the box
     });
     };
@@ -5847,6 +5848,26 @@ function gridBoxState(st) {
   for (const m of B.mats) m.color.set(PIT_BOX_COL[st === 'done' ? 'done' : st === 'work' ? 'work' : 'wait']);
   if (st === 'done') { const P = race.player; pitConfetti(P.x, P.y + .3, P.z); }
 }
+// (v254, the user) from the garage straight to the grid: the screen fades to black, every kart is put on its grid spot
+// (the crew and the garage camera are put away), and the picture fades back in behind your kart, ready for the lights
+async function blackoutToGrid(R0) {
+  const P = race.player; let B = $('blackout');
+  if (!B) { B = document.createElement('div'); B.id = 'blackout'; stage.appendChild(B); }
+  B.classList.add('on'); await wait(520); if (race !== R0) { B.classList.remove('on'); return; }
+  closeDialog(); Music.duck(false); Music.stop();
+  race.dialog = null; race.pitHold = false; race.pitPhase = null; race.garageCam = null; race.formation = false; race.started = false;
+  if (WORLD.crew) WORLD.crew.on = false;
+  for (const r of race.racers) { r.inGarage = false; r.parked = false; r.gridAim = null; r.grid = null; }
+  race.raceTime = 0; race.coinsGot = 0; race.item = null; race.pitDue = false; drawSlot();
+  for (const b of WORLD.boxes) { b.on = true; b.m.visible = true; b.m.scale.setScalar(1); }
+  puddlesShown(true); formGatesOn(false);
+  race.racers.forEach((r, i) => { const { s, lat } = gridSpot(i), p = at(s, lat); resetRacer(r, p.x, p.y, p.z, angleOf(p.p), s); });
+  race.camA = P.angle; placeAll(0); snapCamera(); lapPill(); drawPitHud();
+  race.gridHold = false; race.gridBrake = false; race.steerTo = null; Snd.engineOn && Snd.engineOn();
+  await wait(250); B.classList.remove('on'); await wait(450);
+  if (race !== R0) return;
+  toast('ON THE GRID!', '#ffe14a', 40); await wait(900);
+}
 async function formationLap(R0) {
   const P = race.player; race.formation = true; race.started = true; race.slowTarget = 1;
   // (v181, the user) no power-ups and no traps on the formation lap: the ? boxes are put away until the race
@@ -5881,9 +5902,10 @@ async function countdown() {
   if (race !== R0) return; $('newW').hidden = true;
   // (v170) the Alps: a pit stop in your garage before the race (4 + 4 + 4, the crew working), then a formation lap
   if (TDEF.pitStart && PITS && !race.party && !race.tut) {
-    if (!DEV()) await garageStop(R0); else await devRollOut(R0);   // (v252) dev mode: no garage questions, but still out of the garage
+    // (v254, the user) no formation lap any more: answer the garage questions, the screen goes black, and you are on the grid
+    if (!DEV()) await garageStop(R0, true);
     if (race !== R0) return;
-    await formationLap(R0);
+    await blackoutToGrid(R0);
     if (race !== R0) return;
   }
   // (v151) the warm-up: six swift questions before the lights, three SPEED and three IMMUNITY, same prizes as the pit
