@@ -1148,8 +1148,9 @@ const TRACK_DEFS = {
     scale: .85, half: 6.5, edge: 'walls', gravity: 30, hazard: 'rocks', banner: 'GOLD MINES · DEEP RUN',   // (v192, the user: shorter — a 960 m lap, was 1.15 / 1300 m)
     moreHazards: [.1, .33, .55, .72], envI: .18, tube: true, wallOut: 2.3,   // (v72: falling rocks, 10 spots)
     // (v70) a hairpin in the middle — two legs 55 m apart — with a breakable wall and a secret path straight across it (secret)
-    points: [[0, 0], [6, -34], [-14, -66], [-8, -102], [-44, -134], [-84, -152], [-128, -138], [-155, -88], [-140, -40], [-100, -20], [-110, 20], [-80, 45], [-30, 40], [10, 55],
-      [0, 84], [-40, 90], [-90, 88], [-120, 128], [-80, 165], [-20, 170], [40, 150], [70, 100], [62, 58], [40, 30], [16, 18], [2, 9]],
+    // (v258, the user: "make the turn smoother") the corner through the start line is spread over more points
+    points: [[0, 0], [-1, -14], [2, -37], [-14, -66], [-8, -102], [-44, -134], [-84, -152], [-128, -138], [-155, -88], [-140, -40], [-100, -20], [-110, 20], [-80, 45], [-30, 40], [10, 55],
+      [0, 84], [-40, 90], [-90, 88], [-120, 128], [-80, 165], [-20, 170], [40, 150], [70, 100], [62, 58], [40, 30], [18, 17], [6, 9]],
     secret: true,
     // (v139) seven jumps on this map, so seven jump questions a lap; none of them lands on the bridge
     // tunnels up and down; flat through the hairpin (40–63 %), so the secret path across it is level
@@ -1441,6 +1442,29 @@ function prepTrack(def) {
   const onShared = (a, b) => { for (const d of [0, .04, -.04, .08, -.08, .12, -.12, .16, -.16]) { const f = straightest(a + d, b + d, busy), w = ((f % 1) + 1) % 1; if (!inRoutesF(w, def) || !def.routes) return w; busy.pop(); } return straightest(a, b, busy); };
   const ramps = Array.from({ length: nJ }, (_, i) => onShared(i * wJ + inJ, (i + 1) * wJ - inJ));
   const pads = [[.02, .12], [.24, .38], [.56, .68], [.86, .98], [.32, .46]].map(([a, b], i) => ({ f: onShared(a, b), lat: [0, -2.6, 2.6, 0, 2.6][i] }));
+  // (v258, the user: "there shouldn't be a jump in the way to the pit stop") no ramp on the way INTO the pit lane (from
+  // 70 m before its entry to 15 m past where the pit wall begins) or where it merges back (its exit, +15 m); along the walled part a
+  // ramp on the main road is harmless (the wall stops a jump too). A ramp there moves to the nearest flat free spot.
+  { const PS = PIT_SPECS[def.id], Lt = TRACK.L;
+    if (PS) {
+      const zones = [[PS.entry - 70, PS.tIn + 15], [PS.tOut, PS.exit + 15]].map(([a, b]) => [a / Lt, b / Lt]);   // (a fast jump flies ~25 m)
+      const wd = (f) => { const w = ((f % 1) + 1) % 1; return w > .5 ? w - 1 : w; }, wrap = (f) => ((f % 1) + 1) % 1;
+      const inZone = (f) => zones.some(([a, b]) => wd(f) > a && wd(f) < b);
+      const gap = (a, b) => { const d = Math.abs(wrap(a) - wrap(b)); return Math.min(d, 1 - d); };
+      for (let i = 0; i < ramps.length; i++) {
+        if (!inZone(ramps[i])) continue;
+        const others = ramps.filter((_, j) => j !== i).concat(pads.map((p) => p.f)), f0 = ramps[i];
+        const ok = (f) => !inZone(f) && others.every((o) => gap(o, f) > .05) && gap(f, 0) > .03;
+        let best = null, bd = 9, bb = 9;
+        for (let d = .004; d < .35; d += .004) for (const sg of [1, -1]) {
+          const f = wrap(f0 + sg * d); if (!ok(f)) continue;
+          if (best != null && d > bd + .04) continue;
+          const s = f * Lt, b = bendAt(s) + Math.abs(slopeAt(Math.round(s / STEP))) * 3;
+          if (best == null || b < bb) { best = f; bb = b; if (bd === 9) bd = d; }
+        }
+        if (best != null) { const k = busy.indexOf(f0); if (k >= 0) busy.splice(k, 1); busy.push(best); ramps[i] = best; }
+      }
+    } }
   // answer gates: on straights, with nothing (ramp, pad, ice, box) in the 50 m before them
   const gates = [[.12, .36], [.58, .82]].map(([f0, f1]) => {
     for (const m of [.07, .05, .035, .02]) {
@@ -1866,7 +1890,9 @@ function buildWorld(def) {
     const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2)); g.computeVertexNormals();
     const m = new THREE.Mesh(g, new THREE.MeshStandardMaterial({ map: chk, roughness: .7, fog: !def.clearRoad })); m.receiveShadow = true; scene.add(m);
     const gantry = new THREE.Group(), post = M(def.kerb[0], { roughness: .4, emissive: space ? def.kerb[0] : '#000000', emissiveIntensity: space ? .6 : 0 }), w = HALF + 1.6;
-    for (const s of [-1, 1]) { const p = new THREE.Mesh(new THREE.CylinderGeometry(.22, .26, 6, 12), post); p.position.set(s * w, 3, 0); p.castShadow = true; gantry.add(p); }
+    // (v258, the user) where the pit lane runs past the line, the post on that side would stand in it: that side has none
+    const pitHere = PITS && pitEdges(0) != null;
+    for (const s of [-1, 1]) { if (pitHere && s === PITS.side) continue; const p = new THREE.Mesh(new THREE.CylinderGeometry(.22, .26, 6, 12), post); p.position.set(s * w, 3, 0); p.castShadow = true; gantry.add(p); }
     const bannerTex = canvasTex(1024, 128, (x) => {
       x.fillStyle = '#1b2a4a'; x.fillRect(0, 0, 1024, 128); for (let i = 0; i < 64; i++) { x.fillStyle = i % 2 ? '#111' : '#fff'; x.fillRect(i * 16, 0, 16, 16); x.fillStyle = i % 2 ? '#fff' : '#111'; x.fillRect(i * 16, 112, 16, 16); }
       x.font = 'bold 64px Fredoka, Arial Rounded MT Bold, Arial'; x.textAlign = 'center'; x.textBaseline = 'middle'; x.lineWidth = 10; x.strokeStyle = '#1b2a4a'; x.strokeText(def.banner, 512, 66); x.fillStyle = '#ffe14a'; x.fillText(def.banner, 512, 66);
@@ -3184,7 +3210,7 @@ const PIT_SPECS = {
   // (v177, the user) every map has a pit lane now, on the outside of the start, built the same way
   beach: { side: -1, entry: -178, tIn: -104, tOut: 44, exit: 112, mouthIn: 2.0, mouthOut: 6.9, laneU: 13.2, laneW: 4.2, bays: [-73.2, -62.6, -52, -41.4, -30.8], me: 2, bayU: 14.9, gateFrom: -252, gateTo: -124 },
   city: { side: -1, entry: -178, tIn: -104, tOut: 44, exit: 112, mouthIn: 2.0, mouthOut: 6.9, laneU: 13.2, laneW: 4.2, bays: [-73.2, -62.6, -52, -41.4, -30.8], me: 2, bayU: 14.9, gateFrom: -252, gateTo: -124 },
-  mines: { side: 1, entry: -178, tIn: -104, tOut: 44, exit: 112, mouthIn: 2.0, mouthOut: 6.9, laneU: 13.2, laneW: 4.2, bays: [-73.2, -62.6, -52, -41.4, -30.8], me: 2, bayU: 14.9, gateFrom: -252, gateTo: -124 },
+  mines: { side: 1, entry: -178, tIn: -104, tOut: -25, exit: -6, mouthIn: 2.0, mouthOut: 6.9, laneU: 13.2, laneW: 4.2, bays: [-73.2, -62.6, -52, -41.4, -30.8], me: 2, bayU: 14.9, gateFrom: -252, gateTo: -124 },
   // (Star Loop: the figure-of-eight crosses itself just after the line, so the lane comes back on before it)
   space: { side: -1, entry: -235, tIn: -165, tOut: -40, exit: 28, mouthIn: 2.0, mouthOut: 7.9, laneU: 14.2, laneW: 4.2, bays: [-130, -119.4, -108.8, -98.2, -87.6], me: 2, bayU: 15.9, gateFrom: -300, gateTo: -180 },
 };
@@ -3997,8 +4023,14 @@ function pitGateWall(r, dt) {
 
 /* --- the lane's own walls: the pit wall on one side, the guard rail on the other --- */
 function pitWalls(r, dt) {
-  const P = PITS, W = WORLD; if (!P || !W.pitIdx || r.air) return;
+  const P = PITS, W = WORLD; if (!P || !W.pitIdx) return;
   const e = pitEdges(dsOf(r.sc)); if (!e) { r.laneSide = 0; return; }
+  // (v258, the user: "jump fast without turning and it traps you in the pit") in the air, the pit wall still stands:
+  // a kart flying from the track side is held on the track side of it
+  if (r.air) {
+    if (!r.laneSide && e[0] > HALF + 1.4) { const u = r.lat * P.side, wall = WALL_LAT_OF(); if (u > wall) { const p = tp(r.idx), d = wall * P.side - r.lat; r.x += p.nx * d; r.z += p.nz * d; r.lat += d; r.angle -= wrapA(r.angle - angleOf(p)) * Math.min(1, dt * 6); } }
+    return;
+  }
   const u = r.lat * P.side, inner = e[0] + KART_HALF_W, outer = e[1] - KART_HALF_W, wall = WALL_LAT_OF();
   if (u <= wall) r.laneSide = 0; else if (u >= inner) r.laneSide = 1;
   let want = null;
