@@ -3532,6 +3532,13 @@ function updatePit(dt) {
   const d = bayAhead(P);
   // being level with your box counts wherever you are across the lane — the kart pulls into the paint
   // on its own as it brakes (the stop steers to the box's line), so hugging the pit wall is no trap
+  // (v256, the user) the last 30 m in: the kart is guided onto the box's line while it still rolls forward and lines up
+  // straight with the lane, so it drives into the MIDDLE of the box and stops there — no sideways shift at the end
+  if (race.pitAuto && PITS && P.inPit && !race.pitHold && d < 30) {
+    const p = tp(P.idx), k = Math.min(1, dt * (d < 12 ? 5 : 2.5)), dl = (bayLat() - P.lat) * k;
+    P.x += p.nx * dl; P.z += p.nz * dl; P.lat += dl; P.angle += wrapA(angleOf(p) - P.angle) * Math.min(1, dt * 4);
+  }
+  if (race.pitAuto && PITS) { if ((d < .7 || d > TRACK.L - 2.2) && P.inPit) pitStop(); return; }   // (v256) the autopilot stops ON the middle
   if ((d < (PITS ? 16 : 10) || d > TRACK.L - 2.2) && (PITS ? P.inPit : Math.abs(P.lat - bayLat()) < 2.2)) pitStop();
 }
 
@@ -6006,6 +6013,9 @@ function drive(r, dt) {
   if (race.formation && r.parked) { max = 0; r.speed = 0; }
   else if (race.formation && r.grid && r.lap >= 1 && r.sc > TRACK.L * .6) { const dg = r.grid.s - r.sc; if (!r.player || race.gridBrake) { max = Math.min(max, Math.max(0, dg) * (r.player ? 2.6 : 1.3) + (r.player ? 0 : .4)); if (r.speed > max) r.speed = max; } }   // (rivals a touch behind, so the arches are yours to see)   // (v170) the formation lap: a steady pace for everyone
   if (r.player && race.pitDue) max *= TUNE.pitWorn;                                        // (v151) a stop is due: the tyres are off
+  // (v256, the user: "drive straight into the middle of the box, not to the side and then shift") on the way in the
+  // autopilot lines up with the box early and eases off so the kart rolls to a stop right on its middle
+  if (r.player && race.pitAuto && !race.dialog && r.inPit) { const left = bayAhead(r); if (left < 60) max = Math.min(max, Math.sqrt(2 * 6 * Math.max(0, left - .25)) + .35); }
   if (r.player && race.pitHold) { max = 0; r.speed = 0; }                                   // (v151) standing in your box while the crew works
   else if (r.player && race.pitBrake) {
     // (v151) rolling to a stop ON your box: the speed is tied to the metres left, so the kart lands on the
@@ -6075,7 +6085,7 @@ function drive(r, dt) {
       }
       if (kdown('down')) r.speed -= 24 * dt;
     } else {
-      const aim = r.player && race.pitAuto && !race.dialog ? (bayAhead(r) < 22 ? bayLat() : pitLatAt(r.sc + 11)) : r.gridAim != null && race.formation ? r.gridAim : r.pitting ? pitLatAt(r.sc + 11)
+      const aim = r.player && race.pitAuto && !race.dialog ? (r.inPit && bayAhead(r) < 60 ? bayLat() : pitLatAt(r.sc + 11)) : r.gridAim != null && race.formation ? r.gridAim : r.pitting ? pitLatAt(r.sc + 11)
         : r.player && autoDrive() ? race.steerTo ?? race.holdLat
         : (r.player ? 0 : r.lane) + Math.sin(race.raceTime * .4 + r.phase) * 1.1;
       const tgt = at(r.idx * STEP + 11, aim), want = Math.atan2(tgt.x - r.x, -(tgt.z - r.z));
