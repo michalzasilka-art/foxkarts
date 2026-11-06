@@ -5757,6 +5757,16 @@ function garageStop(R0) {
     Promise.race([loadPitCrew(TDEF.id), wait(4000)]).then(() => { if (race === R0) go(); else res(); });
   });
 }
+// (v252, the user) dev mode skips the garage questions, but everyone must still roll out of the garages onto their box
+// (before, the formation lap started with you parked inside, the garage camera on, and you were stuck)
+function devRollOut(R0) {
+  return new Promise((res) => {
+    if (race !== R0) return res();
+    const P = race.player; race.dialog = null; race.pitHold = false; race.pitPhase = 'out'; drawPitHud();
+    for (const r of race.racers) if (!r.player && r.inGarage) { rollDoor(r, true, 550); driveOutOfGarage(r, () => setTimeout(() => rollDoor(r, false), 400), false); }
+    if (P.inGarage) driveOutOfGarage(P, () => res()); else res();
+  });
+}
 // (v170) the formation lap: everyone drives out of the pit lane and once round at a steady pace; near the line
 // they are put on the grid two by two and the lights come on
 // (v175) parking on the grid at the end of the formation lap. Rivals line up on their spot and stop on it; you
@@ -5826,7 +5836,7 @@ async function countdown() {
   if (race !== R0) return; $('newW').hidden = true;
   // (v170) the Alps: a pit stop in your garage before the race (4 + 4 + 4, the crew working), then a formation lap
   if (TDEF.pitStart && PITS && !race.party && !race.tut) {
-    if (!DEV()) await garageStop(R0);
+    if (!DEV()) await garageStop(R0); else await devRollOut(R0);   // (v252) dev mode: no garage questions, but still out of the garage
     if (race !== R0) return;
     await formationLap(R0);
     if (race !== R0) return;
