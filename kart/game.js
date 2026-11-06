@@ -5398,7 +5398,10 @@ const STICK = { x: 0, held: null };
   // (v141, the user) LESS SENSITIVE: the knob still follows the finger, but the steering it asks for is
   // progressive — half a push is about a third of the lock, so small corrections stay small.
   // (v206) a small dead zone in the middle, so a resting thumb drives straight
-  const move = (e) => { const dx = clamp(e.clientX - cx, -R, R), raw0 = dx / R, raw = Math.sign(raw0) * Math.max(0, Math.abs(raw0) - .06) / .94; STICK.x = Math.sign(raw) * Math.abs(raw) ** (CTL === 'joy' ? 2 : 1.7);   // (v174: the joystick softer still)
+  // (v251, steering research: a 6 % dead zone, a gentle middle, and the FULL lock at a full push — before, the
+  // joystick could only ever reach 73 % of the lock and half a push on the line gave just 12 %) with the wheel's own
+  // soft middle (^1.6) a half push is now about a fifth of the lock on the line, a sixth on the joystick
+  const move = (e) => { const dx = clamp(e.clientX - cx, -R, R), raw0 = dx / R, raw = Math.sign(raw0) * Math.max(0, Math.abs(raw0) - .06) / .94; STICK.x = Math.sign(raw) * Math.abs(raw) ** (CTL === 'joy' ? STEER.joyExp : STEER.lineExp);
     const dy = CTL === 'joy' ? clamp(e.clientY - cy, -R, R) : 0, k = CTL === 'joy' ? .29 / .42 : 1;   // (the knob stays inside the ring)
     knob.style.transform = `translate(calc(-50% + ${(dx * k).toFixed(1)}px), calc(-50% + ${(dy * k).toFixed(1)}px))`; };
   const radOf = (b) => (steerWant() === 'joy' ? Math.max(40, b.width * .42) : Math.max(40, b.width / 2 - b.height / 2));
@@ -5474,6 +5477,15 @@ function ctlHint(on) {
   h.hidden = !h.innerHTML; h.style.opacity = 1;
 }
 let JOYF = null;
+// (v251, the user: "research the steering through every option and adjust it for the best experience") one place
+// for the feel of each control. Final steer = (wheel angle / 90°)^1.6, so the middle is soft and the ends are full:
+//   line     push^1.25 → half a push ≈ 22 % of the lock, a full push = 100 %   (was ^1.7 × 86°: 12 % … 93 %)
+//   joystick push^1.5 × 86° → half ≈ 15 %, full ≈ 93 %                        (was ^2 × 74°: 6 % … 73 %, too weak for hairpins)
+//   gamepad  stick^1.25 → half ≈ 19 %, full 100 %                             (was ^1.5: 13 %)
+//   tilt     3° dead zone, the full lock at about 31° of turn                 (was about 40°)
+//   keys     90 % of the lock in about 0.3 s, quicker still when you swap sides (was 0.46 s)
+//   tap sides stays as the user tuned it (v226)
+const STEER = { lineExp: 1.25, lineMax: 90, lineRate: 12, joyExp: 1.5, joyMax: 86, joyRate: 8, padExp: 1.25, tiltDead: 3, tiltGain: 3.2, tiltRate: 10, keyRate: 7.5 };
 function updateWheel(dt) {
   { const jf = steerWant() === 'joy'; if (jf !== JOYF) { JOYF = jf; document.body.classList.toggle('joyfloat', jf); } }
   const kb = (kdown('left') ? -1 : 0) + (kdown('right') ? 1 : 0);
@@ -5494,13 +5506,13 @@ function updateWheel(dt) {
     const tgt = dir * (34 + 16 * clamp((hT - .4) / .8, 0, 1));
     WHEEL.rot = WHEEL.rot * dir < 30 ? dir * 30 : WHEEL.rot + (tgt - WHEEL.rot) * Math.min(1, dt * 8);
   }
-  else if (STICK.held != null && !kb) { const joy = CTL === 'joy'; WHEEL.rot += (STICK.x * (joy ? 74 : 86) - WHEEL.rot) * Math.min(1, dt * (joy ? 6 : 10)); }   // (v174: the joystick turns less and more slowly)
+  else if (STICK.held != null && !kb) { const joy = CTL === 'joy'; WHEEL.rot += (STICK.x * (joy ? STEER.joyMax : STEER.lineMax) - WHEEL.rot) * Math.min(1, dt * (joy ? STEER.joyRate : STEER.lineRate)); }
   else
   // (gentle since v40: a full turn needs the phone tilted about 40°, and the keys turn the wheel in more slowly)
-  if (CTL === 'tilt' && WHEEL.held == null && !kb) { const t = Math.abs(tiltG) < 3 ? 0 : tiltG - Math.sign(tiltG) * 3; WHEEL.rot += (clamp(t * 2.4, -110, 110) - WHEEL.rot) * Math.min(1, dt * 8); }
+  if (CTL === 'tilt' && WHEEL.held == null && !kb) { const t = Math.abs(tiltG) < STEER.tiltDead ? 0 : tiltG - Math.sign(tiltG) * STEER.tiltDead; WHEEL.rot += (clamp(t * STEER.tiltGain, -110, 110) - WHEEL.rot) * Math.min(1, dt * STEER.tiltRate); }
   // (v64: the stick is progressive — a half push is about a third of the wheel — and turns the wheel a little slower, so small corrections stay small)
-  else if (GPAD.on && Math.abs(GPAD.steer) > .02 && !kb) WHEEL.rot += (Math.sign(GPAD.steer) * Math.abs(GPAD.steer) ** 1.5 * 90 - WHEEL.rot) * Math.min(1, dt * 9);
-  else if (kb) WHEEL.rot += (kb * 95 - WHEEL.rot) * Math.min(1, dt * 5);
+  else if (GPAD.on && Math.abs(GPAD.steer) > .02 && !kb) WHEEL.rot += (Math.sign(GPAD.steer) * Math.abs(GPAD.steer) ** STEER.padExp * 90 - WHEEL.rot) * Math.min(1, dt * 9);
+  else if (kb) WHEEL.rot += (kb * 95 - WHEEL.rot) * Math.min(1, dt * (WHEEL.rot * kb < 0 ? STEER.keyRate * 1.6 : STEER.keyRate));   // (a quicker swing when you switch sides)
   else if (WHEEL.held == null) WHEEL.rot *= Math.exp(-dt * (CTL === 'follow' ? 18 : 9));
   wheelSvg.style.transform = `rotate(${WHEEL.rot.toFixed(1)}deg)`;
   // a soft middle: small turns of the wheel steer only a little, a full turn still steers fully
@@ -6845,12 +6857,12 @@ function loop(now) {
 }
 
 /* ---------- start the game ---------- */
-window.FK = { auto: false, answer: null };          // test hooks: an autopilot and auto-answers (left off for players)
+window.FK = { auto: false, answer: null, steer: STEER };   // (steer: the v251 steering feel, to tune live)          // test hooks: an autopilot and auto-answers (left off for players)
 // test hook: a photo of the showroom racer from any angle
 window.FK.renderer = renderer; window.FK.world = () => WORLD; window.FK.start = (id) => startRace(id); window.FK.THREE = THREE;
 window.FK.char = (id) => { save.char = id; setShowRacer(); };
 window.FK.SHOW = SHOW;
-window.FK.track = () => TRACK; window.FK.at = (d, l = 0) => at(d, l);   // test hooks: the track and a point on it
+window.FK.track = () => TRACK; window.FK.half = () => HALF; window.FK.at = (d, l = 0) => at(d, l);   // test hooks: the track and a point on it
 window.FK.ask = (secs = 30) => race && !race.dialog && askOne('jump', `${ico('icon-jump', 'tico')} JUMP QUESTION!`, secs, () => {});   // test hook: a race question now
 // test hook: nudge how an official character sits (FK.fit('rob', { s: 1.2, helm: { r: .42 } }))
 window.FK.fit = (id, patch) => { const f = CHAR_FIT[id]; if (patch.helm) { Object.assign(f.helm, patch.helm); delete patch.helm; } Object.assign(f, patch); driverCache.clear(); kartCache.clear(); setShowRacer(); return f; };
