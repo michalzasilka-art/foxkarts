@@ -3834,8 +3834,18 @@ function confettiAt(el, n = 24, spread = 1) {
 function runQuiz(sets, tag, onDone) {
   const P = race.player, R0 = race, lr = race.learn, D = $('dialog'), got = {};
   if (DEV()) {   // (v250, the user: "dev mode removes all the questions") the crew just does the job: a short stop, full marks
-    const pct = {}; sets.forEach(([k], i) => { pct[k] = 95; setTimeout(() => { if (race === R0) race.pitPhase = k; }, i * 700); });
-    setTimeout(() => { if (race !== R0) return; race.pitPhase = 'board'; for (const k in pct) pitAward(P, k, pct[k]); drawPitHud(); onDone(pct); }, sets.length * 700 + 300);
+    // (v255, the user: "in dev mode the pit stop counts as if all 9 questions were right — all the boosts") every set is a
+    // PERFECT 100 % (the most a stop can give), the parts light up as the crew works, and the board shows it before you go
+    const pct = {}; sets.forEach(([k, n], i) => { pct[k] = 100; setTimeout(() => { if (race !== R0) return; race.pitPhase = k; partGlow(P, (PART_GLOW[k] || [])[0]); }, i * 700); });
+    setTimeout(() => {
+      if (race !== R0) return; partGlow(P, null); race.pitPhase = 'board'; D.hidden = false;
+      pitScoreCard(D, sets.map(([k]) => k), pct, tag, () => {
+        if (race !== R0) return;
+        closeDialog(); Music.duck(false);
+        for (const k in pct) pitAward(P, k, pct[k]);
+        drawPitHud(); onDone(pct);
+      });
+    }, sets.length * 700 + 300);
     return;
   }
   for (const [k] of sets) got[k] = { sum: 0, n: 0, res: [] };
