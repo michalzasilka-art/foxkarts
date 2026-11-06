@@ -13,14 +13,14 @@
      6. Screens: menu, garage, flash-card quizzes
      7. The race: driving, AI, laps, ? box questions, power-ups, snowballs, finish, results
    ===================================================================================================== */
-import * as THREE from 'three';
-import { RoomEnvironment } from './lib/RoomEnvironment.js';
-import { buildFoxino, buildKart, buildHelmet, setDetail } from './models.js?v=51';
+import * as THREE from './lib/three.module.min.js';
+import { RoomEnvironment } from './lib/RoomEnvironment.js?v=2';
+import { buildFoxino, buildKart, buildHelmet, setDetail } from './models.js?v=52';
 import * as L from './learn.js?v=52';
 import { loadDefaultKart, dressKart, loadHelmet, dressHelmet, DEFAULT_SKIN, DEFAULT_HELMET, BODY_COLORS, LIGHT_COLORS, LOGOS, logoIconURL, WHEEL_SIZE } from './kart-skin.js?v=11';
-import { GLTFLoader } from './lib/GLTFLoader.js';
-import { mergeGeometries } from './lib/BufferGeometryUtils.js';
-import { BUILDERS } from './racers.js';
+import { GLTFLoader } from './lib/GLTFLoader.js?v=2';
+import { mergeGeometries } from './lib/BufferGeometryUtils.js?v=2';
+import { BUILDERS } from './racers.js?v=2';
 
 /* ---------- CHARACTERS: the 5 racers. Foxino is the Higgsfield 3D model; the other four are built in racers.js.
    `color` is their kart and name-tag colour; `hue` is only used if a model can't be built (then a recoloured Foxino drives). ---------- */
@@ -48,7 +48,8 @@ const STICKERS = [
   { id: 'flame', name: 'Flames', cost: 90 },  { id: 'bolt', name: 'Bolt', cost: 90 },
   { id: 'snow', name: 'Snowflake', cost: 90 },
 ];
-const UPGRADE_COST = [120, 220, 350, 520];   // price of level 1, 2, 3 and 4 of every part (v228: 4 levels, the kart 1 → 5)
+const UPGRADE_COST = [120, 220, 350, 520];   // (the old per-part prices; v266: one upgrade, see LEVEL_COST)
+const LEVEL_COST = (lv) => 120 + 16 * lv;   // (v266) the price of the next level when you are at lv (0..23): 120 … 488, 7 296 in all
 // (v104) the garage upgrades: id, name, colour, what it does
 const UPGRADES = [['speed', 'SPEED', '#ff8a1e', 'Higher top speed'], ['handling', 'HANDLING', '#4fc84a', 'Sharper steering'], ['accel', 'START', '#ff5db1', 'Quicker acceleration'], ['turbo', 'TURBO', '#5fe8ff', 'Longer drift turbos'], ['grip', 'GRIP', '#b77aff', 'Shorter spins on hazards'], ['magnet', 'MAGNET', '#ffd23a', 'Coins from further away']];
 
@@ -107,7 +108,7 @@ const DEV_NAMES = ['michal'];
 const isDevAcct = () => DEV_NAMES.includes((save.name || '').trim().toLowerCase());
 function devAccount() {
   if (!isDevAcct() || save.devGift) return false;
-  save.devGift = 1; save.coins = 5000; save.kart = save.kart || {}; for (const [k] of UPGRADES) save.kart[k] = 0; store(); return true;
+  save.devGift = 1; save.coins = 5000; save.kart = save.kart || {}; for (const [k] of UPGRADES) save.kart[k] = 0; save.kart.lv = 0; store(); return true;
 }
 devAccount();
 // (v244, the user: "give me 10000 coins") a one-off gift of 10 000 coins for the dev account, on every device it plays on
@@ -407,7 +408,8 @@ function payRace(n = 1) { if (!TUNE.energy) return true; if (save.energy < n) { 
 
 /* ---------- 3. Renderer, lights, sky ---------- */
 const canvas = $('cv');
-const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
+// (v266, the user: "on weaker devices it stays on 0%") a weak or busy GPU can refuse the full context: try a plainer one
+const renderer = (() => { for (const o of [{ antialias: true, powerPreference: 'high-performance' }, { antialias: false }, { antialias: false, powerPreference: 'low-power', precision: 'mediump' }]) { try { return new THREE.WebGLRenderer({ canvas, ...o }); } catch (e) { console.warn('WebGL context failed', o, e); } } if (window.__ldFail) window.__ldFail('This device could not start 3D graphics'); throw new Error('no WebGL'); })();
 // quality 0 = full, 1 = no shadows, 2 = also a lower resolution. RESOLUTION in the settings (save.res, v69): DEFAULT draws
 // at up to 1.75 device pixels per CSS pixel, HIGH at every device pixel (up to 3) — sharper on phones, more work for the GPU
 // (v92) graphics quality: save.gfx = 'low' | 'default' | 'high' (older saves: save.res 'high' → 'high').
@@ -890,14 +892,17 @@ function tyreWheel(r, w, side, skin, lod) {
   g.scale.set(side * w / .172, r / .141, r / .141);
   return g;
 }
+const LDP = { on: null };   // (v266) the loading screen's progress inside the model loading
 async function loadFoxino() {
-  await loadKart();
-  await loadOfficial();
-  await loadCrystals();
-  await loadStalagmites();
-  await Promise.all(['alps', 'beach', 'city', 'mines', 'space'].map((id) => loadPitGarage(id)));
-  await loadTyre();
+  const P = (f) => { if (LDP.on) LDP.on(f); };
+  await loadKart(); P(.25);
+  await loadOfficial(); P(.55);
+  await loadPitGarage('alps'); P(.65);   // (the garage screen uses the Alps one)
+  await loadTyre(); P(.95);
   { const t = TYRE_BY_ID[(save.kart && save.kart.skin || {}).tyre]; if (t && t.model) await loadTyreModel(t.model); }   // (v186) your design tyre, before the first race
+  // (v266, the user: slow devices sat on the loading screen) what only the races need — the cave's crystals and
+  // stalagmites, the other four maps' pit garages (about 6 MB) — now downloads behind the menu; a race waits for it
+  BASE.later = Promise.all([loadCrystals(), loadStalagmites(), ...['beach', 'city', 'mines', 'space'].map((id) => loadPitGarage(id))]).catch((e) => console.warn(e)).then(() => { BASE.laterDone = true; });
   loadPitCrew();   // (v163) the Blender pit crew: not waited for, the stops come much later
   if (BASE.off && BASE.off.foxino) return;   // the official Foxino is in; the old Higgsfield one stays only as a fallback
   try {
@@ -1528,6 +1533,39 @@ function strip(a, b, ya, yb, { colour, uvLen, only } = {}) {
   g.computeVertexNormals(); return g;
 }
 const M = (color, o = {}) => new THREE.MeshStandardMaterial({ color, roughness: .8, ...o });
+// (v266, the user) THE ELECTRIC FIELD: the yellow shield sphere with real 3D lightning on it — eight jagged arcs that
+// crawl over the sphere, redrawn 14 times a second, and a glowing core ring; no emoji
+const SPARK_N = 8, SPARK_SEG = 7;
+function makeShield() {
+  const g = new THREE.Group(); g.add(new THREE.Mesh(WORLD.shieldGeo, WORLD.shieldMat));
+  const n = SPARK_N * SPARK_SEG, geo = new THREE.BufferGeometry(); geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(n * 2 * 3), 3));
+  const arcs = new THREE.LineSegments(geo, WORLD.sparkMat); arcs.frustumCulled = false; g.add(arcs);   // the white-hot core of each bolt
+  // the bolts' yellow glow: every segment is two crossed ribbons, so the lightning stays thick from any angle
+  const rg = new THREE.BufferGeometry(), idx = []; rg.setAttribute('position', new THREE.BufferAttribute(new Float32Array(n * 8 * 3), 3));
+  for (let i = 0; i < n * 2; i++) { const o = i * 4; idx.push(o, o + 1, o + 2, o + 1, o + 3, o + 2); } rg.setIndex(idx);
+  const rib = new THREE.Mesh(rg, WORLD.sparkGlow); rib.frustumCulled = false; g.add(rib);
+  const ring = new THREE.Mesh(new THREE.TorusGeometry(1.5, .035, 6, 40).rotateX(Math.PI / 2), new THREE.MeshBasicMaterial({ color: '#ffd23a', toneMapped: false, transparent: true, opacity: .75 })); g.add(ring);
+  g.userData = { arcs, rib, ring, t: 0 }; return g;
+}
+const _sa = new THREE.Vector3(), _sb = new THREE.Vector3(), _sp = new THREE.Vector3(), _sq = new THREE.Vector3(), _sd = new THREE.Vector3(), _s1 = new THREE.Vector3(), _s2 = new THREE.Vector3();
+function sparkShield(g, t) {
+  const U = g.userData; if (!U || !U.arcs) return; U.ring.rotation.z = t * 1.7; U.ring.position.y = Math.sin(t * 2.2) * .9;
+  if (t - U.t < .07) return; U.t = t;
+  const a = U.arcs.geometry.attributes.position, rb = U.rib.geometry.attributes.position, R = 1.47, W = .045; let k = 0, q = 0;
+  const quad = (px, py, pz, side) => { rb.setXYZ(q++, px - side.x, py - side.y, pz - side.z); rb.setXYZ(q++, px + side.x, py + side.y, pz + side.z); };
+  for (let n = 0; n < SPARK_N; n++) {
+    _sa.set(rand(-1, 1), rand(-1, 1), rand(-1, 1)).normalize(); _sb.copy(_sa).add(_sp.set(rand(-1, 1), rand(-1, 1), rand(-1, 1)).multiplyScalar(.9)).normalize();
+    _sq.copy(_sa).multiplyScalar(R);
+    for (let s = 1; s <= SPARK_SEG; s++) {
+      const u = s / SPARK_SEG, w = W * (1.25 - u * .8); _sp.copy(_sa).lerp(_sb, u).normalize().multiplyScalar(R + rand(-.12, .18)); _sp.x += rand(-.14, .14); _sp.y += rand(-.14, .14); _sp.z += rand(-.14, .14);
+      a.setXYZ(k++, _sq.x, _sq.y, _sq.z); a.setXYZ(k++, _sp.x, _sp.y, _sp.z);
+      _sd.subVectors(_sp, _sq).normalize(); _s2.copy(_sq).normalize(); _s1.crossVectors(_sd, _s2).normalize().multiplyScalar(w); _s2.multiplyScalar(w);
+      quad(_sq.x, _sq.y, _sq.z, _s1); quad(_sp.x, _sp.y, _sp.z, _s1); quad(_sq.x, _sq.y, _sq.z, _s2); quad(_sp.x, _sp.y, _sp.z, _s2);
+      _sq.copy(_sp);
+    }
+  }
+  a.needsUpdate = true; rb.needsUpdate = true; const f = .65 + Math.random() * .35; U.arcs.material.opacity = f; U.rib.material.opacity = f * .9;
+}
 function cone(parent, r, h, y, mat, seg = 8, x = 0, z = 0) { const m = new THREE.Mesh(new THREE.ConeGeometry(r, h, seg), mat); m.position.set(x, y, z); parent.add(m); return m; }
 function box(parent, w, h, d, mat, x, y, z, ry = 0) { const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat); m.position.set(x, y, z); m.rotation.y = ry; parent.add(m); return m; }
 function ball(parent, r, mat, x, y, z, seg = 16) { const m = new THREE.Mesh(new THREE.SphereGeometry(r, seg, Math.round(seg * .7)), mat); m.position.set(x, y, z); parent.add(m); return m; }
@@ -1995,7 +2033,9 @@ function buildWorld(def) {
   const nose = new THREE.Mesh(new THREE.ConeGeometry(.13, .3, 12).rotateX(Math.PI / 2), M('#ffffff', { roughness: .3 })); nose.position.z = .5; rk.add(nose);
   for (let k = 0; k < 4; k++) { const f = new THREE.Mesh(new THREE.BoxGeometry(.02, .22, .2), M('#ffe14a')); f.position.z = -.28; f.rotation.z = k * Math.PI / 2; f.translateY(.15); rk.add(f); }
   W.rocket = rk; W.snowball = new THREE.Mesh(new THREE.SphereGeometry(.32, 16, 12), M(def.id === 'space' ? '#9af0ff' : def.id === 'city' ? '#7a8aa0' : '#ffffff', { roughness: .6 }));
-  W.shieldGeo = new THREE.SphereGeometry(1.45, 24, 16); W.shieldMat = new THREE.MeshStandardMaterial({ color: '#7ad8ff', emissive: '#3ab0ff', emissiveIntensity: .5, transparent: true, opacity: .28, roughness: .1, depthWrite: false });
+  W.shieldGeo = new THREE.SphereGeometry(1.45, 24, 16); W.shieldMat = new THREE.MeshStandardMaterial({ color: '#ffe14a', emissive: '#ffb000', emissiveIntensity: .7, transparent: true, opacity: .26, roughness: .1, depthWrite: false });   // (v266, the user: an electric field — a yellow sphere with sparks)
+  W.sparkMat = new THREE.LineBasicMaterial({ color: '#ffffff', transparent: true, opacity: .95, toneMapped: false, depthWrite: false });
+  W.sparkGlow = new THREE.MeshBasicMaterial({ color: '#ffd400', transparent: true, opacity: .9, toneMapped: false, depthWrite: false, side: THREE.DoubleSide });
   W.flameMat = new THREE.MeshBasicMaterial({ color: '#ffb02a', transparent: true, opacity: .9 });
   W.trapMat = iceMat; STRIP_SKIP = null;
   W.camera = new THREE.PerspectiveCamera(66, 9 / 16, .1, 1500);
@@ -4685,8 +4725,12 @@ const UP_MAX = 4, KART_MAX = 1 + 6 * UP_MAX;
 // (v241, the user) the starship has its own upgrades and its own level card (save.shipUp); the race reads the ones of
 // the vehicle it is run in (the starship on Star Loop)
 const upsOf = (veh) => (veh === 'ship' ? (save.shipUp = save.shipUp || {}) : save.kart);
-function upLv(k) { return upsOf(typeof TDEF !== 'undefined' && TDEF && TDEF.ship ? 'ship' : 'kart')[k] || 0; }
-const vehLevel = (veh) => Math.min(KART_MAX, 1 + UPGRADES.reduce((a, [k]) => a + Math.min(UP_MAX, upsOf(veh)[k] || 0), 0));
+// (v266, the user: "only one thing to upgrade, 25 levels, so it's not overcomplicated") ONE upgrade per vehicle: its
+// level 0..24 (shown as 1..25); every level lifts all six things a little (speed, start, handling, grip, turbo, magnet
+// — each of the old 4-step parts is worth level / 6). Old saves keep their progress: the parts bought so far add up.
+const vehLv = (veh) => { const U = upsOf(veh); if (U.lv == null) U.lv = Math.min(KART_MAX - 1, UPGRADES.reduce((a, [k]) => a + Math.min(UP_MAX, U[k] || 0), 0)); return U.lv; };
+function upLv(k) { return vehLv(typeof TDEF !== 'undefined' && TDEF && TDEF.ship ? 'ship' : 'kart') / 6; }
+const vehLevel = (veh) => Math.min(KART_MAX, 1 + vehLv(veh));
 const kartLevel = () => vehLevel('kart');
 const gVeh = () => (GARAGE_VEH === 'ship' ? 'ship' : 'kart');
 const PART_SVG = {
@@ -4893,23 +4937,16 @@ function updateGarage3D(dt) {
 }
 function drawGarageSpots() {
   const box = $('gspots'), Lv = vehLevel(gVeh());
-  // (v242, the user) just a small dot in the part's colour where each part is: no words, no icons, not a button
-  // (you switch with the part buttons in the panel); the chosen part's dot is bigger and glows
-  box.innerHTML = gParts().map((g) => `<span class="gspot${G3.part === g.id ? ' on' : ''}" data-p="${g.id}" style="--c:${g.c}"><i></i></span>`).join('')
-    + `<div class="gtag${Lv >= KART_MAX ? ' gold' : ''}" data-p="tag"><b>LV ${Lv}</b><span><i style="width:${((Lv - 1) / (KART_MAX - 1) * 100).toFixed(1)}%"></i></span></div>`;
+  // (v266) only the level tag under the kart — there are no parts to point at any more
+  box.innerHTML = `<div class="gtag${Lv >= KART_MAX ? ' gold' : ''}" data-p="tag"><b>LV ${Lv}</b><span><i style="width:${((Lv - 1) / (KART_MAX - 1) * 100).toFixed(1)}%"></i></span></div>`;
 }
-// the panel: the level card, the four parts, and the chosen part's upgrades
+// (v266) the panel: the level card and ONE button — UPGRADE
 function drawGarageUp(ups) {
-  const K2 = upsOf(gVeh()), PL = gParts(), part = PL.find((g) => g.id === G3.part) || PL[0]; G3.part = part.id;
-  ups.innerHTML = kartCardHTML('klv', false, gVeh()) +
-    `<div class="gparts">${PL.map((g) => `<button class="gpc${g.id === part.id ? ' on' : ''}" data-p="${g.id}" style="--c:${g.c}"><i>${PART_SVG[g.id]}</i><b>${g.name}</b><small>${partDone(g)}/${g.ups.length * UP_MAX}</small></button>`).join('')}</div>
-    <div class="gpart">${part.ups.map((k) => {
-      const [, name, c, what] = UPGRADES.find((u) => u[0] === k), lvl = Math.min(UP_MAX, K2[k] || 0);
-      const act = lvl >= UP_MAX ? '<span class="max out">MAX!</span>' : `<button class="btn gbuy" data-k="${k}" style="--c:${c}">UPGRADE <i class="coin"></i>${UPGRADE_COST[lvl]}</button>`;
-      return `<div class="gup" style="--c:${c}"><div class="gupt"><b>${name}</b><small>${what}</small></div><span class="pips">${[0, 1, 2, 3].map((i) => `<i class="${i < lvl ? 'on' : ''}"></i>`).join('')}</span>${act}</div>`;
-    }).join('')}</div>`;
-  for (const b of ups.querySelectorAll('.gpc')) tap(b, () => { sfx.click(); G3.part = b.dataset.p; goGarage(); });
-  for (const b of ups.querySelectorAll('.gbuy')) tap(b, () => buy(b.dataset.k));
+  const veh = gVeh(), lv = vehLv(veh), Lv = vehLevel(veh), VN = veh === 'ship' ? 'STARSHIP' : 'KART', gold = Lv >= KART_MAX;
+  ups.innerHTML = kartCardHTML('klv', false, veh) +
+    `<div class="gone">${gold ? `<div class="gmax"><b>GOLDEN ${VN}</b><small>Level 25 — nothing left to upgrade</small></div>`
+      : `<button class="btn gbuy big" data-k="lv">UPGRADE <i class="coin"></i>${LEVEL_COST(lv)}</button><small class="gwhat">Level ${Lv} → ${Lv + 1} · faster · quicker start · sharper · more grip · longer turbo · bigger magnet</small>`}</div>`;
+  for (const b of ups.querySelectorAll('.gbuy')) tap(b, () => buy('lv'));
   // the bar fills every time the card is shown; after an upgrade it fills from the old level, with confetti
   const from = G3.from; G3.from = null;
   animKartCard($('klv'), from ?? 1, from == null ? null : () => { const k = $('klv'); if (!k || screen !== 'garage') return; confettiAt(k, vehLevel(gVeh()) >= KART_MAX ? 70 : 34); k.classList.remove('pop'); void k.offsetWidth; k.classList.add('pop'); sfx.coin && sfx.coin(); }, gVeh(), from != null);
@@ -5582,10 +5619,10 @@ function buy(kind, item) {
     if (kind === 'color') K2.color = id; else K2.sticker = id;
     setShowRacer(); SHOW.spin = 1;
   } else {
-    const U = upsOf(gVeh()), lvl = U[kind] || 0, L0 = vehLevel(gVeh()); if (lvl >= UP_MAX) return;
-    const cost = UPGRADE_COST[lvl];
+    const U = upsOf(gVeh()), lvl = vehLv(gVeh()), L0 = vehLevel(gVeh()); if (lvl >= KART_MAX - 1) return;   // (v266) one upgrade: the level
+    const cost = LEVEL_COST(lvl);
     if (!DEV() && save.coins < cost) { sfx.wrong(); toast('Not enough coins', '#ff8a8a'); return; }
-    if (!DEV()) save.coins -= cost; U[kind] = lvl + 1; sfx.power(); toast(((UPGRADES.find((u) => u[0] === kind) || [0, kind])[1]) + ' UPGRADED!', '#ffe14a');
+    if (!DEV()) save.coins -= cost; U.lv = lvl + 1; sfx.power();
     SHOW.pop = .6; racerPlate(); G3.from = L0;   // (v233) every upgrade is a kart level: the card fills from the old one
     const L1 = vehLevel(gVeh()), VN = gVeh() === 'ship' ? 'STARSHIP' : 'KART'; setTimeout(() => { if (screen !== 'garage') return; if (L1 >= KART_MAX) { sfx.fanfare(); toast(`GOLDEN ${VN}!\n<small>level 25 — every part at its best</small>`, '#ffd23a', 50); SHOW.pop = 1; } else toast(`${VN} LEVEL ${L1}!`, '#ffe14a', 34); }, 700);
   }
@@ -5988,7 +6025,14 @@ function pollPad(dt) {
 const FLAME_GEO = new THREE.ConeGeometry(.12, .7, 10).rotateX(-Math.PI / 2), WARM_GEO = new THREE.ConeGeometry(.1, .3, 6), TRAP_GEO = new THREE.CylinderGeometry(1.25, 1.25, .06, 20);
 // free what one race made for itself (name tags)
 function freeRacers(list) { for (const r of list) { WORLD.scene.remove(r.model.root); if (r.label) { r.label.material.map.dispose(); r.label.material.dispose(); } } }
-function startRace(trackId = save.track || 'alps', opts = {}) {
+// (v266) a race needs the models that load behind the menu: on a slow device a quick start waits for them under a small notice
+function startRace(trackId, opts) {
+  if (!BASE.later || BASE.laterDone) return startRaceNow(trackId, opts);
+  if (BASE.raceWait) return; BASE.raceWait = true;
+  const n = document.createElement('div'); n.className = 'mapwait'; n.innerHTML = '<i></i><b>Loading the map\u2026</b>'; document.body.appendChild(n);
+  BASE.later.then(() => { n.remove(); BASE.raceWait = false; startRaceNow(trackId, opts); });
+}
+function startRaceNow(trackId = save.track || 'alps', opts = {}) {
   if (!TRACK_DEFS[trackId]) trackId = 'alps';   // (v168: a save may still name Japan)
   hidePodium();
   if (TDEF && TDEF.id !== trackId) { miniBase = null; }
@@ -6026,7 +6070,7 @@ function startRace(trackId = save.track || 'alps', opts = {}) {
       y: pY, vy: 0, air: null, rampY: 0, drift: 0, driftT: 0, driftLvl: 0, driftYaw: 0, coins: 0, trick: false, trickT: 0, squash: 0, lat: 0, sc: s,
       lane: rand(-2.6, 2.6), phase: Math.random() * 6, skill: player ? 1 : TUNE.aiSkill[Math.max(0, others.indexOf(ch))] || 1, remote: rem ? rem.remote : null };
     if (!player) { r.label = nameSprite(rem ? rem.name : ch.name, ch.color); r.label.position.y = 2.15; model.root.add(r.label); }
-    r.bubble = new THREE.Mesh(WORLD.shieldGeo, WORLD.shieldMat); r.bubble.position.y = .7; r.bubble.visible = false; model.root.add(r.bubble);
+    r.bubble = makeShield(); r.bubble.position.y = .7; r.bubble.visible = false; model.root.add(r.bubble);
     r.flame = new THREE.Mesh(FLAME_GEO, WORLD.flameMat); r.flame.position.set(-.25, .42, -1.25); r.flame.visible = false; model.body.add(r.flame);
     if (TDEF.magnet) { r.beam = new THREE.Mesh(BEAM_GEO, WORLD.beamMat || (WORLD.beamMat = new THREE.MeshBasicMaterial({ color: '#3a8aff', transparent: true, opacity: .62, depthWrite: false, side: THREE.DoubleSide }))); r.beam.visible = false; model.root.add(r.beam); }
     r.quizT = player || TDEF.pitOnly ? 0 : rand(7.5, 14) / (r.skill || 1);   // (how long this rival takes over the three finish questions; none on a pit-only track)
@@ -6606,7 +6650,7 @@ function placeAll0(dt) {
     if (m.dmesh) gripTurn(m.dmesh, turn);   // (v209) the hands go round with the wheel
     for (const s of m.spins) s.rotation.x += r.speed / (BASE.dk ? .22 : .14) * dt;   // (v5 wheels: radius about .22)
     if (m.hover) m.hover.position.y = SHIP_LIFT + Math.sin(t * 3.1 + r.idx * .01) * .035;   // (v184) the starship floats
-    r.bubble.visible = !!r.shield; if (r.shield) r.bubble.scale.setScalar(1 + Math.sin(t * 8) * .03);
+    r.bubble.visible = !!r.shield; if (r.shield) { r.bubble.scale.setScalar(1 + Math.sin(t * 8) * .03); sparkShield(r.bubble, t); }
     r.flame.visible = r.boostT > 0; if (r.boostT > 0) r.flame.scale.set(1 + Math.random() * .4, 1 + Math.random() * .4, .8 + Math.random() * .9);
     if (r.beam) { const on = !!(TDEF.magnet && r.air === 'ramp' && r.vy < 0); r.beam.visible = on; if (on) { r.beam.scale.set(1 + Math.sin(t * 30) * .08, Math.max(.5, r.y - trackY(r) + .3), 1 + Math.cos(t * 30) * .08); r.beam.position.y = .3; } }
     if (!dt || !race.started || ro) continue;   // (no puffs inside a corkscrew: they live in the flat frame)
@@ -7032,14 +7076,78 @@ function updateRace(dt) {
 // emissive), never see-through, so it draws the same on every phone.
 const ARENA = {};
 const FONT_NUM = (px) => `${px}px "Luckiest Guy", Fredoka, Arial`;
-function buildArena() {
-  const scene = new THREE.Scene(); ARENA.scene = scene; scene.environment = ENV; scene.fog = new THREE.Fog('#2a0e5a', 45, 170);
-  const neon = (c) => new THREE.MeshBasicMaterial({ color: c, fog: false }), metal = M('#2a2e48', { roughness: .35, metalness: .8 });
-  const sun = addLights(scene, 1024, 6, { hemi: [0xb8a8ff, 0x3a1a7a, 1.15], sun: [0xffffff, 2.9] }); sun.position.set(3, 10, 9);
-  const rim = new THREE.DirectionalLight(0xff5db1, 2.2); rim.position.set(-4, 5, -7); scene.add(rim);
-  const rim2 = new THREE.DirectionalLight(0x5fe8ff, 1.8); rim2.position.set(5, 4, -6); scene.add(rim2);
+/* ---------- (v266, the user) THE PODIUM IN THE STYLE OF THE MAP YOU RACED ON ----------
+   The finals arena is rebuilt for each map: Alpine Peaks gets a snowy stage with a chalet board, pines and falling
+   snow; Beach Island a sunset, sand, palms and tiki torches; Robo City keeps its neon show; Gold Mines a cave with
+   crystals, lanterns and timber; Star Loop a hologram platform in deep space with rings and planets — and the
+   STARSHIPS stand on the pillars there instead of karts. The numbers, the fireworks and the camera are the same. */
+const ARENA_THEMES = {
+  city: { fog: '#2a0e5a', hemi: [0xb8a8ff, 0x3a1a7a, 1.15], sun: [0xffffff, 2.9], rims: ['#ff5db1', '#5fe8ff'], sky: 'neon', lid: '#05031c', floor: 'grid', glow: 1, stage: ['#1c1650', '#2a2272'], rings: ['#5fe8ff', '#ff5db1', '#b77aff'], floorRings: ['#ff5db1', '#5fe8ff', '#ffd23a'], pillar: '#1e1c52', numBg: ['#2e2680', '#0c0830'], wall: 'led', metal: '#2a2e48', truss: true, lasers: true, bulbs: 'rainbow', weather: null },
+  alps: { fog: '#cfe3ff', hemi: [0xe8f6ff, 0x8fb0d8, 1.25], sun: [0xfff4e0, 2.7], rims: ['#9fd0ff', '#ffe6b0'], sky: 'alps', lid: '#4a8ad8', floor: 'snow', glow: 0, stage: ['#6a4020', '#a87040'], rings: ['#e8403a', '#ffffff', '#ffd23a'], floorRings: ['#e8403a', '#ffffff', '#3a8ad8'], pillar: '#e6f0ff', numBg: ['#3a6ab8', '#1b2a6a'], wall: 'board', metal: '#6a4020', truss: false, lasers: false, bulbs: 'warm', weather: 'snow', props: 'alps' },
+  beach: { fog: '#ffd8a8', hemi: [0xfff0d0, 0xc89a60, 1.25], sun: [0xfff0c0, 2.8], rims: ['#ff9a5a', '#5fe8ff'], sky: 'beach', lid: '#2a1a5a', floor: 'sand', glow: 0, stage: ['#8a5a30', '#c08a50'], rings: ['#5fe8ff', '#ff5db1', '#ffe14a'], floorRings: ['#5fe8ff', '#ffffff', '#ff8a1e'], pillar: '#f0d8a8', numBg: ['#ff8a4a', '#8a2a4a'], wall: 'surf', metal: '#8a5a30', truss: false, lasers: false, bulbs: 'warm', weather: 'petals', props: 'beach' },
+  mines: { fog: '#1d1038', hemi: [0x8a7060, 0x120a06, 1.1], sun: [0xffc880, 1.9], rims: ['#c84aff', '#7af8ff'], sky: 'cave', lid: '#06030a', floor: 'rock', glow: 0, stage: ['#2a2024', '#b8742a'], rings: ['#ffd23a', '#c84aff', '#7af8ff'], floorRings: ['#ffd23a', '#c84aff', '#7af8ff'], pillar: '#3a2a30', numBg: ['#6a4a10', '#1a0a06'], wall: 'mine', metal: '#5a3a20', truss: true, lasers: false, bulbs: 'gold', weather: 'sparkle', props: 'mines' },
+  space: { fog: '#05060f', hemi: [0x9fb4ff, 0x1a1040, 1.2], sun: [0xffffff, 2.4], rims: ['#c84aff', '#7af8ff'], sky: 'space', lid: '#02030a', floor: 'hex', glow: .9, stage: ['#0e1440', '#1b1f5c'], rings: ['#7af8ff', '#c84aff', '#3cff8a'], floorRings: ['#7af8ff', '#c84aff', '#ffffff'], pillar: '#10163a', numBg: ['#1b1f5c', '#05060f'], wall: 'holo', metal: '#1a1e38', truss: false, lasers: true, bulbs: 'cyan', weather: 'stars', props: 'space', ship: true },
+};
+function arenaSkyTex(T) {
+  return canvasTex(2048, 512, (g, W, H) => {
+    const grad = (stops) => { const gr = g.createLinearGradient(0, 0, 0, H); stops.forEach(([o, c]) => gr.addColorStop(o, c)); g.fillStyle = gr; g.fillRect(0, 0, W, H); };
+    const stars = (n, maxY) => { for (let i = 0; i < n; i++) { const y = Math.random() ** 1.6 * maxY, s = Math.random() < .1 ? 2.6 : 1.3; g.fillStyle = `rgba(255,255,255,${.3 + Math.random() * .7})`; g.fillRect(Math.random() * W, y, s, s); } };
+    if (T.sky === 'alps') { grad([[0, '#1a3a9a'], [.35, '#3a7ae0'], [.7, '#9fd0ff'], [1, '#eaf5ff']]); stars(300, H * .3);
+      for (const [col, hmax, base] of [['#c8dcf5', 260, H], ['#ffffff', 190, H]]) { let x = 0; while (x < W) { const w = 120 + Math.random() * 220, h = 60 + Math.random() * hmax; g.fillStyle = col; g.beginPath(); g.moveTo(x, base); g.lineTo(x + w / 2, base - h); g.lineTo(x + w, base); g.closePath(); g.fill(); x += w * .55; } }
+      g.fillStyle = '#1f6a2a'; for (let x = 0; x < W; x += 14 + Math.random() * 20) { const h = 40 + Math.random() * 60; g.beginPath(); g.moveTo(x, H); g.lineTo(x + 12, H - h); g.lineTo(x + 24, H); g.fill(); }
+    } else if (T.sky === 'beach') { grad([[0, '#2a1a5a'], [.3, '#8a2a7a'], [.55, '#ff5a6a'], [.75, '#ff9a4a'], [.88, '#ffd27a'], [1, '#3aa0d8']]); stars(200, H * .25);
+      g.fillStyle = '#ffd27a'; g.beginPath(); g.arc(W * .3, H * .8, 70, 0, 7); g.fill(); g.fillStyle = '#2a7ab0'; g.fillRect(0, H * .86, W, H * .14);
+      g.fillStyle = '#2a1a3a'; for (let x = 40; x < W; x += 180 + Math.random() * 240) { const h = 120 + Math.random() * 80; g.fillRect(x - 6, H * .86 - h, 12, h); for (let k = 0; k < 7; k++) { g.beginPath(); g.ellipse(x, H * .86 - h, 70, 14, k * .9, 0, 7); g.fill(); } }
+    } else if (T.sky === 'cave') { grad([[0, '#06030a'], [.5, '#1a1020'], [1, '#2a1a1a']]);
+      g.fillStyle = '#0e0810'; for (let x = 0; x < W; x += 30 + Math.random() * 60) { const h = 60 + Math.random() * 200; g.beginPath(); g.moveTo(x, 0); g.lineTo(x + 20, h); g.lineTo(x + 40, 0); g.fill(); }
+      for (let i = 0; i < 160; i++) { g.fillStyle = pick(['#7af8ff', '#c84aff', '#ffd23a']); g.globalAlpha = .5 + Math.random() * .5; g.fillRect(Math.random() * W, H * .3 + Math.random() * H * .6, 3, 3); } g.globalAlpha = 1;
+    } else { grad([[0, '#02030a'], [.5, '#0a0a2a'], [.8, '#1a0a3a'], [1, '#2a1048']]); stars(1400, H);
+      for (let i = 0; i < 6; i++) { const r = g.createRadialGradient(Math.random() * W, Math.random() * H * .7, 10, Math.random() * W, Math.random() * H * .7, 260); r.addColorStop(0, pick(['rgba(200,74,255,.35)', 'rgba(122,248,255,.3)', 'rgba(255,61,191,.3)'])); r.addColorStop(1, 'rgba(0,0,0,0)'); g.fillStyle = r; g.fillRect(0, 0, W, H); }
+      g.fillStyle = '#ff9a5a'; g.beginPath(); g.arc(W * .72, H * .38, 60, 0, 7); g.fill(); g.strokeStyle = '#ffd27a'; g.lineWidth = 6; g.beginPath(); g.ellipse(W * .72, H * .38, 110, 24, -.3, 0, 7); g.stroke();
+      g.fillStyle = '#7ab8ff'; g.beginPath(); g.arc(W * .2, H * .25, 32, 0, 7); g.fill(); }
+  }, [2, 1]);
+}
+function arenaFloorTex(T) {
+  return canvasTex(256, 256, (g) => {
+    const spk = (n, a, b) => { for (let k = 0; k < n; k++) { g.fillStyle = Math.random() < .5 ? a : b; g.fillRect(Math.random() * 256, Math.random() * 256, 3, 3); } };
+    if (T.floor === 'snow') { g.fillStyle = '#f4f8ff'; g.fillRect(0, 0, 256, 256); spk(500, 'rgba(150,180,230,.25)', 'rgba(255,255,255,.6)'); }
+    else if (T.floor === 'sand') { g.fillStyle = '#efd9a8'; g.fillRect(0, 0, 256, 256); spk(700, 'rgba(0,0,0,.08)', 'rgba(255,255,255,.3)'); g.strokeStyle = 'rgba(0,0,0,.08)'; g.lineWidth = 2; for (let y = 6; y < 256; y += 16) { g.beginPath(); for (let x = 0; x <= 256; x += 8) g.lineTo(x, y + Math.sin(x / 9 + y) * 3); g.stroke(); } }
+    else if (T.floor === 'rock') { g.fillStyle = '#3a2a2a'; g.fillRect(0, 0, 256, 256); spk(900, 'rgba(0,0,0,.3)', 'rgba(255,210,58,.35)'); g.strokeStyle = 'rgba(0,0,0,.5)'; g.lineWidth = 2; for (let k = 0; k < 10; k++) { g.beginPath(); let x = Math.random() * 256, y = Math.random() * 256; g.moveTo(x, y); for (let j = 0; j < 4; j++) { x += rand(-50, 50); y += rand(-50, 50); g.lineTo(x, y); } g.stroke(); } }
+    else { g.fillStyle = '#070a24'; g.fillRect(0, 0, 256, 256); g.strokeStyle = 'rgba(122,248,255,.25)'; g.lineWidth = 6; g.strokeRect(0, 0, 256, 256); g.strokeStyle = '#7af8ff'; g.lineWidth = 2; g.strokeRect(0, 0, 256, 256); g.beginPath(); g.moveTo(128, 0); g.lineTo(128, 256); g.moveTo(0, 128); g.lineTo(256, 128); g.stroke(); }
+  }, [T.floor === 'hex' ? 60 : 24, T.floor === 'hex' ? 60 : 24]);
+}
+function arenaProps(scene, T, neon) {
+  // (v266) anything that would stand between the camera (in front, +z) and the podium is moved round to the back
+  const ring = (n, r0, r1, f) => { for (let i = 0; i < n; i++) { const a = i / n * Math.PI * 2 + rand(-.15, .15), r = rand(r0, r1); let x = Math.cos(a) * r, z = Math.sin(a) * r; if (z > -4 && Math.abs(x) < 17) { z = -Math.abs(z) - 4; x *= 1.15; } f(x, z, a); } };
+  const L = [];
+  if (T.props === 'alps') { const pine = M('#2f7a3a'), snow = M('#ffffff'), trunk = M('#5a3a20'); ring(26, 9.5, 20, (x, z) => { const s = rand(.8, 1.5); L.push({ x, z, s, c: null }); }); instanced(scene, new THREE.CylinderGeometry(.22, .3, 1.2, 6).translate(0, .6, 0), trunk, L); instanced(scene, new THREE.ConeGeometry(1.7, 5, 7).translate(0, 3.3, 0), pine, L); instanced(scene, new THREE.ConeGeometry(1.2, 1.4, 7).translate(0, 5.3, 0), snow, L);
+    const B = []; ring(18, 7.6, 9.5, (x, z) => B.push({ x, z, s: rand(.6, 1.1), ry: rand(0, 6) })); instanced(scene, new THREE.SphereGeometry(1, 9, 6).scale(2.3, .9, 2.8), snow, B); }
+  if (T.props === 'beach') { ring(14, 10, 18, (x, z) => L.push({ x, z, s: rand(.8, 1.2) })); instanced(scene, new THREE.CylinderGeometry(.22, .34, 5.5, 7).translate(0, 2.75, 0), M('#8a5a30'), L); instanced(scene, new THREE.SphereGeometry(1.9, 8, 6).scale(1, .45, 1).translate(0, 5.6, 0), M('#3aa84a'), L);
+    const Tq = []; ring(10, 6.8, 7.4, (x, z) => Tq.push({ x, z, s: 1 })); instanced(scene, new THREE.CylinderGeometry(.08, .12, 2.2, 6).translate(0, 1.1, 0), M('#5a3a20'), Tq); ARENA.flames = instanced(scene, new THREE.ConeGeometry(.24, .7, 6).translate(0, 2.55, 0), neon('#ffb040'), Tq, false); }
+  if (T.props === 'mines') { const cm = new THREE.MeshStandardMaterial({ color: '#ffffff', emissive: '#7af8ff', emissiveIntensity: .7, roughness: .25 }); ring(30, 7.6, 16, (x, z) => L.push({ x, z, s: rand(.6, 1.8), ry: rand(0, 6), c: pick(['#7af8ff', '#c84aff', '#bff4ff']) })); instanced(scene, new THREE.ConeGeometry(.55, 2.6, 5).translate(0, 1.3, 0), cm, L);
+    const R = []; ring(16, 11, 20, (x, z) => R.push({ x, z, s: rand(1, 3), ry: rand(0, 6) })); instanced(scene, new THREE.DodecahedronGeometry(1.1, 0), M('#3a2a30', { roughness: .95 }), R);
+    const Lp = []; ring(8, 6.6, 6.8, (x, z) => Lp.push({ x, z, s: 1 })); instanced(scene, new THREE.CylinderGeometry(.09, .11, 3.2, 8).translate(0, 1.6, 0), M('#2a2e3a'), Lp); instanced(scene, new THREE.SphereGeometry(.34, 10, 8).translate(0, 3.3, 0), neon('#ffd080'), Lp, false); }
+  if (T.props === 'space') { ring(22, 12, 26, (x, z) => L.push({ x, z, y: rand(-3, 8), s: rand(.6, 2.4), ry: rand(0, 6), c: pick(['#6a6478', '#8a8498', '#5a5468']) })); instanced(scene, new THREE.DodecahedronGeometry(1.4, 0), M('#ffffff', { roughness: .95 }), L, false);
+    ARENA.srings = []; for (const [r, c, y] of [[9.5, '#7af8ff', 2.5], [11, '#c84aff', 3.5], [13, '#3cff8a', 4.5]]) { const m = new THREE.Mesh(new THREE.TorusGeometry(r, .06, 6, 96).rotateX(Math.PI / 2), neon(c)); m.position.y = y; scene.add(m); ARENA.srings.push(m); }
+    const pl = new THREE.Mesh(new THREE.SphereGeometry(6, 24, 16), M('#ff9a5a', { emissive: '#ff6a2a', emissiveIntensity: .25 })); pl.position.set(-26, 14, -40); scene.add(pl); const pr = new THREE.Mesh(new THREE.TorusGeometry(9, .5, 8, 48).rotateX(1.3), M('#ffd27a')); pr.position.copy(pl.position); scene.add(pr); }
+}
+function arenaWeather(scene, T) {
+  if (!T.weather) { ARENA.wx = null; return; }
+  const F = TT_FX[T.weather] || TT_FX.snow, n = Math.min(F.n, 500), dot = canvasTex(32, 32, (x) => { const r = x.createRadialGradient(16, 16, 0, 16, 16, 16); r.addColorStop(0, 'rgba(255,255,255,1)'); r.addColorStop(1, 'rgba(255,255,255,0)'); x.fillStyle = r; x.fillRect(0, 0, 32, 32); });
+  const sg = new THREE.BufferGeometry(), sp = new Float32Array(n * 3), cl = new Float32Array(n * 3), cc = new THREE.Color();
+  for (let i = 0; i < n; i++) { sp[i * 3] = rand(-22, 22); sp[i * 3 + 1] = rand(0, 16); sp[i * 3 + 2] = rand(-22, 16); cc.set(pick(F.c)); cl[i * 3] = cc.r; cl[i * 3 + 1] = cc.g; cl[i * 3 + 2] = cc.b; }
+  sg.setAttribute('position', new THREE.BufferAttribute(sp, 3)); sg.setAttribute('color', new THREE.BufferAttribute(cl, 3));
+  const p = new THREE.Points(sg, new THREE.PointsMaterial({ map: dot, size: F.size * 1.3, transparent: true, depthWrite: false, opacity: F.op, vertexColors: true })); p.frustumCulled = false; scene.add(p); ARENA.wx = { p, F };
+}
+function buildArena(id = 'city') {
+  const T = ARENA_THEMES[id] || ARENA_THEMES.city; ARENA.id = id;
+  const scene = new THREE.Scene(); ARENA.scene = scene; scene.environment = ENV; scene.fog = new THREE.Fog(T.fog, 45, 170);
+  const neon = (c) => new THREE.MeshBasicMaterial({ color: c, fog: false }), metal = M(T.metal, { roughness: .35, metalness: .8 });
+  const sun = addLights(scene, 1024, 6, { hemi: T.hemi, sun: T.sun }); sun.position.set(3, 10, 9);
+  const rim = new THREE.DirectionalLight(T.rims[0], 2.2); rim.position.set(-4, 5, -7); scene.add(rim);
+  const rim2 = new THREE.DirectionalLight(T.rims[1], 1.8); rim2.position.set(5, 4, -6); scene.add(rim2);
   // the sky: deep space into a pink-and-orange glow on the horizon, stars, and a neon city skyline all round
-  const skyT = canvasTex(2048, 512, (g, W, H) => {
+  const skyT = T.sky !== 'neon' ? arenaSkyTex(T) : canvasTex(2048, 512, (g, W, H) => {
     const gr = g.createLinearGradient(0, 0, 0, H); gr.addColorStop(0, '#05031c'); gr.addColorStop(.32, '#1d0a5e'); gr.addColorStop(.6, '#6a1aa8'); gr.addColorStop(.8, '#e83a9a'); gr.addColorStop(.93, '#ff9a5a'); gr.addColorStop(1, '#ffd27a');
     g.fillStyle = gr; g.fillRect(0, 0, W, H);
     for (let i = 0; i < 900; i++) { const y = Math.random() ** 1.6 * H * .62, s = Math.random() < .1 ? 2.6 : 1.3; g.fillStyle = `rgba(255,255,255,${.3 + Math.random() * .7})`; g.fillRect(Math.random() * W, y, s, s); }
@@ -7053,22 +7161,22 @@ function buildArena() {
     }
   }, [2, 1]);
   const sky = new THREE.Mesh(new THREE.CylinderGeometry(125, 125, 100, 48, 1, true), new THREE.MeshBasicMaterial({ map: skyT, side: THREE.BackSide, fog: false })); sky.position.y = 48; scene.add(sky);
-  const lid = new THREE.Mesh(new THREE.CircleGeometry(125, 48).rotateX(Math.PI / 2), neon('#05031c')); lid.position.y = 98; scene.add(lid);
+  const lid = new THREE.Mesh(new THREE.CircleGeometry(125, 48).rotateX(Math.PI / 2), neon(T.lid)); lid.position.y = 98; scene.add(lid);
   // the floor: a dark glossy grid, pink lines with cyan ones in between, fading into the purple haze
-  const gridT = canvasTex(256, 256, (g) => { g.fillStyle = '#140932'; g.fillRect(0, 0, 256, 256); g.fillStyle = '#ff3ab0'; g.fillRect(0, 0, 256, 5); g.fillRect(0, 0, 5, 256); g.fillStyle = '#3ad8ff'; g.fillRect(0, 127, 256, 2); g.fillRect(127, 0, 2, 256); }, [110, 110]);
-  const floor = new THREE.Mesh(new THREE.CircleGeometry(124, 72).rotateX(-Math.PI / 2), new THREE.MeshStandardMaterial({ map: gridT, emissive: '#ffffff', emissiveMap: gridT, emissiveIntensity: 1, roughness: .5, metalness: .2, envMapIntensity: .25 })); floor.receiveShadow = true; scene.add(floor);
+  const gridT = T.floor !== 'grid' ? arenaFloorTex(T) : canvasTex(256, 256, (g) => { g.fillStyle = '#140932'; g.fillRect(0, 0, 256, 256); g.fillStyle = '#ff3ab0'; g.fillRect(0, 0, 256, 5); g.fillRect(0, 0, 5, 256); g.fillStyle = '#3ad8ff'; g.fillRect(0, 127, 256, 2); g.fillRect(127, 0, 2, 256); }, [110, 110]);
+  const floor = new THREE.Mesh(new THREE.CircleGeometry(124, 72).rotateX(-Math.PI / 2), new THREE.MeshStandardMaterial({ map: gridT, emissive: '#ffffff', emissiveMap: gridT, emissiveIntensity: T.glow, roughness: T.glow ? .5 : .9, metalness: T.glow ? .2 : 0, envMapIntensity: .25 })); floor.receiveShadow = true; scene.add(floor);
   // the round stage: glossy, with neon rings on top and a chase of rainbow bulbs round its edge
-  const stage = new THREE.Mesh(new THREE.CylinderGeometry(5.6, 5.95, .32, 72), M('#1c1650', { roughness: .22, metalness: .75 })); stage.position.y = .16; stage.receiveShadow = true; scene.add(stage);
-  const stTop = new THREE.Mesh(new THREE.CylinderGeometry(5.52, 5.52, .03, 72), M('#2a2272', { roughness: .3, metalness: .5 })); stTop.position.y = .33; stTop.receiveShadow = true; scene.add(stTop);
-  for (const [r, c, w] of [[5.56, '#5fe8ff', .05], [4.7, '#ff5db1', .035], [4.45, '#b77aff', .025]]) { const m = new THREE.Mesh(new THREE.TorusGeometry(r, w, 6, 96).rotateX(Math.PI / 2), neon(c)); m.position.y = .35; scene.add(m); }
-  for (const [r, c] of [[6.1, '#ff5db1'], [6.6, '#5fe8ff'], [7.3, '#ffd23a']]) { const m = new THREE.Mesh(new THREE.RingGeometry(r, r + .09, 96).rotateX(-Math.PI / 2), neon(c)); m.position.y = .012; scene.add(m); }
+  const stage = new THREE.Mesh(new THREE.CylinderGeometry(5.6, 5.95, .32, 72), M(T.stage[0], { roughness: .22, metalness: .75 })); stage.position.y = .16; stage.receiveShadow = true; scene.add(stage);
+  const stTop = new THREE.Mesh(new THREE.CylinderGeometry(5.52, 5.52, .03, 72), M(T.stage[1], { roughness: .3, metalness: .5 })); stTop.position.y = .33; stTop.receiveShadow = true; scene.add(stTop);
+  for (const [r, c, w] of [[5.56, T.rings[0], .05], [4.7, T.rings[1], .035], [4.45, T.rings[2], .025]]) { const m = new THREE.Mesh(new THREE.TorusGeometry(r, w, 6, 96).rotateX(Math.PI / 2), neon(c)); m.position.y = .35; scene.add(m); }
+  for (const [r, c] of [[6.1, T.floorRings[0]], [6.6, T.floorRings[1]], [7.3, T.floorRings[2]]]) { const m = new THREE.Mesh(new THREE.RingGeometry(r, r + .09, 96).rotateX(-Math.PI / 2), neon(c)); m.position.y = .012; scene.add(m); }
   const N_B = 84, bulbs = []; for (let i = 0; i < N_B; i++) { const a = i / N_B * Math.PI * 2; bulbs.push({ x: Math.cos(a) * 5.8, y: .17, z: Math.sin(a) * 5.8, s: .085, c: '#ffffff' }); }
   ARENA.bulbs = instanced(scene, new THREE.SphereGeometry(1, 8, 6), neon('#ffffff'), bulbs, false);
   // the podium pillars: dark glass-and-metal bodies, a glowing top in the place's colour, neon edges, and the number
   ARENA.podium = new THREE.Group(); scene.add(ARENA.podium); ARENA.blocks = []; ARENA.halos = []; ARENA.numTex = [];
   const PLACES = [[0, 1.3, '#ffd23a', '#fffbe0', '#ff8a1e', '1', 'ST'], [-2.35, .95, '#7fe0ff', '#ffffff', '#4a7ae8', '2', 'ND'], [2.35, .65, '#ff8a4a', '#ffe2c8', '#d83a2a', '3', 'RD']];
   const drawNum = (g, W, H, c, c1, c2, n, suf) => {
-    const bg = g.createLinearGradient(0, 0, 0, H); bg.addColorStop(0, '#2e2680'); bg.addColorStop(1, '#0c0830'); g.fillStyle = bg; g.fillRect(0, 0, W, H);
+    const bg = g.createLinearGradient(0, 0, 0, H); bg.addColorStop(0, T.numBg[0]); bg.addColorStop(1, T.numBg[1]); g.fillStyle = bg; g.fillRect(0, 0, W, H);
     g.fillStyle = 'rgba(255,255,255,.05)'; for (let y = 0; y < H; y += 6) g.fillRect(0, y, W, 2);
     g.strokeStyle = c; g.lineWidth = 6; g.strokeRect(16, 12, W - 32, H - 24);
     const fs = H * .8, sf = fs * .34; g.font = FONT_NUM(sf); const sw = g.measureText(suf).width; g.font = FONT_NUM(fs); const nw = g.measureText(n).width;
@@ -7079,7 +7187,7 @@ function buildArena() {
   };
   for (const [x, h, c, c1, c2, n, suf] of PLACES) {
     const W = 512, H = Math.round(512 * h / 2.25), t = canvasTex(W, H, (g) => drawNum(g, W, H, c, c1, c2, n, suf)); ARENA.numTex.push(() => { drawNum(t.image.getContext('2d'), W, H, c, c1, c2, n, suf); t.needsUpdate = true; });
-    const side = M('#1e1c52', { roughness: .2, metalness: .75 }), topM = new THREE.MeshStandardMaterial({ color: c, emissive: c, emissiveIntensity: .35, roughness: .3, metalness: .4 });
+    const side = M(T.pillar, { roughness: .2, metalness: T.glow ? .75 : .2 }), topM = new THREE.MeshStandardMaterial({ color: c, emissive: c, emissiveIntensity: .35, roughness: .3, metalness: .4 });
     const front = new THREE.MeshStandardMaterial({ map: t, emissive: '#ffffff', emissiveMap: t, emissiveIntensity: .6, roughness: .35 });
     const b = new THREE.Mesh(new THREE.BoxGeometry(2.25, h, 2.2), [side, side, topM, side, front, side]); b.position.set(x, h / 2 + .34, 0); b.userData.h = h + .34; b.castShadow = b.receiveShadow = true; ARENA.podium.add(b); ARENA.blocks.push(b);
     const nm = neon(c), y0 = .34;
@@ -7094,27 +7202,26 @@ function buildArena() {
   { const c = document.createElement('canvas'); c.width = 512; c.height = 288; const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; ARENA.wall = { g: c.getContext('2d'), t, next: 0 };
     box(scene, 11.5, 6.7, .3, metal, 0, 3.45, -5.85);
     const scr = new THREE.Mesh(new THREE.PlaneGeometry(11, 6.2), new THREE.MeshBasicMaterial({ map: t, fog: false })); scr.position.set(0, 3.45, -5.68); scene.add(scr);
-    for (const [y, c2] of [[6.82, '#ff5db1'], [.08, '#5fe8ff']]) box(scene, 11.6, .1, .1, neon(c2), 0, y, -5.66); }
+    for (const [y, c2] of [[6.82, T.rings[1]], [.08, T.rings[0]]]) box(scene, 11.6, .1, .1, neon(c2), 0, y, -5.66); }
   // the truss: two towers and a beam, moving-head lights hanging from it (three of them real coloured spotlights)
-  const TX = 6.9, TZ = -3.4, TH = 7.6;
+  const TX = 6.9, TZ = -3.4, TH = 7.6; ARENA.cols = null; ARENA.heads = []; ARENA.spots = []; ARENA.lasers = [];
+  if (T.truss) {
   const truss = (x0, y0, z0, w, h, d) => { for (const [dx, dz] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) box(scene, w > .6 ? w : .07, h > .6 ? h : .07, d > .6 ? d : .07, metal, x0 + (w > .6 ? 0 : dx * .22), y0 + (h > .6 ? 0 : dx * .22), z0 + (d > .6 ? 0 : dz * .22)); };
   for (const x of [-TX, TX]) { truss(x, TH / 2, TZ, .5, TH, .5); for (let y = .6; y < TH; y += .7) box(scene, .5, .05, .5, metal, x, y, TZ); }
   truss(0, TH, TZ, TX * 2 + .5, .5, .5);
   // LED columns on the towers' fronts
   const col = []; for (const x of [-TX, TX]) for (let k = 0; k < 18; k++) col.push({ x, y: .4 + k * .4, z: TZ + .32, s: .14, c: '#ffffff' });
   ARENA.cols = instanced(scene, new THREE.BoxGeometry(1.4, 1.4, .6), neon('#ffffff'), col, false);
-  ARENA.heads = []; ARENA.spots = [];
   const headCols = ['#ff5db1', '#5fe8ff', '#ffd23a', '#7dff6a', '#b77aff', '#ff8a1e'];
   [-5.2, -3.1, -1, 1, 3.1, 5.2].forEach((x, k) => {
     const h = new THREE.Group(); h.position.set(x, TH - .55, TZ + .1); scene.add(h); box(h, .1, .3, .1, metal, 0, .3, 0);
     const body = new THREE.Mesh(new THREE.CylinderGeometry(.22, .3, .55, 14).rotateX(Math.PI / 2), M('#1a1c2c', { roughness: .4, metalness: .7 })); h.add(body);
     const lens = new THREE.Mesh(new THREE.CircleGeometry(.2, 16), neon(headCols[k])); lens.position.z = .28; h.add(lens);
     ARENA.heads.push({ h, x, k });
-  });
-  for (const [c, x] of [['#ff6ac8', -2.35], ['#fff3d0', 0], ['#6ae8ff', 2.35]]) { const s = new THREE.SpotLight(c, 85, 0, .36, .55, 2); s.position.set(x * 1.4, TH - .55, TZ + .2); s.target.position.set(x, 1.4, 0); scene.add(s, s.target); ARENA.spots.push({ s, x }); }
+  }); }
+  for (const [c, x] of [[T.rims[0], -2.35], ['#fff3d0', 0], [T.rims[1], 2.35]]) { const s = new THREE.SpotLight(c, 85, 0, .36, .55, 2); s.position.set(x * 1.4, TH - .55, TZ + .2); s.target.position.set(x, 1.4, 0); scene.add(s, s.target); ARENA.spots.push({ s, x }); }
   // lasers: thin solid beams from the towers and the screen, sweeping across the sky
-  ARENA.lasers = [];
-  [[-TX, TH + .3, TZ, '#ff3ab0'], [TX, TH + .3, TZ, '#3ad8ff'], [-TX, TH + .3, TZ, '#7dff6a'], [TX, TH + .3, TZ, '#ffd23a'], [-5.6, 6.9, -5.8, '#b77aff'], [5.6, 6.9, -5.8, '#ff8a1e'], [0, 6.9, -5.8, '#5fe8ff']].forEach(([x, y, z, c], k) => {
+  if (T.lasers) [[-TX, TH + .3, TZ, '#ff3ab0'], [TX, TH + .3, TZ, '#3ad8ff'], [-TX, TH + .3, TZ, '#7dff6a'], [TX, TH + .3, TZ, '#ffd23a'], [-5.6, 6.9, -5.8, '#b77aff'], [5.6, 6.9, -5.8, '#ff8a1e'], [0, 6.9, -5.8, '#5fe8ff']].forEach(([x, y, z, c], k) => {
     const m = new THREE.Mesh(new THREE.CylinderGeometry(.035, .035, 90, 5).translate(0, 45, 0), neon(c)); m.position.set(x, y, z); scene.add(m); ARENA.lasers.push({ m, k, side: Math.sign(x) || (k % 2 ? 1 : -1) });
   });
   // fireworks: a pool of little solid sparks
@@ -7122,10 +7229,23 @@ function buildArena() {
   ARENA.fwP = []; const m4 = new THREE.Matrix4().makeScale(0, 0, 0), wc = new THREE.Color('#ffffff');
   for (let i = 0; i < FW; i++) { ARENA.fw.setMatrixAt(i, m4); ARENA.fw.setColorAt(i, wc); ARENA.fwP.push({ life: 0, max: 1, p: new THREE.Vector3(), v: new THREE.Vector3() }); }
   ARENA.fwNext = 0;
+  arenaProps(scene, T, neon); arenaWeather(scene, T);
 }
 const _ac = new THREE.Color(), _am = new THREE.Matrix4(), _aq = new THREE.Quaternion(), _as = new THREE.Vector3();
 function drawArenaWall(t) {
-  const { g } = ARENA.wall, W = 512, H = 288;
+  const { g } = ARENA.wall, W = 512, H = 288, T = ARENA_THEMES[ARENA.id] || ARENA_THEMES.city, st = T.wall;
+  if (st !== 'led') {   // (v266) a chalet board, a surfboard sign, a mine sign or a hologram, with WINNERS! in their own style
+    if (st === 'board') { g.fillStyle = '#8a5a30'; g.fillRect(0, 0, W, H); for (let y = 0; y < H; y += 36) { g.fillStyle = `rgba(0,0,0,${.15 + Math.random() * .1})`; g.fillRect(0, y + 33, W, 3); } g.fillStyle = '#e8403a'; g.fillRect(0, 0, W, 14); g.fillRect(0, H - 14, W, 14); }
+    else if (st === 'surf') { g.fillStyle = '#2aa8c8'; g.fillRect(0, 0, W, H); g.fillStyle = '#ffffff'; g.beginPath(); g.ellipse(W / 2, H / 2, W * .47, H * .44, 0, 0, 7); g.fill(); g.fillStyle = '#ff5db1'; g.fillRect(0, H / 2 - 5, W, 10); }
+    else if (st === 'mine') { g.fillStyle = '#2a1a10'; g.fillRect(0, 0, W, H); g.fillStyle = '#5a3a20'; g.fillRect(16, 16, W - 32, H - 32); g.fillStyle = '#ffd23a'; for (let k = 0; k < 40; k++) g.fillRect(Math.random() * W, Math.random() * H, 2, 2); }
+    else { g.fillStyle = '#02050f'; g.fillRect(0, 0, W, H); g.fillStyle = 'rgba(122,248,255,.08)'; for (let y = 0; y < H; y += 4) g.fillRect(0, y, W, 2); g.strokeStyle = '#7af8ff'; g.lineWidth = 4; g.strokeRect(8, 8, W - 16, H - 16); }
+    const fs = 96 + Math.sin(t * 4) * 3; g.font = FONT_NUM(fs); g.textAlign = 'center'; g.textBaseline = 'middle'; g.lineJoin = 'round';
+    const fill = st === 'board' ? '#fff3d0' : st === 'surf' ? '#ff5db1' : st === 'mine' ? '#ffd23a' : '#7af8ff', stroke = st === 'surf' ? '#1b2a4a' : st === 'holo' ? '#0a3a4a' : '#2a1208';
+    g.lineWidth = 14; g.strokeStyle = stroke; g.strokeText('WINNERS!', W / 2, H / 2 + (st === 'holo' && Math.random() < .08 ? rand(-6, 6) : 0)); g.fillStyle = fill; g.fillText('WINNERS!', W / 2, H / 2);
+    if (st === 'board') for (let k = 0; k < 12; k++) { g.fillStyle = ['#e8403a', '#ffe14a', '#4fc84a', '#2a9fe6'][k % 4]; g.beginPath(); g.moveTo(k * 44 + 10, 18); g.lineTo(k * 44 + 44, 18); g.lineTo(k * 44 + 27, 46); g.fill(); }
+    if (st === 'holo') { g.fillStyle = 'rgba(122,248,255,.25)'; g.fillRect(0, ((t * 90) % H), W, 6); }
+    ARENA.wall.t.needsUpdate = true; return;
+  }
   g.fillStyle = '#0a0626'; g.fillRect(0, 0, W, H);
   const n = 32, bw = W / n; for (let i = 0; i < n; i++) { const v = .25 + .75 * Math.abs(Math.sin(t * 3.1 + i * .55) * Math.cos(t * 1.7 + i * .23)), bh = v * H * .55; g.fillStyle = `hsl(${(i / n * 360 + t * 60) % 360},100%,60%)`; g.fillRect(i * bw + 2, H - bh, bw - 4, bh); }
   const pulse = 1 + Math.sin(t * 4) * .04, fs = 92 * pulse; g.font = FONT_NUM(fs); g.textAlign = 'center'; g.textBaseline = 'middle'; g.lineJoin = 'round';
@@ -7138,7 +7258,11 @@ function drawArenaWall(t) {
 function updateArena(dt, cam) {
   const t = performance.now() / 1000;
   for (let i = 0; i < 84; i++) { ARENA.bulbs.setColorAt(i, _ac.setHSL((i / 84 * 2 - t * .35 + 4) % 1, 1, .6)); } ARENA.bulbs.instanceColor.needsUpdate = true;
-  for (let i = 0; i < 36; i++) { const k = i % 18, on = ((k - t * 9) % 18 + 18) % 18 < 6; ARENA.cols.setColorAt(i, on ? _ac.setHSL((t * .2 + k / 18) % 1, 1, .6) : _ac.set('#2a2060')); } ARENA.cols.instanceColor.needsUpdate = true;
+  if (ARENA.cols) { for (let i = 0; i < 36; i++) { const k = i % 18, on = ((k - t * 9) % 18 + 18) % 18 < 6; ARENA.cols.setColorAt(i, on ? _ac.setHSL((t * .2 + k / 18) % 1, 1, .6) : _ac.set('#2a2060')); } ARENA.cols.instanceColor.needsUpdate = true; }
+  { const T = ARENA_THEMES[ARENA.id] || ARENA_THEMES.city; if (T.bulbs !== 'rainbow') { const c = T.bulbs === 'gold' ? '#ffd23a' : T.bulbs === 'cyan' ? '#7af8ff' : '#ffe6a0'; for (let i = 0; i < 84; i++) ARENA.bulbs.setColorAt(i, _ac.set(((i - Math.floor(t * 8)) % 4 + 4) % 4 < 2 ? c : '#ffffff')); } }
+  if (ARENA.srings) ARENA.srings.forEach((m, i) => { m.rotation.y = t * (.2 + i * .1); m.position.y = (2.5 + i) + Math.sin(t * .8 + i) * .4; });
+  if (ARENA.flames) { for (let i = 0; i < ARENA.flames.count; i++) ARENA.flames.setColorAt(i, _ac.set(Math.random() < .5 ? '#ffb040' : '#ff7a1e')); ARENA.flames.instanceColor.needsUpdate = true; }
+  if (ARENA.wx) { const { p, F } = ARENA.wx, a = p.geometry.attributes.position; for (let i = 0; i < a.count; i++) { let y = a.getY(i) - dt * F.fall; if (y < 0) y += 16; else if (y > 16) y -= 16; a.setY(i, y); a.setX(i, a.getX(i) + Math.sin(t + i) * dt * F.sway); } a.needsUpdate = true; }
   ARENA.halos.forEach((h, i) => (h.rotation.y = t * (i ? -1.2 : 1.5)));
   for (const { h, x, k } of ARENA.heads) h.lookAt(x * .45 + Math.sin(t * .9 + k) * 2.2, 1.2 + Math.sin(t * 1.3 + k * 2) * .8, 2 + Math.cos(t * .7 + k) * 1.5);
   for (const { s, x } of ARENA.spots) s.target.position.set(x + Math.sin(t * 1.1 + x) * .6, 1.4, Math.cos(t * .9 + x) * .5);
@@ -7156,10 +7280,10 @@ function updateArena(dt, cam) {
 }
 // the winners' podium: the top three karts on the pillars 2-1-3 in the finals arena, confetti
 function showPodium(order) {
-  if (!ARENA.scene) buildArena(); const P = ARENA.podium; ARENA.camD = 0;
+  if (!ARENA.scene || ARENA.id !== TDEF.id) buildArena(TDEF.id); const P = ARENA.podium; ARENA.camD = 0;   // (v266) the arena of the map you raced on
   for (const r of SHOW.podRacers || []) P.remove(r.root);
   SHOW.podRacers = order.slice(0, 3).map((r, i) => {
-    const m = makeRacerModel(r.ch, r.player ? save.kart.color : r.ch.color, r.player ? save.kart.sticker : r.ch.sticker || 'none', r.player), b = ARENA.blocks[i];
+    const m = makeRacerModel(r.ch, r.player ? save.kart.color : r.ch.color, r.player ? save.kart.sticker : r.ch.sticker || 'none', r.player, null, !!TDEF.ship), b = ARENA.blocks[i];   // (v266: the starships on Star Loop)
     m.root.position.set(b.position.x, b.userData.h, 0); m.root.rotation.y = -b.position.x * .12; P.add(m.root); return m;
   });
   for (let i = 0; i < 60; i++) { const c = el('div', 'confetti'); c.style.left = rand(0, 100) + '%'; c.style.background = pick(['#ffe14a', '#ff5db1', '#4fc84a', '#3c8cf0', '#ff8a1e']); c.style.animationDuration = rand(1.8, 3.4) + 's'; c.style.animationDelay = rand(0, 1.5) + 's'; stage.appendChild(c); setTimeout(() => c.remove(), 5200); }
@@ -7283,6 +7407,7 @@ window.FK.ask = (secs = 30) => race && !race.dialog && askOne('jump', `${ico('ic
 window.FK.fit = (id, patch) => { const f = CHAR_FIT[id]; if (patch.helm) { Object.assign(f.helm, patch.helm); delete patch.helm; } Object.assign(f, patch); driverCache.clear(); kartCache.clear(); setShowRacer(); return f; };
 window.FK.CHAR_FIT = CHAR_FIT;
 window.FK.goTracks = () => goTracks();
+window.FK.podium = (p = 1) => race && showResults(p);   // test hook: jump to the end-of-race podium
 window.FK.pass = (nuts) => { if (nuts != null) { save.pass = { nuts }; store(); refreshCounters(); } return passOf(); };   // test hook: set the Game Pass nuts
 window.FK.goPass = () => goPass();
 window.FK.goLicence = () => goLicence();
@@ -7349,7 +7474,8 @@ document.addEventListener('visibilitychange', () => {
   } else if (Snd.ctx && Snd.ctx.state === 'suspended') Snd.ctx.resume();
 });
 (async () => {
-  const bar = $('loadBar'), lt = $('loadT'), nut = document.querySelector('.ldnut'), pc = $('loadPct'), step = async (p, msg) => { bar.style.width = p + '%'; { const L0 = document.getElementById('loading'); if (L0) L0.style.setProperty('--p', p); }   /* (v249) the loading circle */ if (nut) nut.style.left = p + '%'; if (pc) pc.textContent = p + '%'; lt.textContent = msg; await wait(30); };   // (v171: the nut rides the bar, the percentage beside it)
+  const bar = $('loadBar'), lt = $('loadT'), nut = document.querySelector('.ldnut'), pc = $('loadPct'), show = (p) => { p = Math.round(p); window.__ldReal = Date.now(); if (window.__ldShow) return window.__ldShow(p); bar.style.width = p + '%'; { const L0 = document.getElementById('loading'); if (L0) L0.style.setProperty('--p', p); }   /* (v249) the loading circle */ if (nut) nut.style.left = p + '%'; if (pc) pc.textContent = p + '%'; }, step = async (p, msg) => { show(p); lt.textContent = msg; await wait(30); };   // (v171: the nut rides the bar, the percentage beside it)   (v266: show() also feeds the page's stall watchdog)
+  LDP.on = (f) => show(10 + f * 34);
   try {
     await step(10, 'Building Foxino…'); await loadFoxino(); buildBase();
     await step(45, 'Painting the karts…'); for (const ch of CHARACTERS) { driverBody(ch); if (!BASE.dk) kartBody(ch.color); } if (!BASE.dk) kartBody(save.kart.color);
@@ -7359,6 +7485,6 @@ document.addEventListener('visibilitychange', () => {
     await step(100, 'Ready!');
     if (!save.introDone && !save.races && !DEV() && !/[?&]nointro/.test(location.search)) runIntro(); else { if (!save.introDone) { save.introDone = true; store(); } goMenu(); }   // (v172) the first open: the story first
     $('loading').style.opacity = 0; setTimeout(() => $('loading').remove(), 500);
-    window.FK.ready = true; requestAnimationFrame(loop);
-  } catch (e) { lt.textContent = 'Oops: ' + e.message; console.error(e); }
+    window.FK.ready = true; LDP.on = null; requestAnimationFrame(loop);
+  } catch (e) { lt.textContent = 'Oops: ' + e.message; console.error(e); if (window.__ldFail) window.__ldFail(e.message); }
 })();

@@ -14,7 +14,7 @@
    No additive blending and nothing see-through: the lights are solid emissive, the logo plate is an
    alphaTest cut-out (the user's phone draws blended "glow" as an opaque slab).
    ===================================================================================================== */
-import * as THREE from 'three';
+import * as THREE from './lib/three.module.min.js';
 import { DEFAULT_SKIN, logoPlate } from './kart-skin.js?v=11';
 
 export const KART_MODELS = [

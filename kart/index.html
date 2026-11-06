@@ -1595,6 +1595,10 @@ body.portrait .tk .tkbar{bottom:40px;height:18px}body.portrait .tk .tkbar b{font
 .ldring{position:absolute;inset:0;border-radius:50%;background:conic-gradient(#4a10ff,#9a28ff calc(var(--p) * .5%),#ff3fbf calc(var(--p) * 1%),rgba(74,16,255,.16) 0);-webkit-mask:radial-gradient(farthest-side,transparent calc(100% - 15px),#000 calc(100% - 14px));mask:radial-gradient(farthest-side,transparent calc(100% - 15px),#000 calc(100% - 14px))}
 #loading.ld3 .ldrow{justify-content:center;padding:0}
 #loading.ld3 .ldrow #loadT{font-weight:800;color:#3a237a}
+/* (v266) waiting for the map's models on a slow device */
+.mapwait{position:fixed;inset:0;z-index:80;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;background:rgba(20,16,60,.72);color:#fff;font:400 24px/1 'Luckiest Guy',var(--f);letter-spacing:.04em}
+.mapwait i{width:56px;height:56px;border-radius:50%;border:7px solid rgba(255,255,255,.25);border-top-color:#ffe14a;animation:ldspin 1s linear infinite}
+#loading .ldretry{margin-top:8px;padding:10px 26px;border:3px solid #221a4e;border-radius:14px;background:#ffe14a;color:#221a4e;font:400 20px/1 'Luckiest Guy',var(--f);letter-spacing:.06em;box-shadow:0 5px 0 #221a4e;cursor:pointer;pointer-events:auto;position:relative;z-index:5}
 #loading.ld3 #loadPct{position:absolute;left:50%;top:66px;transform:translate(-50%,-50%);z-index:1;font:400 30px/1 "Luckiest Guy",var(--f);color:#4a10ff;text-shadow:none}
 #loading.ld3 .ldtip{color:#221a4e;font-weight:700}
 @media (orientation:portrait){#loading.ld3 .ldhero{top:calc(clamp(40px,7vh,58px) + 3%);bottom:calc(5% + 240px)}}
@@ -1624,6 +1628,13 @@ body.ctl-right.joyfloat #hud #pad #joyzone{left:auto;right:0}
 body.ctl-right #slot .tap{left:auto}
 #intro .spick{flex-wrap:wrap;justify-content:center}
 .spick button span{font-size:11px;text-align:center}
+/* (v266) the garage: one UPGRADE button under the level card */
+.gone{display:flex;flex-direction:column;align-items:stretch;gap:8px;margin:2px 0 10px}
+.gbuy.big{--c:var(--yellow);font-size:22px;padding:14px 10px;display:flex;align-items:center;justify-content:center;gap:8px}
+.gbuy.big .coin{width:22px;height:22px}
+.gwhat{font-size:12.5px;color:#c8d4f0;text-align:center;line-height:1.35}
+.gmax{padding:12px;border-radius:14px;text-align:center;background:linear-gradient(135deg,#c88400,#ffd84a 55%,#e8a800);border:3px solid var(--ink);color:var(--ink)}
+.gmax b{display:block;font:400 22px 'Lilita One',var(--f)}.gmax small{font-size:12.5px;font-weight:700}
 </style>
 </head>
 <body>
@@ -1745,9 +1756,22 @@ body.ctl-right #slot .tap{left:auto}
   </div>
   <script>(function(){var T=['Tap the screen at GO! for a rocket start','Hold the drift for blue, orange, then purple sparks','Answer fast in the pit: speed counts as well as the right answer','Further maps give more nuts for your Game Pass','Every 10 Pass levels a new map opens','Crates hold new paints and tyre styles'],i=Math.floor(Math.random()*T.length),e=document.getElementById('loadTip');function n(){if(!e||!e.isConnected)return;e.classList.remove('on');setTimeout(function(){e.innerHTML='<b>TIP</b> '+T[i++%T.length];e.classList.add('on')},250);setTimeout(n,3200)}n()})();</script>
 </div>
+<script>/* (v266, the user: "on weaker devices it stays on 0% when it first loads") until the game code runs, the circle creeps up
+   while the files download; a load error says so; and if nothing moves for a long time a RELOAD button appears */
+(function(){var pc=document.getElementById('loadPct'),lt=document.getElementById('loadT'),L=document.getElementById('loading'),p=0,t0=Date.now(),bar=document.getElementById('loadBar');
+function set(v){if(pc)pc.textContent=Math.floor(v)+'%';if(L)L.style.setProperty('--p',Math.floor(v));if(bar)bar.style.width=Math.floor(v)+'%';}
+function retry(msg){if(lt&&msg)lt.textContent=msg;if(!L||document.getElementById('ldRetry'))return;var b=document.createElement('button');b.id='ldRetry';b.className='ldretry';b.textContent='RELOAD';b.onclick=function(){location.reload();};var box=L.querySelector('.ldbox')||L;box.appendChild(b);}
+window.__ldShow=function(v){window.__ldAt=v;if(v>p){p=v;set(p);}};
+window.__ldFail=function(m){retry('Oops: '+(m||'something did not load')+' \u2014 tap RELOAD');};
+var iv=setInterval(function(){if(!document.getElementById('loading')||(window.FK&&FK.ready)){clearInterval(iv);return;}
+  if(!window.__ldReal){p+=(9-p)*.06;set(p);if(Date.now()-t0>4000&&lt)lt.textContent='Downloading the game\u2026';if(Date.now()-t0>30000)retry('This is taking long \u2014 a slow connection? Tap RELOAD to try again');}
+  else{var tg=Math.min((window.__ldAt||0)+9,99);if(p<tg){p+=(tg-p)*.035;set(p);}if(Date.now()-window.__ldReal>40000)retry('This is taking long \u2014 tap RELOAD to try again');}},300);
+addEventListener('error',function(e){if(window.FK&&FK.ready||window.__ldReal)return;var t=e.target;if(t&&t.tagName==='SCRIPT'){if(/kart\//.test(t.src||''))window.__ldFail('a game file did not download');}else if(e.message&&/kart\/|^$/.test(e.filename||''))window.__ldFail(e.message);},true);
+addEventListener('unhandledrejection',function(e){if(window.FK&&FK.ready||window.__ldReal)return;var r=e.reason;window.__ldFail(r&&r.message||String(r));});})();</script>
 <script src="packages.js?v=1"></script>
 <script src="/shared/pack-picker.js?v=8"></script>
 <script type="importmap">{"imports":{"three":"./lib/three.module.min.js"}}</script>
-<script type="module" src="game.js?v=265"></script>
+<link rel="modulepreload" href="lib/three.module.min.js"><link rel="modulepreload" href="game.js?v=266"><link rel="modulepreload" href="models.js?v=52"><link rel="modulepreload" href="learn.js?v=52"><link rel="modulepreload" href="kart-skin.js?v=11"><link rel="modulepreload" href="lib/GLTFLoader.js?v=2"><link rel="modulepreload" href="lib/BufferGeometryUtils.js?v=2"><link rel="modulepreload" href="racers.js?v=2"><link rel="modulepreload" href="lib/RoomEnvironment.js?v=2">
+<script type="module" src="game.js?v=266"></script>
 </body>
 </html>

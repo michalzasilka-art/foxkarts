@@ -9,7 +9,7 @@
      Rob     round cyan robot, black screen face with smiling eyes, antenna with a red heart, orange battery window
    Foxino himself is the Higgsfield model (foxino-seated.glb).
    ===================================================================================================== */
-import * as THREE from 'three';
+import * as THREE from './lib/three.module.min.js';
 
 const M = (color, o = {}) => new THREE.MeshStandardMaterial({ color, roughness: .7, ...o });
 const V = (x, y, z) => new THREE.Vector3(x, y, z);

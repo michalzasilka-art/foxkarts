@@ -1,6 +1,6 @@
 // Foxino in a racing helmet, and a grey racing go-kart, built from smooth shapes.
 // Both face +z, stand on y = 0, in metres (Foxino is about 1.45 m to the ear tips; the kart is about 1.8 m long).
-import * as THREE from 'three';
+import * as THREE from './lib/three.module.min.js';
 
 const R = Math.random;
 // detail level: 1 = full (for the model files), lower = lighter (for the game on phones)
