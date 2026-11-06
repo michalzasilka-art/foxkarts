@@ -3803,6 +3803,7 @@ const _cm = new THREE.Matrix4(), _cm2 = new THREE.Matrix4(), _cax = new THREE.Ve
 const _cw = new THREE.Vector3(), _cw2 = new THREE.Vector3(), _cw3 = new THREE.Vector3(), _cw4 = new THREE.Vector3(), _cup = new THREE.Vector3(0, 1, 0);
 function updateCrew(dt) {
   glowTick(dt);   // (v253) the glow on the part being worked on
+  upFxTick(dt);   // (v267) the pit upgrades on your kart
   const W = WORLD, C = W && W.crew; if (!C) return;
   if (!race || !C.on || C.player !== race.player) { crewWheelsReset(C); if (C.g.visible) C.g.visible = false; C.on = false; if (race) race.pitLift = 0; return; }
   dt = Math.min(dt, .05); C.t += dt;
@@ -3917,7 +3918,7 @@ function runQuiz(sets, tag, onDone) {
   if (DEV()) {   // (v250, the user: "dev mode removes all the questions") the crew just does the job: a short stop, full marks
     // (v255, the user: "in dev mode the pit stop counts as if all 9 questions were right — all the boosts") every set is a
     // PERFECT 100 % (the most a stop can give), the parts light up as the crew works, and the board shows it before you go
-    const pct = {}; sets.forEach(([k, n], i) => { pct[k] = 100; setTimeout(() => { if (race !== R0) return; race.pitPhase = k; partGlow(P, (PART_GLOW[k] || [])[0]); }, i * 700); });
+    const pct = {}; sets.forEach(([k, n], i) => { pct[k] = 100; setTimeout(() => { if (race !== R0) return; race.pitPhase = k; partGlow(P, (PART_GLOW[k] || [])[0]); }, i * 700); for (let a = 0; a < n; a++) setTimeout(() => { if (race === R0) pitUpFx(P, k, a, true); }, i * 700 + 150 + a * 180); });
     setTimeout(() => {
       if (race !== R0) return; partGlow(P, null); race.pitPhase = 'board'; D.hidden = false;
       pitScoreCard(D, sets.map(([k]) => k), pct, tag, () => {
@@ -3951,6 +3952,7 @@ function runQuiz(sets, tag, onDone) {
     D.innerHTML = '<div class="veil pit"></div>';
     questionCard(D.firstChild, `${tag} · ${S.name}`, L.makeQuestion(it), (ok, fast) => {
       const g = got[q.k]; g.n++; g.res.push(!!ok); if (ok) g.sum += PIT_RIGHT + PIT_FAST * clamp(fast || 0, 0, 1);
+      pitUpFx(P, q.k, q.i, !!ok);   // (v267) the upgrade goes onto your kart as you answer
       partGlow(P, null); step(j + 1);
     }, TUNE.pitSecs + (L.level() === 0 ? 2 : 0), null, true);
     // (v160) where you are in the set: three dots in the set's colour; the phone sheet slides up only on the first card
@@ -4023,6 +4025,64 @@ function glowTick(dt) {
   G.k += (G.want - G.k) * Math.min(1, dt * (G.want ? 10 : 5)); G.t += dt;
   const on = G.k > .02; G.s.visible = on; if (!on) return;
   G.s.material.opacity = G.k * (.75 + .25 * Math.sin(G.t * 7)); G.s.scale.setScalar(G.size * (1 + .12 * Math.sin(G.t * 7)));
+}
+/* (v267, the user: "make the pit stop upgrades visible on your kart while you are answering the question, so you get
+   more of the feeling") every RIGHT answer bolts its upgrade onto your 3D kart there and then, and it stays for the race:
+   REPLACING TYRES — that wheel gets a glowing cyan tyre ring (the third answer does both rear wheels; a starship gets a
+   shield halo); SPEED — a chrome exhaust with a flickering flame (up to three); MAINTENANCE — a rear spoiler that grows
+   and turns from yellow to orange to gold. A wrong answer only puffs grey smoke off that part. */
+const UPFX_MAT = {};
+const upMat = (c, e = .3, glow = false) => UPFX_MAT[c + e + glow] || (UPFX_MAT[c + e + glow] = glow ? new THREE.MeshBasicMaterial({ color: c, transparent: true, opacity: .95, depthWrite: false, toneMapped: false }) : new THREE.MeshStandardMaterial({ color: c, emissive: c, emissiveIntensity: e, roughness: .35, metalness: .2 }));
+// a little label that pops up off the part and floats away: +GRIP, +SPEED, NEW TYRE
+function upLabel(m, at, text, col) {
+  const cv = document.createElement('canvas'); cv.width = 256; cv.height = 72; const g = cv.getContext('2d'); g.font = '52px "Luckiest Guy", Fredoka, Arial'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.lineWidth = 10; g.strokeStyle = '#1b1f3a'; g.strokeText(text, 128, 40); g.fillStyle = col; g.fillText(text, 128, 40);
+  const t = new THREE.CanvasTexture(cv); t.colorSpace = THREE.SRGBColorSpace; const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: t, transparent: true, depthTest: false, depthWrite: false, toneMapped: false, fog: false }));
+  sp.renderOrder = 999; sp.scale.set(1.1, .31, 1); sp.position.copy(at).add(new THREE.Vector3(0, .5, 0)); m.ups.add(sp); m.ups.userData.labels.push({ sp, t: 0 });
+}
+function pitUpFx(P, k, i, ok) {
+  const m = P && P.model; if (!m || !m.body) return; const B = m.body; B.updateMatrixWorld(true);
+  const spot = (part) => partSpot(m, part).clone();
+  if (!ok) { const w = B.localToWorld(spot((PART_GLOW[k] || [])[i % 4] || 'engine')); for (let n = 0; n < 7; n++) puff(w.x, w.y + .25, w.z, '#8a8a92', rand(.25, .45), rand(.5, .8), rand(-.7, .7), rand(.8, 1.6), rand(-.7, .7)); return; }
+  if (!m.ups) { m.ups = new THREE.Group(); B.add(m.ups); m.ups.userData = { fix: 0, spd: 0, imm: 0, flames: [], pops: [], wing: null, rings: {}, labels: [] }; }
+  const U = m.ups.userData, ship = (m.spins || []).length < 4, ws = B.getWorldScale(new THREE.Vector3()).y || 1;
+  const pop = (o) => { o.scale.setScalar(.01); U.pops.push({ o, t: 0 }); m.ups.add(o); return o; };
+  const bx = new THREE.Box3().setFromObject(B), bc = B.worldToLocal(bx.getCenter(new THREE.Vector3())), bs = bx.getSize(new THREE.Vector3()).divideScalar(ws);
+  const eng = spot('engine'), ex = spot('exhaust'), back = ship ? -1 : Math.sign(ex.z - spot('nose').z) || 1;
+  if (k === 'imm') {
+    upLabel(m, ship ? bc : spot(['fl', 'fr', 'rl'][i % 3]), 'NEW TYRE', '#59d8ff');
+    if (ship) { if (U.imm < 3) { const r = Math.max(bs.x, bs.z) * .3, t = pop(new THREE.Mesh(new THREE.TorusGeometry(r, .045, 8, 48).rotateX(Math.PI / 2), upMat('#2ad0ff', 0, true))); t.position.copy(bc); t.position.y += -bs.y * .22 + U.imm * .14; } }
+    else for (const part of i % 3 === 2 ? ['rl', 'rr'] : [['fl', 'fr', 'rl'][i % 3]]) {
+      const w = m.spins.find((sp) => B.worldToLocal(sp.getWorldPosition(new THREE.Vector3())).distanceTo(spot(part)) < .05) || m.spins[0];
+      const wb = new THREE.Box3().setFromObject(w), R = (wb.max.y - wb.min.y) / 2 / ws;
+      if (U.rings[part]) { U.pops.push({ o: U.rings[part], t: 0, from: 1.35 }); continue; }   // (a later stop: that tyre flashes again)
+      const t = pop(new THREE.Mesh(new THREE.TorusGeometry(R * 1.0, R * .17, 8, 32).rotateY(Math.PI / 2), upMat('#2ad0ff', 0, true))); t.position.copy(spot(part)); U.rings[part] = t;
+    }
+    U.imm++;
+  } else if (k === 'spd') {
+    upLabel(m, ship ? bc : ex, '+SPEED', '#ff8a1e');
+    if (U.spd >= 3) { U.spd++; U.flameK = Math.min(1.45, 1 + (U.spd - 3) * .1); for (const q of U.flames) U.pops.push({ o: q.userData.g, t: 0, from: 1.3 }); sfx.spark(3); return; }   // more than three: the flames grow
+    const xs = [-.17, .17, 0], x = xs[U.spd % 3], g = new THREE.Group(), gi = new THREE.Group(); g.add(gi);
+    const pipe = new THREE.Mesh(new THREE.CylinderGeometry(.065, .08, .3, 10).rotateX(Math.PI / 2), new THREE.MeshStandardMaterial({ color: '#c8ccd8', roughness: .2, metalness: .95 })); if (!ship) gi.add(pipe);   // (a starship's flames come out of its own engines)
+    const fl = new THREE.Mesh(new THREE.ConeGeometry(.075, .42, 10).rotateX(back * Math.PI / 2).translate(0, 0, back * .34), upMat('#ff6a00', 0, true)); gi.add(fl); fl.userData.g = g;
+    const core = new THREE.Mesh(new THREE.ConeGeometry(.04, .24, 8).rotateX(back * Math.PI / 2).translate(0, 0, back * .26), upMat('#ffd84a', 0, true)); gi.add(core); core.userData.g = g;
+    g.position.set(ship ? bc.x + [-.43, .43, 0][U.spd % 3] * bs.x : x, ship ? bc.y - bs.y * .3 : ex.y + .02, ship ? bc.z + back * bs.z * .4 : ex.z + back * .05); pop(g); U.flames.push(fl, core); U.spd++;
+  } else {
+    upLabel(m, ship ? bc : eng, '+GRIP', '#ffc324');
+    U.fix++; const col = ['#ffc324', '#ff8a1e', '#e8a800'][Math.min(2, U.fix - 1)];
+    if (!U.wing) { const g = new THREE.Group(), w = ship ? bs.x * .7 : 1.0;
+      g.add(new THREE.Mesh(new THREE.BoxGeometry(w, .045, .26), upMat(col, .5)));
+      for (const sx of [-1, 1]) { const e = new THREE.Mesh(new THREE.BoxGeometry(.04, .22, .3), upMat('#1b1f3a', .1)); e.position.set(sx * w / 2, -.06, 0); g.add(e); const st = new THREE.Mesh(new THREE.BoxGeometry(.04, .3, .06), upMat('#1b1f3a', .1)); st.position.set(sx * w * .22, -.17, 0); g.add(st); }
+      g.position.set(0, ship ? bc.y + bs.y * .5 : eng.y + .42, ship ? bc.z + back * bs.z * .3 : eng.z + back * .3); U.wing = pop(g);
+    } else { U.wing.children[0].material = upMat(col, .3 + Math.min(3, U.fix) * .1); U.pops.push({ o: U.wing, t: 0, from: 1.25 }); if (U.fix <= 3) U.wing.position.y += .05; }
+  }
+  sfx.spark(Math.min(3, (U[k] || 1)));
+}
+function upFxTick(dt) {
+  const m = race && race.player && race.player.model, U = m && m.ups && m.ups.userData; if (!U) return;
+  for (let n = U.pops.length - 1; n >= 0; n--) { const q = U.pops[n]; q.t += dt; const k = Math.min(1, q.t / .4), s = q.from ? q.from + (1 - q.from) * k : k < .7 ? k / .7 * 1.25 : 1.25 - (k - .7) / .3 * .25; q.o.scale.setScalar(Math.max(.01, s)); if (k >= 1) { q.o.scale.setScalar(1); U.pops.splice(n, 1); } }
+  const sp = clamp((race.player.speed || 0) / 25, .35, 1.3);
+  for (const f of U.flames) f.scale.set(1, 1, sp * (U.flameK || 1) * rand(.75, 1.25));
+  for (let n = U.labels.length - 1; n >= 0; n--) { const q = U.labels[n]; q.t += dt; q.sp.position.y += dt * .9; q.sp.material.opacity = q.t < .9 ? 1 : Math.max(0, 1 - (q.t - .9) / .5); if (q.t > 1.4) { q.sp.removeFromParent(); q.sp.material.map.dispose(); q.sp.material.dispose(); U.labels.splice(n, 1); } }
 }
 const PIT_SETS = {
   fix: { name: 'MAINTENANCE', icon: 'icon-wrench', col: '#ffc324', say: 'Maintenance!', won: 'GRIP' },
@@ -4420,11 +4480,15 @@ function styleStretch(g, def, r) {
   const { i0, i1 } = TRACK.sec, inS = (i) => i >= i0 && i < i1, space = def.id === 'space', KH = def.kerbH || .12, cave = !!def.tube;
   const add = (m) => { g.add(m); return m; };
   const kind = T.road[1], glossy = /ice|wet|glass|gold/.test(kind), glow = /grid|lava|glass/.test(kind) || space;
+  // (v267, the user: "make the default road the same texture as the normal road… but you can make their ice or snow")
+  // only SNOW and ICE lay their own surface (and kerbs) on the road; every other type keeps the map's own road and
+  // changes only what is beside it, above it and in the air
+  const surf = kind === 'snow' || kind === 'ice';
   const tex = ttTex(kind, T.road[0]);
   const rm = new THREE.MeshStandardMaterial({ map: tex, roughness: glossy ? .18 : .85, metalness: glossy ? .25 : 0, fog: !def.clearRoad, side: space ? THREE.DoubleSide : THREE.FrontSide,
     emissive: glow ? '#ffffff' : '#000000', emissiveMap: glow ? tex : null, emissiveIntensity: glow ? (kind === 'lava' ? .9 : .45) : 0, transparent: kind === 'glass', opacity: kind === 'glass' ? .82 : 1 });
-  add(new THREE.Mesh(strip(-HALF, HALF, .05, .05, { uvLen: 12, only: inS }), rm)).receiveShadow = true;
-  if (T.kerb) { const K = T.kerb.map((c) => new THREE.Color(c)), kc = (i) => K[Math.floor(i / 5) % 2], km = space ? new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.DoubleSide }) : new THREE.MeshStandardMaterial({ vertexColors: true, roughness: .7, fog: !def.clearRoad });
+  if (surf) add(new THREE.Mesh(strip(-HALF, HALF, .05, .05, { uvLen: 12, only: inS }), rm)).receiveShadow = true;
+  if (T.kerb && surf) { const K = T.kerb.map((c) => new THREE.Color(c)), kc = (i) => K[Math.floor(i / 5) % 2], km = space ? new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.DoubleSide }) : new THREE.MeshStandardMaterial({ vertexColors: true, roughness: .7, fog: !def.clearRoad });
     for (const s of [-1, 1]) add(new THREE.Mesh(s > 0 ? strip(HALF, HALF + .9, .05, KH + .02, { colour: kc, only: inS }) : strip(-HALF - .9, -HALF, KH + .02, .05, { colour: kc, only: inS }), km)); }
   const cols = Array.isArray(T.c) ? T.c : [T.c || '#ffffff'], col = (k) => cols[((k % cols.length) + cols.length) % cols.length];
   const H0 = space ? 0 : -.08, lo = HALF + (T.lo ?? (cave ? 1.0 : 1.6)), hh = T.h ?? (cave ? .9 : H0);
@@ -4496,6 +4560,8 @@ function buildTrackFx(scene, W) {
   const n = 700, sg = new THREE.BufferGeometry(); sg.setAttribute('position', new THREE.BufferAttribute(new Float32Array(n * 3), 3)); sg.setAttribute('color', new THREE.BufferAttribute(new Float32Array(n * 3), 3));
   W.fx = new THREE.Points(sg, new THREE.PointsMaterial({ map: dot, size: .2, transparent: true, depthWrite: false, opacity: .9, vertexColors: true })); W.fx.frustumCulled = false; W.fx.visible = false; W.fxKind = null; scene.add(W.fx);
 }
+const SNOW_SLOW = .92, ICE_GRIP = 3.8;   // (v267) snow: 8 % lower top speed; ice: the travel direction follows the nose at 3.8/s (AI 7.6/s)
+const surfOf = (r) => { if (!inRouteSec(r) || r.idx < TRACK.sec.i0 || r.idx >= TRACK.sec.i1) return null; const T = typeOf(r.route); const k = T && T.road && T.road[1]; return k === 'snow' || k === 'ice' ? k : null; };
 const typeOf = (r) => { const L = TDEF && TRACK_TYPES[TDEF.id]; return L ? L[Math.min(r || 0, L.length - 1)] : null; };
 function updateTrackType(dt) {
   const W = WORLD, P = race && race.player; if (!W || !P || !TRACK.routes) return;
@@ -4540,24 +4606,45 @@ function routeSs(W) {
     return (bi + fr) * STEP;
   };
   for (const o of W.ramps.concat(W.pads)) o.sr = TRACK.routes.map((R, r) => (r ? near(o.s, R) : o.s));
+  rampsOnRoutes(W);
+}
+// (v267, the user: "on the new roads you didn't match the jumps… I go through it and I jump right after that") a ramp or
+// boost pad in the changing stretch was drawn once, on the first road, while each variant jumps at its own distance:
+// on a variant you drove through a ramp that wasn't on your road and took off where nothing showed. Now every one of
+// them in (or touching) the stretch is drawn on EVERY variant's own road, at exactly the distance its jump uses, inside
+// that variant's group, so you see the ramp where you take off
+function rampsOnRoutes(W) {
+  if (!W.routeGroups || !TRACK.sec) return; const { i0, i1 } = TRACK.sec, N = TRACK.routes[0].length;
+  const touches = (s, len) => { const a = Math.floor(s / STEP) % N, b = Math.ceil((s + len) / STEP) % N; return b >= i0 - 4 && a <= i1 + 4; };
+  for (const [list, len, mk] of [[W.ramps, RAMP_LEN, (o, r) => W.rampMesh(o.sr[r], W.routeGroups[r])], [W.pads, 2, (o, r) => W.padMesh(o.sr[r], o.lat, W.routeGroups[r])]]) {
+    for (const o of list) {
+      if (!o.ms || !touches(o.s - 2, len + 2)) continue;
+      for (const m of o.ms) { m.removeFromParent(); W.routeGroups[0].add(m); }   // the first road's own, shown with its road
+      o.msr = [o.ms]; for (let r = 1; r < TRACK.routes.length; r++) { TRACK.pts = TRACK.routes[r]; o.msr[r] = mk(o, r); }
+      TRACK.pts = TRACK.routes[0]; o.perRoute = true;
+    }
+  }
 }
 function buildArcade(scene, W, def) {
   // jump ramps across the whole road: an orange slope with white chevrons (v119, the user — the same on every map)
   const rampTex = chevrons('#ffffff', '#ffffff', '#ff7a18'); rampTex.wrapS = rampTex.wrapT = THREE.RepeatWrapping; rampTex.repeat.set(4, 1);
   const rampMat = new THREE.MeshStandardMaterial({ map: rampTex, emissive: '#ffffff', emissiveMap: rampTex, emissiveIntensity: .32, roughness: .45, side: THREE.DoubleSide }), sideMat = M('#1b2a4a', { roughness: .6, side: THREE.DoubleSide });
-  W.ramps = RAMP_AT.map((f) => {
-    const s0 = f * TRACK.L, top = new THREE.Mesh(trackQuad(s0, s0 + RAMP_LEN, -HALF - .4, HALF + .4, .03, RAMP_H), rampMat); top.castShadow = top.receiveShadow = true; scene.add(top);
+  // (v267) a ramp's meshes on whichever road TRACK.pts is at the moment (rampsOnRoutes draws one on every variant)
+  W.rampMesh = (s0, into) => {
+    const top = new THREE.Mesh(trackQuad(s0, s0 + RAMP_LEN, -HALF - .4, HALF + .4, .03, RAMP_H), rampMat); top.castShadow = top.receiveShadow = true; into.add(top);
     const e = at(s0 + RAMP_LEN).p, a = at(s0).p, pos = [];
     const P = (p, l, y) => rolled(p, l, y), L0 = -HALF - .4, L1 = HALF + .4;
     pos.push(...P(e, L0, 0), ...P(e, L1, 0), ...P(e, L0, RAMP_H), ...P(e, L1, 0), ...P(e, L1, RAMP_H), ...P(e, L0, RAMP_H));
     for (const l of [L0, L1]) pos.push(...P(a, l, .03), ...P(e, l, 0), ...P(e, l, RAMP_H));
-    const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.computeVertexNormals(); scene.add(new THREE.Mesh(g, sideMat));
-    return { s: s0 };
-  });
+    const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.computeVertexNormals(); const side = new THREE.Mesh(g, sideMat); into.add(side);
+    return [top, side];
+  };
+  W.ramps = RAMP_AT.map((f) => { const s0 = f * TRACK.L; return { s: s0, ms: W.rampMesh(s0, scene) }; });
   // boost pads: glowing arrows that scroll forwards
   W.padTex = chevrons(...def.pad); W.padTex.wrapT = THREE.RepeatWrapping;
   const padMat = new THREE.MeshStandardMaterial({ map: W.padTex, emissive: '#ffffff', emissiveIntensity: .55, emissiveMap: W.padTex, roughness: .35, polygonOffset: true, polygonOffsetFactor: -2 });
-  W.pads = PAD_AT.map(({ f, lat }) => { const s0 = f * TRACK.L - 2; scene.add(new THREE.Mesh(trackQuad(s0, s0 + 4, lat - 1.6, lat + 1.6, .05, .05), padMat)); return { s: f * TRACK.L, lat }; });
+  W.padMesh = (s, lat, into) => { const m = new THREE.Mesh(trackQuad(s - 2, s + 2, lat - 1.6, lat + 1.6, .05, .05), padMat); into.add(m); return [m]; };
+  W.pads = PAD_AT.map(({ f, lat }) => ({ s: f * TRACK.L, lat, ms: W.padMesh(f * TRACK.L, lat, scene) }));
   // gold coins in wavy lines
   // the coins are the game's own painted silver coin (ui/coin.png on both faces of a disc, a steel rim)
   if (!BASE.coinTex) { BASE.coinTex = new THREE.TextureLoader().load('ui/coin.png?v=1'); BASE.coinTex.colorSpace = THREE.SRGBColorSpace; BASE.coinTex.anisotropy = 4; }
@@ -6024,7 +6111,7 @@ function pollPad(dt) {
 
 const FLAME_GEO = new THREE.ConeGeometry(.12, .7, 10).rotateX(-Math.PI / 2), WARM_GEO = new THREE.ConeGeometry(.1, .3, 6), TRAP_GEO = new THREE.CylinderGeometry(1.25, 1.25, .06, 20);
 // free what one race made for itself (name tags)
-function freeRacers(list) { for (const r of list) { WORLD.scene.remove(r.model.root); if (r.label) { r.label.material.map.dispose(); r.label.material.dispose(); } } }
+function freeRacers(list) { for (const r of list) { WORLD.scene.remove(r.model.root); if (r.model.ups) { r.model.ups.removeFromParent(); r.model.ups = null; } if (r.label) { r.label.material.map.dispose(); r.label.material.dispose(); } } }
 // (v266) a race needs the models that load behind the menu: on a slow device a quick start waits for them under a small notice
 function startRace(trackId, opts) {
   if (!BASE.later || BASE.laterDone) return startRaceNow(trackId, opts);
@@ -6371,7 +6458,8 @@ function drive(r, dt) {
   }
   if (r.finished) max *= .6;
   if (race.formation) max = Math.min(max, r.player ? 25 : 23);
-  if (TRACK.sec && TRACK.sec.k && inRouteSec(r)) max *= TRACK.sec.k[r.route || 0];   // (v199) a longer road variant is driven that much faster: the same time on every one   // (v190, the user: a bit faster again; v181 22 / 20, before 15 / 13)
+  if (TRACK.sec && TRACK.sec.k && inRouteSec(r)) max *= TRACK.sec.k[r.route || 0];
+  r.surf = surfOf(r); if (r.surf === 'snow') max *= SNOW_SLOW;   // (v267, the user) snow: a bit slower — noticeable, not much   // (v199) a longer road variant is driven that much faster: the same time on every one   // (v190, the user: a bit faster again; v181 22 / 20, before 15 / 13)
   if (race.formation && r.parked) { max = 0; r.speed = 0; }
   else if (race.formation && r.grid && r.lap >= 1 && r.sc > TRACK.L * .6) { const dg = r.grid.s - r.sc; if (!r.player || race.gridBrake) { max = Math.min(max, Math.max(0, dg) * (r.player ? 2.6 : 1.3) + (r.player ? 0 : .4)); if (r.speed > max) r.speed = max; } }   // (rivals a touch behind, so the arches are yours to see)   // (v170) the formation lap: a steady pace for everyone
   if (r.player && race.pitDue) max *= TUNE.pitWorn;                                        // (v151) a stop is due: the tyres are off
@@ -6461,7 +6549,13 @@ function drive(r, dt) {
     else if (r.speed < max) r.speed = Math.min(max, r.speed + TUNE.accel * r.ch.acc * (r.player ? 1 + .1 * upLv('accel') : 1) * dt * (r.speed < 10 ? 1.4 : 1)); else r.speed = Math.max(max, r.speed - 14 * dt);
   }
   r.steerVis += (steer - r.steerVis) * Math.min(1, dt * 10);
-  const f = fwd(r.angle); r.x += f.x * r.speed * dt; r.z += f.z * r.speed * dt;
+  // (v267, the user: "the ice will be a bit slidey") on ice your kart's direction of travel lags behind where it points,
+  // so it carries outwards through a turn and you steer a little early; it grips again the moment you leave the ice
+  let mv = r.angle;
+  if (r.surf === 'ice' && !r.air && !r.inPit) { if (r.vAng == null) r.vAng = r.angle; r.vAng += Math.atan2(Math.sin(r.angle - r.vAng), Math.cos(r.angle - r.vAng)) * Math.min(1, dt * (r.player ? ICE_GRIP : ICE_GRIP * 2)); mv = r.vAng; }
+  else if (r.vAng != null) { const d = Math.atan2(Math.sin(r.angle - r.vAng), Math.cos(r.angle - r.vAng)); if (Math.abs(d) < .01) r.vAng = null; else { r.vAng += d * Math.min(1, dt * 9); mv = r.vAng; } }
+  if (r.player && r.surf !== race.surfSaid) { race.surfSaid = r.surf; if (r.surf === 'ice') toast('ICE! It is slippery', '#9fdcff', 30); else if (r.surf === 'snow') toast('SNOW! A bit slower', '#ffffff', 30); }
+  const f = fwd(mv); r.x += f.x * r.speed * dt; r.z += f.z * r.speed * dt;
   r.x = clamp(r.x, BOUNDS.x0, BOUNDS.x1); r.z = clamp(r.z, BOUNDS.z0, BOUNDS.z1);
   // the walls (all round every track): the kart stops with its wheels against the wall face, instead of a quarter of a
   // metre inside it, and the same holds in the air, so no jump, hill or dip can put a kart through a wall
