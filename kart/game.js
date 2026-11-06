@@ -331,7 +331,8 @@ const STEER_ART = {
     follow: '<svg viewBox="0 0 64 46"><rect x="6" y="5" width="52" height="36" rx="5" fill="#2a2f66" stroke="#9fb4ff" stroke-width="2.4"/><rect x="8" y="7" width="23" height="32" rx="3" fill="#3a6ad8" opacity=".55"/><rect x="33" y="7" width="23" height="32" rx="3" fill="#ff8a1e" opacity=".55"/><path d="M24 23H13m5-6l-6 6 6 6" fill="none" stroke="#fff" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"/><path d="M40 23h11m-5-6l6 6-6 6" fill="none" stroke="#fff" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"/></svg>',
     line: '<svg viewBox="0 0 64 46"><rect x="6" y="5" width="52" height="36" rx="5" fill="#2a2f66" stroke="#9fb4ff" stroke-width="2.4"/><rect x="9" y="25" width="30" height="10" rx="5" fill="#171b4a" stroke="#8ea4ff" stroke-width="1.8"/><rect x="13" y="29" width="22" height="2.6" rx="1.3" fill="#6fd4ff"/><circle cx="24" cy="30" r="5" fill="#ffd24a" stroke="#2a2460" stroke-width="1.6"/><circle cx="50" cy="30" r="6" fill="#ffd24a" stroke="#2a2460" stroke-width="1.6"/></svg>',
   };
-const STEER_NAME = { tilt: 'TURN DEVICE', joy: 'JOYSTICK', line: 'LINE', follow: 'TAP SIDES' };   // (v212: 'follow' is now TAP SIDES)
+STEER_ART.arrows = '<svg viewBox="0 0 64 46"><rect x="6" y="5" width="52" height="36" rx="5" fill="#2a2f66" stroke="#9fb4ff" stroke-width="2.4"/><rect x="10" y="22" width="19" height="15" rx="4" fill="#ffd23a" stroke="#221a4e" stroke-width="1.6"/><rect x="35" y="22" width="19" height="15" rx="4" fill="#ffd23a" stroke="#221a4e" stroke-width="1.6"/><path d="M23 25l-7 4.5 7 4.5z" fill="#221a4e"/><path d="M41 25l7 4.5-7 4.5z" fill="#221a4e"/><rect x="26" y="9" width="12" height="8" rx="2" fill="#171b4a"/></svg>';
+const STEER_NAME = { tilt: 'TURN DEVICE', joy: 'JOYSTICK', line: 'LINE', follow: 'TAP SIDES', arrows: 'ARROWS' };   // (v263: ARROWS = two buttons to tap)   // (v212: 'follow' is now TAP SIDES)
 const SET_TABS = [['game', 'GAME'], ['controls', 'CONTROLS'], ['graphics', 'GRAPHICS'], ['audio', 'AUDIO']];
 function openSettings(tab = 'game', onClose) {
   const S = $('setp'); S.hidden = false;
@@ -347,9 +348,10 @@ function openSettings(tab = 'game', onClose) {
       const ART = STEER_ART;
       const NAME = STEER_NAME;
       const cards = (grp, keys, cur) => `<div class="spick" data-g="${grp}">${keys.map((k) => `<button data-v="${k}" class="${k === cur ? 'on' : ''}">${ART[k]}<span>${NAME[k]}</span></button>`).join('')}</div>`;
-      return `<div class="srow col"><div class="sl"><b>Steering · sideways</b><small>With the phone held sideways (16:9)</small></div>${cards('L', ['tilt', 'joy', 'line', 'follow'], save.steerL || 'line')}</div>`
-        + `<div class="srow col"><div class="sl"><b>Steering · upright</b><small>With the phone upright (9:16)</small></div>${cards('P', ['joy', 'line', 'follow'], save.steerP || 'line')}</div>`
+      return `<div class="srow col"><div class="sl"><b>Steering · sideways</b><small>With the phone held sideways (16:9)</small></div>${cards('L', ['tilt', 'joy', 'line', 'follow', 'arrows'], save.steerL || 'line')}</div>`
+        + `<div class="srow col"><div class="sl"><b>Steering · upright</b><small>With the phone upright (9:16)</small></div>${cards('P', ['joy', 'line', 'follow', 'arrows'], save.steerP || 'line')}</div>`
         + `<div class="srow col"><div class="sl"><b>Steering assist</b><small id="asHelp"></small></div><div class="seg" id="asSeg"><button data-v="0">OFF</button><button data-v="1">LOW</button><button data-v="2">MEDIUM</button><button data-v="3">HIGH</button></div></div>`
+        + `<div class="srow col"><div class="sl"><b>Controls side</b><small id="sideHelp"></small></div><div class="seg" id="sideSeg"><button data-v="left">LEFT</button><button data-v="right">RIGHT</button></div></div>`
         + (navigator.vibrate ? row('buzz', 'Vibration', 'A short buzz on bumps, hits and turbos') : '')
         + `<div class="skeys"><b>Keyboard</b> W drive · A D steer · SHIFT drift · SPACE power-up · ESC pause<br><b>Xbox</b> RT or A gas · LT brake · stick or D-pad steer · LB/RB drift · X power-up · Y trick · Menu pause · B back<br><b>PlayStation</b> R2 or ✕ gas · L2 brake · stick or D-pad steer · L1/R1 drift · □ power-up · △ trick · Options pause · ○ back</div>`;
     })(),
@@ -373,13 +375,17 @@ function openSettings(tab = 'game', onClose) {
   if (aseg) { const H = ['No help: you steer everything yourself.', 'A little help: the kart lines up with the road when you let go.', 'More help: it follows the road and keeps you off the edges.', 'Most help: for your first races — it nearly drives the bends for you.'];
     const show = () => { const v = save.assistLvl ?? 1; for (const b of aseg.children) b.classList.toggle('on', +b.dataset.v === v); $('asHelp').textContent = H[v]; }; show();
     for (const b of aseg.children) tap(b, () => { sfx.click(); save.assistLvl = +b.dataset.v; store(); show(); }); }
+  // (v263, the user) which side the steering sits on: the joystick, line or arrows left and the power-up right, or the other way round
+  const sseg = S.querySelector('#sideSeg');
+  if (sseg) { const show = () => { const v = save.ctlSide === 'right' ? 'right' : 'left'; for (const b of sseg.children) b.classList.toggle('on', b.dataset.v === v); $('sideHelp').textContent = v === 'right' ? 'Steering on the right, the power-up button on the left (for left-handed players)' : 'Steering on the left, the power-up button on the right'; }; show();
+    for (const b of sseg.children) tap(b, () => { sfx.click(); save.ctlSide = b.dataset.v; store(); applySide(); show(); }); }
   for (const grp of S.querySelectorAll('.spick')) {
     const g = grp.dataset.g;
     for (const b of grp.children) tap(b, async () => { sfx.click(); const v = b.dataset.v;
       if (v === 'tilt') { const ok = await enableTilt(); if (!ok) { toast('Tilt is not available here', '#ffb0b8', 24); return; } save.tilt = true; }
       if (g === 'L') save.steerL = v; else save.steerP = v;
       store(); for (const c of grp.children) c.classList.toggle('on', c === b);
-      toast(v === 'tilt' ? 'TURN THE DEVICE TO STEER' : v === 'joy' ? 'JOYSTICK STEERING' : 'LINE STEERING', '#ffe14a', 24); });
+      toast(v === 'tilt' ? 'TURN THE DEVICE TO STEER' : v === 'joy' ? 'JOYSTICK STEERING' : v === 'follow' ? 'TAP THE SIDES TO STEER' : v === 'arrows' ? 'ARROW BUTTONS' : 'LINE STEERING', '#ffe14a', 24); });
   }
   for (const b of S.querySelectorAll('.stabs button')) tap(b, () => { sfx.click(); openSettings(b.dataset.t, onClose); });
   const u = S.querySelector('#uname'); if (u) { u.addEventListener('keydown', (e) => e.stopPropagation()); u.addEventListener('keyup', (e) => e.stopPropagation()); u.addEventListener('input', () => { save.name = u.value.trim().slice(0, 14); store(); if (devAccount()) { refreshCounters(); toast('DEV ACCOUNT\n<small>5 000 coins · kart back to level 1</small>', '#ffe14a', 34); } racerPlate(); }); }
@@ -1256,6 +1262,7 @@ function buildRouteRoads(scene, W, def, roadMat, vc, wallMat, kerbC) {
       g.add(new THREE.Mesh(strip(s * (HALF + .9), s * (HALF + .9), -1.1, .03, { only: inS }), sk[s]));
     }
     g.add(new THREE.Mesh(strip(-HALF - .9, HALF + .9, -1.1, -1.1, { only: inS }), under));
+    styleStretch(g, def, r);   // (v264) this variant's track type
     scene.add(g); return g;
   });
   TRACK.pts = TRACK.routes[0]; STRIP_SKIP = skip;
@@ -1877,7 +1884,7 @@ function buildWorld(def) {
     W.routeGroups = TRACK.routes.map((R, r) => {
       const g = new THREE.Group(); g.visible = r === 0; TRACK.pts = R; STRIP_SKIP = (i) => i < i0 || i >= i1; roadPass++;
       scene.add = function (...o) { g.add(...o); return this; };
-      try { roadMeshes(); } finally { scene.add = add0; }
+      try { roadMeshes(); styleStretch(g, def, r); } finally { scene.add = add0; }   // (v264: and this variant's track type)
       scene.add(g); return g;
     });
     TRACK.pts = TRACK.routes[0]; STRIP_SKIP = skip;   // (v206: no name gate)
@@ -1961,7 +1968,7 @@ function buildWorld(def) {
     const p = at(f * TRACK.L, lat), m = makeBox(); m.position.set(...rolled(p.p, lat, 1)); m.rotation.set(.5, rand(0, 6), .6); scene.add(m);
     W.boxes.push({ m, x: p.x, z: p.z, y: p.y + 1, on: true, t: rand(0, 6) });
   }));
-  buildArcade(scene, W, def);
+  buildArcade(scene, W, def); routeSs(W);
   if (PITS) buildPitLane(scene, W, def); else buildPitBoxes(scene, W, def);
   if (def.pitStart) buildFormGates(scene, W, def);   // (v173) the formation lap's answer gates
   W.gates = [];   // (v60: the answer gates are gone — the user: "remove the gates, that's not good"; buildGates stays for reference)
@@ -1977,6 +1984,7 @@ function buildWorld(def) {
     W.snow = new THREE.Points(sg, new THREE.PointsMaterial({ map: flake, size: space ? .3 : .22, transparent: true, depthWrite: false, opacity: .9, vertexColors: true })); W.snow.frustumCulled = false; scene.add(W.snow);
     W.snowFall = space ? .35 : def.petals ? 1.1 : 2.2;
   }
+  buildTrackFx(scene, W);   // (v264) the track types' weather
   // little puffs (exhaust, boost, sparks): a pool of sprites
   const dot = canvasTex(32, 32, (x) => { const g = x.createRadialGradient(16, 16, 0, 16, 16, 16); g.addColorStop(0, 'rgba(255,255,255,1)'); g.addColorStop(1, 'rgba(255,255,255,0)'); x.fillStyle = g; x.fillRect(0, 0, 32, 32); });
   W.puffs = [];
@@ -4228,6 +4236,271 @@ function chevrons(c1, c2, bg) {
     for (const [y, c] of [[20, c1], [84, c2]]) { x.fillStyle = c; x.beginPath(); x.moveTo(14, y + 40); x.lineTo(64, y - 4); x.lineTo(114, y + 40); x.lineTo(114, y + 58); x.lineTo(64, y + 14); x.lineTo(14, y + 58); x.closePath(); x.fill(); }
   });
 }
+/* ---------- (v264, the user) TEN TRACK TYPES ON EVERY MAP ----------
+   Every road variant of the changing stretch is a different TYPE of track, not just a different line: its own surface
+   (snow, ice, planks, cobbles, dirt, metal, a neon grid, lava, gold, coral, rails…), its own kerbs, its own roadside
+   (snow banks, crystals, lamps, rails, houses, pines, a lake, neon bars, palms, torches, market stalls, rocks, glowing
+   mushrooms, timber frames, asteroids, warp rings, a station hall), sometimes a roof (an ice or rock tunnel, a hall,
+   bunting) and its own weather while you are on it (snow, rain, sparkles, an aurora, embers, bubbles, stars, dust),
+   with the world going dark for the night ones. Nothing stands on the road and the physics are untouched, so every
+   type takes the same time and has the same power-ups. Type 0 is the usual road. */
+const TRACK_TYPES = {
+  alps: [
+    { n: 'CLASSIC' },
+    { n: 'SNOW ROAD', road: ['#f2f6ff', 'snow'], kerb: ['#ffffff', '#9fc4ff'], side: 'banks', c: '#ffffff', fx: 'snow' },
+    { n: 'ICE ROAD', road: ['#9fdcff', 'ice'], kerb: ['#e8f8ff', '#3a8ad8'], side: 'crystals', c: ['#7af8ff', '#bff4ff', '#ffffff'], fx: 'sparkle' },
+    { n: 'NIGHT RUN', road: ['#2a2e48', 'asphalt'], kerb: ['#ffe14a', '#1b1f3a'], side: 'lamps', c: '#ffd080', dark: .62, fog: '#0b1030' },
+    { n: 'WOODEN BRIDGE', road: ['#a87040', 'planks'], kerb: ['#6a4020', '#c08a50'], side: 'rail', c: '#8a5a30', under: 'posts' },
+    { n: 'ICE TUNNEL', road: ['#8cc8ff', 'ice'], kerb: ['#e8f8ff', '#5aa8ff'], side: 'crystals', c: ['#bff4ff', '#7af8ff'], roof: 'tunnel', rc: '#a8d8ff', dark: .3, fx: 'sparkle' },
+    { n: 'VILLAGE STREET', road: ['#8a8a96', 'cobbles'], kerb: ['#e0e0e8', '#6a6a78'], side: 'houses', c: ['#f0c0a0', '#a0c8f0', '#f0e0a0', '#c0e0b0', '#f0b0c0'], roof: 'bunting' },
+    { n: 'FOREST TRAIL', road: ['#6a4a2a', 'dirt'], kerb: ['#4a6a2a', '#2a4a1a'], side: 'pines', c: ['#2f7a3a', '#3a9a4a', '#1f6a2a'] },
+    { n: 'FROZEN LAKE', road: ['#c8ecff', 'ice'], kerb: ['#ffffff', '#9fd8ff'], side: 'lake', c: ['#8fd0ff', '#ffffff'], fx: 'sparkle' },
+    { n: 'AURORA GLOW', road: ['#141838', 'grid'], kerb: ['#c84aff', '#3a8aff'], side: 'neon', c: ['#7af8ff', '#c84aff', '#3cff8a'], dark: .5, fog: '#0a0a2a', fx: 'aurora' },
+  ],
+  beach: [
+    { n: 'CLASSIC' },
+    { n: 'BOARDWALK', road: ['#c08a50', 'planks'], kerb: ['#8a5a30', '#e0b080'], side: 'rail', c: '#a06a38' },
+    { n: 'SAND DUNES', road: ['#f0dcb0', 'sand'], kerb: ['#e8d0a0', '#c0a070'], side: 'dunes', c: '#f0d8a8', fx: 'dust' },
+    { n: 'PALM ALLEY', road: ['#b8b8c0', 'asphalt'], kerb: ['#ff8a1e', '#ffffff'], side: 'palms', c: ['#3aa84a', '#8a5a30'] },
+    { n: 'THE PIER', road: ['#a87850', 'planks'], kerb: ['#6a4a30', '#d0a070'], side: 'pier', c: ['#8a5a30', '#3a9ad8'] },
+    { n: 'LAVA ROCK', road: ['#2a2024', 'lava'], kerb: ['#2a2024', '#ff5a1e'], side: 'lava', c: ['#3a3038', '#ff7a1e'], dark: .3, fog: '#2a1008', fx: 'embers' },
+    { n: 'NIGHT BEACH', road: ['#2a2e3a', 'asphalt'], kerb: ['#ffe14a', '#1b2a4a'], side: 'torches', c: '#ffb040', dark: .62, fog: '#0a1428', fx: 'stars' },
+    { n: 'CORAL ROAD', road: ['#ff9ab0', 'coral'], kerb: ['#ff7ab8', '#ffd0e0'], side: 'coral', c: ['#ff7ab8', '#ffa070', '#ffd0e0'], fx: 'bubbles' },
+    { n: 'TIDE POOLS', road: ['#c8b890', 'wet'], kerb: ['#7fd0ff', '#ffffff'], side: 'tide', c: ['#5ad0e8', '#5a5a60'], fx: 'sparkle' },
+    { n: 'SURF STREET', road: ['#d0c8b8', 'cobbles'], kerb: ['#ff5db1', '#ffffff'], side: 'stalls', c: ['#ff5db1', '#5fe8ff', '#ffe14a', '#4fc84a'], roof: 'bunting' },
+  ],
+  city: [
+    { n: 'CLASSIC' },
+    { n: 'NEON TUNNEL', road: ['#0e1230', 'grid'], kerb: ['#7af8ff', '#1b1f3a'], side: 'neon', c: ['#7af8ff', '#ff3fbf', '#3cff8a'], roof: 'station', rc: '#1a1e38', dark: .4 },
+    { n: 'WET STREET', road: ['#2a2c38', 'wet'], kerb: ['#ffffff', '#e8403a'], side: 'lamps', c: '#dff0ff', fx: 'rain' },
+    { n: 'OLD TOWN', road: ['#9a9080', 'cobbles'], kerb: ['#d0c8b8', '#6a6054'], side: 'houses', c: ['#c8805a', '#e0b890', '#a06a50', '#d8c0a0'], roof: 'bunting' },
+    { n: 'SKY HIGHWAY', road: ['#8a909c', 'metal'], kerb: ['#ffd23a', '#2a2e3a'], side: 'rail', c: '#c0c8d4' },
+    { n: 'HOLO LANE', road: ['#7af8ff', 'glass'], kerb: ['#7af8ff', '#1b2a4a'], side: 'rings', c: ['#7af8ff', '#c84aff'], fx: 'sparkle' },
+    { n: 'MARKET STREET', road: ['#5a5a66', 'asphalt'], kerb: ['#ffffff', '#e8403a'], side: 'stalls', c: ['#e8403a', '#ffe14a', '#4fc84a', '#2a9fe6'], roof: 'bunting' },
+    { n: 'THE SUBWAY', road: ['#5a5a60', 'rails'], kerb: ['#ffe14a', '#3a3a44'], side: 'lamps', c: '#fff4c0', roof: 'tunnel', rc: '#4a4e5a', dark: .5, fog: '#101018' },
+    { n: 'ROOFTOP GARDEN', road: ['#d8c8a8', 'planks'], kerb: ['#4fc84a', '#e8e0d0'], side: 'bushes', c: ['#3aa84a', '#8a5a30'], fx: 'petals' },
+    { n: 'RED ALERT', road: ['#241018', 'asphalt'], kerb: ['#ff2a2a', '#1a0a0a'], side: 'neon', c: ['#ff2a2a', '#ff7a1e'], dark: .5, fog: '#200008' },
+  ],
+  mines: [
+    { n: 'CLASSIC' },
+    { n: 'CRYSTAL CAVE', road: ['#4a3a50', 'dirt'], kerb: ['#c84aff', '#2a1a30'], side: 'crystals', c: ['#7af8ff', '#c84aff', '#bff4ff'], lo: .9, h: .4, fx: 'sparkle' },
+    { n: 'LAVA FLOW', road: ['#2a1a16', 'lava'], kerb: ['#3a2020', '#ff5a1e'], side: 'lava', c: ['#4a3038', '#ff7a1e'], dark: .2, fx: 'embers' },
+    { n: 'WATER CAVE', road: ['#2a3a48', 'wet'], kerb: ['#5ab0ff', '#1a2a38'], side: 'tide', c: ['#2a6aa8', '#5a6070'], fx: 'drips' },
+    { n: 'GOLD VAULT', road: ['#e0b040', 'gold'], kerb: ['#ffd23a', '#6a4a10'], side: 'gold', c: ['#ffd23a', '#ffe680'], fx: 'sparkle' },
+    { n: 'RAIL TUNNEL', road: ['#6a5a48', 'rails'], kerb: ['#a87040', '#3a2a20'], side: 'timber', c: '#8a5a30', dark: .3 },
+    { n: 'ICE CAVE', road: ['#9fdcff', 'ice'], kerb: ['#e8f8ff', '#3a8ad8'], side: 'crystals', c: ['#ffffff', '#bff4ff'], lo: .9, h: .4, fx: 'snow' },
+    { n: 'MUSHROOM GROTTO', road: ['#4a4030', 'dirt'], kerb: ['#3cff8a', '#2a3020'], side: 'mushrooms', c: ['#3cff8a', '#ff5db1', '#7af8ff', '#ffe14a'], dark: .2, fx: 'sparkle' },
+    { n: 'TIMBER SHAFT', road: ['#a87040', 'planks'], kerb: ['#6a4020', '#c08a50'], side: 'timber', c: '#a87040' },
+    { n: 'DARK DEEP', road: ['#1a1418', 'asphalt'], kerb: ['#ff8a1e', '#1a1418'], side: 'lamps', c: '#ffb060', dark: .78, fog: '#000000' },
+  ],
+  space: [
+    { n: 'CLASSIC' },
+    { n: 'WARP TUNNEL', road: ['#101840', 'grid'], kerb: ['#7af8ff', '#1b1f5c'], side: 'rings', c: ['#7af8ff', '#3a8aff'], fx: 'stars' },
+    { n: 'ASTEROID FIELD', road: ['#3a3a48', 'metal'], kerb: ['#9fb4ff', '#2a2e3a'], side: 'asteroids', c: ['#6a6478', '#8a8498', '#5a5468'], fx: 'dust' },
+    { n: 'SOLAR FLARE', road: ['#3a1a08', 'lava'], kerb: ['#ffb000', '#ff5a1e'], side: 'neon', c: ['#ff8a1e', '#ffd23a'], fx: 'embers' },
+    { n: 'ICE COMET', road: ['#9fdcff', 'ice'], kerb: ['#ffffff', '#5aa8ff'], side: 'crystals', c: ['#ffffff', '#bff4ff'], fx: 'snow' },
+    { n: 'NEBULA', road: ['#2a1048', 'grid'], kerb: ['#c84aff', '#ff3fbf'], side: 'neon', c: ['#c84aff', '#ff3fbf', '#7a4aff'], fx: 'aurora' },
+    { n: 'SPACE STATION', road: ['#8a909c', 'metal'], kerb: ['#ffd23a', '#2a2e3a'], side: 'lamps', c: '#dff0ff', roof: 'station', rc: '#2a2e40' },
+    { n: 'STARLIGHT', road: ['#dff4ff', 'glass'], kerb: ['#ffffff', '#9fd8ff'], side: 'lamps', c: '#ffffff', fx: 'sparkle' },
+    { n: 'RED ALERT', road: ['#241018', 'asphalt'], kerb: ['#ff2a2a', '#1a0a0a'], side: 'neon', c: ['#ff2a2a', '#ff7a1e'] },
+    { n: 'GREEN GRID', road: ['#061a10', 'grid'], kerb: ['#3cff8a', '#0a2a1a'], side: 'rings', c: ['#3cff8a', '#bfffd0'], fx: 'stars' },
+  ],
+};
+// the surfaces: one small texture each, tiled along the road (128 px across, 512 px = 12 m along)
+const TT_TEX = {};
+function ttTex(kind, c) {
+  const key = kind + c; if (TT_TEX[key]) return TT_TEX[key];
+  const col = new THREE.Color(c), shade = (k, a = 1) => { const q = col.clone().multiplyScalar(k); return `rgba(${(q.r * 255) | 0},${(q.g * 255) | 0},${(q.b * 255) | 0},${a})`; };
+  const t = canvasTex(128, 512, (x) => {
+    const W = 128, H = 512, spk = (n, a, b) => { for (let k = 0; k < n; k++) { x.fillStyle = Math.random() < .5 ? a : b; x.fillRect(Math.random() * W, Math.random() * H, 2, 2); } };
+    const dashes = (cc) => { x.fillStyle = cc; for (let y = 0; y < H; y += 64) x.fillRect(60, y + 8, 8, 34); };
+    const edges = (cc) => { x.fillStyle = cc; x.fillRect(2, 0, 3, H); x.fillRect(W - 5, 0, 3, H); };
+    x.fillStyle = c; x.fillRect(0, 0, W, H);
+    switch (kind) {
+      case 'snow': spk(500, 'rgba(150,180,230,.22)', 'rgba(255,255,255,.5)'); x.fillStyle = 'rgba(120,150,200,.16)'; x.fillRect(30, 0, 12, H); x.fillRect(86, 0, 12, H); break;
+      case 'ice': x.strokeStyle = 'rgba(255,255,255,.28)'; x.lineWidth = 3; for (let k = 0; k < 14; k++) { const y0 = Math.random() * H; x.beginPath(); x.moveTo(0, y0); x.lineTo(W, y0 + rand(-60, 60)); x.stroke(); }
+        x.strokeStyle = 'rgba(30,80,160,.5)'; x.lineWidth = 1.5; for (let k = 0; k < 8; k++) { x.beginPath(); let px = Math.random() * W, py = Math.random() * H; x.moveTo(px, py); for (let j = 0; j < 4; j++) { px += rand(-30, 30); py += rand(-30, 30); x.lineTo(px, py); } x.stroke(); } break;
+      case 'asphalt': spk(1200, 'rgba(255,255,255,.07)', 'rgba(0,0,0,.2)'); dashes('#ffe14a'); edges('rgba(255,255,255,.85)'); break;
+      case 'wet': spk(500, 'rgba(255,255,255,.06)', 'rgba(0,0,0,.25)'); x.fillStyle = 'rgba(255,255,255,.1)'; for (let k = 0; k < 10; k++) x.fillRect(Math.random() * W, Math.random() * H, rand(2, 6), rand(40, 160)); dashes('rgba(255,255,255,.8)'); edges('rgba(255,255,255,.7)'); break;
+      case 'planks': for (let y = 0; y < H; y += 26) { x.fillStyle = shade(rand(.8, 1.15)); x.fillRect(0, y, W, 24); x.fillStyle = 'rgba(0,0,0,.45)'; x.fillRect(0, y + 24, W, 2); x.fillStyle = 'rgba(0,0,0,.4)'; x.fillRect(18, y + 11, 3, 3); x.fillRect(107, y + 11, 3, 3); x.fillStyle = 'rgba(0,0,0,.1)'; for (let k = 0; k < 3; k++) x.fillRect(Math.random() * W, y + 2, rand(10, 40), 1); } break;
+      case 'cobbles': x.fillStyle = shade(.55); x.fillRect(0, 0, W, H); for (let y = 0; y < H + 8; y += 16) for (let xx = (y / 16) % 2 ? 8 : 0; xx < W + 8; xx += 16) { x.fillStyle = shade(rand(.8, 1.15)); x.beginPath(); x.ellipse(xx, y, 7, 6.5, 0, 0, 7); x.fill(); } break;
+      case 'dirt': spk(900, 'rgba(0,0,0,.22)', 'rgba(255,220,160,.14)'); x.fillStyle = 'rgba(0,0,0,.2)'; x.fillRect(28, 0, 16, H); x.fillRect(84, 0, 16, H); break;
+      case 'sand': spk(700, 'rgba(0,0,0,.08)', 'rgba(255,255,255,.3)'); x.strokeStyle = 'rgba(0,0,0,.09)'; x.lineWidth = 2; for (let y = 6; y < H; y += 14) { x.beginPath(); for (let xx = 0; xx <= W; xx += 8) x.lineTo(xx, y + Math.sin(xx / 9 + y) * 3); x.stroke(); } break;
+      case 'metal': x.fillStyle = 'rgba(255,255,255,.08)'; for (let k = -H; k < H; k += 20) { x.beginPath(); x.moveTo(0, k); x.lineTo(W, k + 60); x.lineTo(W, k + 64); x.lineTo(0, k + 4); x.fill(); } x.fillStyle = 'rgba(0,0,0,.4)'; for (let y = 8; y < H; y += 24) for (let xx = 8; xx < W; xx += 24) { x.beginPath(); x.arc(xx, y, 2, 0, 7); x.fill(); } edges('#7af8ff'); break;
+      case 'grid': x.strokeStyle = 'rgba(122,248,255,.22)'; x.lineWidth = 7; for (let k = 0; k <= W; k += 32) { x.beginPath(); x.moveTo(k, 0); x.lineTo(k, H); x.stroke(); } for (let k = 0; k <= H; k += 32) { x.beginPath(); x.moveTo(0, k); x.lineTo(W, k); x.stroke(); }
+        x.strokeStyle = '#7af8ff'; x.lineWidth = 2; for (let k = 0; k <= W; k += 32) { x.beginPath(); x.moveTo(k, 0); x.lineTo(k, H); x.stroke(); } for (let k = 0; k <= H; k += 32) { x.beginPath(); x.moveTo(0, k); x.lineTo(W, k); x.stroke(); } break;
+      case 'lava': spk(600, 'rgba(0,0,0,.3)', 'rgba(255,255,255,.05)'); for (let k = 0; k < 9; k++) { x.beginPath(); let px = Math.random() * W, py = Math.random() * H; x.moveTo(px, py); for (let j = 0; j < 5; j++) { px += rand(-30, 30); py += rand(-40, 40); x.lineTo(px, py); } x.strokeStyle = 'rgba(255,120,30,.35)'; x.lineWidth = 8; x.stroke(); x.strokeStyle = '#ff8a1e'; x.lineWidth = 3; x.stroke(); x.strokeStyle = '#ffe14a'; x.lineWidth = 1; x.stroke(); } break;
+      case 'glass': x.strokeStyle = 'rgba(255,255,255,.2)'; x.lineWidth = 1.5; for (let k = 0; k <= W; k += 16) { x.beginPath(); x.moveTo(k, 0); x.lineTo(k, H); x.stroke(); } for (let k = 0; k <= H; k += 16) { x.beginPath(); x.moveTo(0, k); x.lineTo(W, k); x.stroke(); } edges('rgba(255,255,255,.9)'); break;
+      case 'gold': spk(900, 'rgba(255,255,255,.4)', 'rgba(120,80,0,.3)'); edges('rgba(80,50,0,.5)'); x.fillStyle = 'rgba(255,255,255,.18)'; for (let y = 0; y < H; y += 40) x.fillRect(0, y, W, 6); break;
+      case 'coral': for (let k = 0; k < 90; k++) { x.fillStyle = pick(['rgba(255,122,184,.6)', 'rgba(255,160,112,.6)', 'rgba(255,208,224,.7)', 'rgba(255,255,255,.35)']); x.beginPath(); x.ellipse(Math.random() * W, Math.random() * H, rand(4, 12), rand(3, 9), rand(0, 3), 0, 7); x.fill(); } break;
+      case 'rails': spk(600, 'rgba(0,0,0,.22)', 'rgba(255,220,160,.1)'); x.fillStyle = '#4a3a28'; for (let y = 0; y < H; y += 28) x.fillRect(14, y, 100, 10); x.fillStyle = '#aab0ba'; x.fillRect(34, 0, 7, H); x.fillRect(87, 0, 7, H); x.fillStyle = '#e8ecf2'; x.fillRect(36, 0, 2, H); x.fillRect(89, 0, 2, H); break;
+    }
+  }, [1, 1]);
+  return (TT_TEX[key] = t);
+}
+const TT_GEO = {};
+function ttGeo(k) {
+  if (TT_GEO[k]) return TT_GEO[k]; let g;
+  switch (k) {
+    case 'bank': g = new THREE.SphereGeometry(1, 9, 6).scale(2.3, .9, 2.8); break;
+    case 'crystal': g = new THREE.ConeGeometry(.55, 2.6, 5).translate(0, 1.3, 0); break;
+    case 'post': g = new THREE.CylinderGeometry(.09, .11, 3.2, 8).translate(0, 1.6, 0); break;
+    case 'orb': g = new THREE.SphereGeometry(.38, 10, 8).translate(0, 3.3, 0); break;
+    case 'railpost': g = new THREE.BoxGeometry(.2, 1.1, .2).translate(0, .55, 0); break;
+    case 'house': g = new THREE.BoxGeometry(4, 3.2, 3.6).translate(0, 1.6, 0); break;
+    case 'roof': g = new THREE.ConeGeometry(3.1, 2.1, 4).translate(0, 4.2, 0); break;
+    case 'pine': g = new THREE.ConeGeometry(1.7, 5, 7).translate(0, 3.3, 0); break;
+    case 'trunk': g = new THREE.CylinderGeometry(.22, .3, 1.2, 6).translate(0, .6, 0); break;
+    case 'bar': g = new THREE.BoxGeometry(.28, .28, 3.2); break;
+    case 'palmTrunk': g = new THREE.CylinderGeometry(.22, .34, 5.5, 7).translate(0, 2.75, 0); break;
+    case 'fronds': g = new THREE.SphereGeometry(1.9, 8, 6).scale(1, .45, 1).translate(0, 5.6, 0); break;
+    case 'torch': g = new THREE.CylinderGeometry(.07, .1, 1.7, 6).translate(0, .85, 0); break;
+    case 'flame': g = new THREE.ConeGeometry(.22, .6, 6).translate(0, 2, 0); break;
+    case 'stall': g = new THREE.BoxGeometry(2.6, 1.9, 2.2).translate(0, .95, 0); break;
+    case 'canopy': g = new THREE.BoxGeometry(3.2, .25, 2.8).translate(0, 2.4, 0); break;
+    case 'rock': g = new THREE.DodecahedronGeometry(1.1, 0); break;
+    case 'stem': g = new THREE.CylinderGeometry(.18, .26, 1.1, 7).translate(0, .55, 0); break;
+    case 'cap': g = new THREE.SphereGeometry(.7, 10, 7).scale(1, .6, 1).translate(0, 1.2, 0); break;
+    case 'tpost': g = new THREE.BoxGeometry(.34, 4.4, .34).translate(0, 2.2, 0); break;
+    case 'beam': g = new THREE.BoxGeometry(1, .34, .34); break;
+    case 'asteroid': g = new THREE.DodecahedronGeometry(1.4, 0); break;
+    case 'lamp': g = new THREE.BoxGeometry(2.2, .18, .5); break;
+    case 'bush': g = new THREE.SphereGeometry(.9, 8, 6).translate(0, 1.2, 0); break;
+    case 'planter': g = new THREE.BoxGeometry(2, .7, 1.2).translate(0, .35, 0); break;
+    case 'bunting': g = new THREE.BoxGeometry(1, .6, .04); break;
+    case 'goldbar': g = new THREE.BoxGeometry(.9, .4, .5).translate(0, .2, 0); break;
+    case 'pierpost': g = new THREE.CylinderGeometry(.22, .22, 4, 7).translate(0, -2, 0); break;
+  }
+  return (TT_GEO[k] = g);
+}
+let TT_BUNT = null;
+function styleStretch(g, def, r) {
+  const list = TRACK_TYPES[def.id]; if (!list || !TRACK.sec) return;
+  const T = list[Math.min(r, list.length - 1)]; if (!T || !T.road) return;
+  const { i0, i1 } = TRACK.sec, inS = (i) => i >= i0 && i < i1, space = def.id === 'space', KH = def.kerbH || .12, cave = !!def.tube;
+  const add = (m) => { g.add(m); return m; };
+  const kind = T.road[1], glossy = /ice|wet|glass|gold/.test(kind), glow = /grid|lava|glass/.test(kind) || space;
+  const tex = ttTex(kind, T.road[0]);
+  const rm = new THREE.MeshStandardMaterial({ map: tex, roughness: glossy ? .18 : .85, metalness: glossy ? .25 : 0, fog: !def.clearRoad, side: space ? THREE.DoubleSide : THREE.FrontSide,
+    emissive: glow ? '#ffffff' : '#000000', emissiveMap: glow ? tex : null, emissiveIntensity: glow ? (kind === 'lava' ? .9 : .45) : 0, transparent: kind === 'glass', opacity: kind === 'glass' ? .82 : 1 });
+  add(new THREE.Mesh(strip(-HALF, HALF, .05, .05, { uvLen: 12, only: inS }), rm)).receiveShadow = true;
+  if (T.kerb) { const K = T.kerb.map((c) => new THREE.Color(c)), kc = (i) => K[Math.floor(i / 5) % 2], km = space ? new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.DoubleSide }) : new THREE.MeshStandardMaterial({ vertexColors: true, roughness: .7, fog: !def.clearRoad });
+    for (const s of [-1, 1]) add(new THREE.Mesh(s > 0 ? strip(HALF, HALF + .9, .05, KH + .02, { colour: kc, only: inS }) : strip(-HALF - .9, -HALF, KH + .02, .05, { colour: kc, only: inS }), km)); }
+  const cols = Array.isArray(T.c) ? T.c : [T.c || '#ffffff'], col = (k) => cols[((k % cols.length) + cols.length) % cols.length];
+  const H0 = space ? 0 : -.08, lo = HALF + (T.lo ?? (cave ? 1.0 : 1.6)), hh = T.h ?? (cave ? .9 : H0);
+  // spots along both sides of the stretch (every `step` points, from lat lo out to lo + spread)
+  const pts = (step, l0, spread, h, one = false) => { const out = []; let k = 0; for (let i = i0 + 3; i < i1 - 3; i += step) { const p = tp(i); for (const s of one ? [1] : [-1, 1]) { const q = rolled(p, s * (l0 + rand(0, spread)), h); out.push({ x: q[0], y: q[1], z: q[2], p, sd: s, k: k++ }); } } return out; };
+  const yawT = (p) => Math.atan2(p.tx, p.tz), yawN = (p) => Math.atan2(-p.nz, p.nx);
+  const std = (c, o = {}) => new THREE.MeshStandardMaterial({ color: c, roughness: .8, fog: !def.clearRoad, ...o }), lit = (c) => new THREE.MeshBasicMaterial({ color: c, toneMapped: false, fog: false });
+  const inst = (geo, mat, L, f) => { if (L.length) instanced(g, geo, mat, L.map((d) => ({ s: 1, ...d, ...(f ? f(d) : {}) })), !space); };
+  const sheet = (c, y, w, from, emis) => { const m = new THREE.MeshStandardMaterial({ color: c, transparent: true, opacity: .86, roughness: .12, metalness: .15, side: THREE.DoubleSide, fog: !def.clearRoad, emissive: emis || '#000000', emissiveIntensity: emis ? 1.2 : 0 }); for (const s of [-1, 1]) add(new THREE.Mesh(strip(s * from, s * (from + w), y, y, { only: inS }), m)); };
+  const rails = (c) => { const m = std(c, { roughness: .6 }); inst(ttGeo('railpost'), m, pts(5, HALF + 1.4, 0, H0)); for (const s of [-1, 1]) { add(new THREE.Mesh(strip(s * (HALF + 1.4), s * (HALF + 1.4), .96, 1.08, { only: inS }), m)); add(new THREE.Mesh(strip(s * (HALF + 1.4), s * (HALF + 1.4), .5, .58, { only: inS }), m)); } };
+  const lamps = (c, step = 18, l = lo + .3) => { const P = pts(step, l, 0, hh); inst(ttGeo('post'), std('#2a2e3a', { roughness: .5 }), P); inst(ttGeo('orb'), lit(c), P); };
+  const neon = (step = 7) => inst(ttGeo('bar'), new THREE.MeshBasicMaterial({ color: '#ffffff', toneMapped: false, fog: false }), pts(step, HALF + 1.25, 0, hh + .35), (d) => ({ ry: yawT(d.p), c: col(d.k) }));
+  const rocks = (c, step = 7, l = lo + .6, spread = 3) => inst(ttGeo('rock'), std(c, { roughness: .95 }), pts(step, l, spread, hh), (d) => ({ s: rand(.5, 1.5), ry: rand(0, 6.3) }));
+  switch (T.side) {
+    case 'banks': inst(ttGeo('bank'), std(col(0)), pts(7, lo + .3, 1.4, H0), (d) => ({ s: rand(.7, 1.3), ry: rand(0, 6.3) })); break;
+    case 'dunes': inst(ttGeo('bank'), std(col(0)), pts(9, HALF + 3.5, 5, H0), (d) => ({ sx: rand(1.6, 2.6), sy: rand(1.1, 1.9), sz: rand(1.6, 2.8), ry: rand(0, 6.3) })); break;
+    case 'crystals': case 'coral': { const m = new THREE.MeshStandardMaterial({ color: '#ffffff', emissive: col(0), emissiveIntensity: T.side === 'coral' ? .25 : .7, roughness: .25, fog: !def.clearRoad });
+      inst(ttGeo('crystal'), m, pts(4, lo, 1.6, hh), (d) => ({ s: rand(.5, 1.4), ry: rand(0, 6.3), c: col(d.k) })); if (T.side === 'coral') rocks('#8a7a80', 9); break; }
+    case 'lamps': lamps(col(0)); break;
+    case 'torches': { const P = pts(10, lo + .1, 0, hh); inst(ttGeo('torch'), std('#5a3a20'), P); inst(ttGeo('flame'), lit(col(0)), P, (d) => ({ s: rand(.8, 1.3) })); break; }
+    case 'rail': rails(col(0)); break;
+    case 'pier': rails(col(0)); inst(ttGeo('pierpost'), std('#6a4a30'), pts(6, HALF + .4, 0, 0)); sheet(col(1), -.9, 22, HALF + 1.1); break;
+    case 'houses': { const P = pts(16, HALF + 4.6, .8, H0 - .2).map((d) => ({ ...d, sc: rand(.85, 1.15), ry: yawN(d.p) + (d.sd > 0 ? 0 : Math.PI) }));
+      inst(ttGeo('house'), std('#ffffff'), P, (d) => ({ s: d.sc, c: col(d.k) })); inst(ttGeo('roof'), std('#a0403a'), P, (d) => ({ s: d.sc, ry: d.ry + Math.PI / 4 })); break; }
+    case 'pines': { const P = pts(6, lo + .9, 3.2, H0).map((d) => ({ ...d, sc: rand(.8, 1.35) })); inst(ttGeo('trunk'), std('#5a3a20'), P, (d) => ({ s: d.sc })); inst(ttGeo('pine'), std('#ffffff'), P, (d) => ({ s: d.sc, ry: rand(0, 6.3), c: col(d.k) })); break; }
+    case 'palms': { const P = pts(11, lo + 1.2, 2.5, H0).map((d) => ({ ...d, sc: rand(.8, 1.2) })); inst(ttGeo('palmTrunk'), std(col(1)), P, (d) => ({ s: d.sc })); inst(ttGeo('fronds'), std(col(0)), P, (d) => ({ s: d.sc, ry: rand(0, 6.3) })); lamps('#ffd080', 26, lo + .2); break; }
+    case 'lake': sheet(col(0), -.22, 16, HALF + 1.1); inst(ttGeo('crystal'), new THREE.MeshStandardMaterial({ color: '#ffffff', emissive: '#bff4ff', emissiveIntensity: .5, roughness: .25, fog: !def.clearRoad }), pts(14, HALF + 4, 8, -.2), (d) => ({ s: rand(.6, 1.6), ry: rand(0, 6.3) })); break;
+    case 'tide': sheet(col(0), -.18, 14, HALF + 1.1); rocks(col(1), 8, HALF + 2.5, 6); break;
+    case 'lava': sheet(col(1), -.16, 12, HALF + 1.4, '#ff6a1e'); rocks(col(0), 7); break;
+    case 'neon': neon(); break;
+    case 'stalls': { const P = pts(14, HALF + 3.2, .6, H0).map((d) => ({ ...d, ry: yawT(d.p) })); inst(ttGeo('stall'), std('#e8e0d0'), P, (d) => ({ c: col(d.k + 1) })); inst(ttGeo('canopy'), std('#ffffff'), P, (d) => ({ c: col(d.k) })); break; }
+    case 'rocks': rocks(col(0)); break;
+    case 'mushrooms': { const P = pts(5, lo, 2, hh).map((d) => ({ ...d, sc: rand(.6, 1.5) })); inst(ttGeo('stem'), std('#e8e0d0'), P, (d) => ({ s: d.sc })); inst(ttGeo('cap'), lit('#ffffff'), P, (d) => ({ s: d.sc, c: col(d.k) })); break; }
+    case 'timber': { const P = pts(8, lo + .2, 0, H0, true).map((d) => ({ ...d, q: rolled(d.p, 0, H0) })); const m = std(col(0), { roughness: .9 });
+      inst(ttGeo('tpost'), m, pts(8, lo + .2, 0, H0)); inst(ttGeo('beam'), m, P, (d) => ({ x: d.q[0], y: d.q[1] + 4.4, z: d.q[2], sx: 2 * (lo + .2) + .4, ry: yawN(d.p) })); lamps('#ffd080', 24, lo - .3); break; }
+    case 'asteroids': inst(ttGeo('asteroid'), std('#ffffff', { roughness: .95 }), pts(5, HALF + 4, 9, 0), (d) => ({ y: d.y + rand(-4, 7), s: rand(.5, 2.2), ry: rand(0, 6.3), c: col(d.k) })); break;
+    case 'rings': { const R = HALF + 2.6, geo = ttGeo('ring' + R) || (TT_GEO['ring' + R] = new THREE.TorusGeometry(R, .24, 8, 28)); inst(geo, new THREE.MeshBasicMaterial({ color: '#ffffff', toneMapped: false, fog: false }), pts(space ? 10 : 16, 0, 0, 1.2, true), (d) => ({ ry: yawT(d.p), c: col(d.k) })); break; }
+    case 'bushes': { const P = pts(8, lo + .3, 0, H0); inst(ttGeo('planter'), std(col(1)), P); inst(ttGeo('bush'), std(col(0)), P, (d) => ({ s: rand(.8, 1.3) })); break; }
+    case 'gold': { const P = pts(10, lo + .2, 1.5, hh); const m = std('#ffd23a', { metalness: .8, roughness: .25 }); inst(ttGeo('goldbar'), m, P, (d) => ({ ry: rand(0, 6.3) })); inst(ttGeo('goldbar'), m, P, (d) => ({ y: d.y + .4, ry: rand(0, 6.3) })); inst(ttGeo('goldbar'), m, P, (d) => ({ y: d.y + .8, ry: rand(0, 6.3), s: .8 })); lamps('#fff0b0', 22, lo - .3); break; }
+  }
+  if (T.under === 'posts') inst(ttGeo('pierpost'), std('#6a4a30'), pts(6, HALF + .4, 0, 0));
+  // a roof
+  if (T.roof === 'tunnel') { const R = HALF + 1.7, geo = TT_GEO['arch' + R] || (TT_GEO['arch' + R] = new THREE.TorusGeometry(R, .3, 7, 22, Math.PI)), m = std(T.rc || '#6a6a74', { side: THREE.DoubleSide, roughness: .9 });
+    inst(geo, m, pts(8, 0, 0, 0, true), (d) => ({ ry: yawT(d.p) }));
+    add(new THREE.Mesh(strip(-R, R, R - .15, R - .15, { only: inS }), m)); for (const s of [-1, 1]) add(new THREE.Mesh(strip(s * R, s * R, 0, R - .15, { only: inS }), m));
+    if (!T.side || T.side === 'lamps') {} else lamps('#fff4c0', 20, R - .6); }
+  if (T.roof === 'station') { const R = HALF + 2.6, m = std(T.rc || '#2a2e40', { side: THREE.DoubleSide, roughness: .5, metalness: .3 });
+    add(new THREE.Mesh(strip(-R, R, 6.2, 6.2, { only: inS }), m)); for (const s of [-1, 1]) add(new THREE.Mesh(strip(s * R, s * R, -.6, 6.2, { only: inS }), m));
+    inst(ttGeo('lamp'), lit('#dff0ff'), pts(10, 0, 0, 6.0, true), (d) => ({ ry: yawN(d.p) })); }
+  if (T.roof === 'bunting') { if (!TT_BUNT) TT_BUNT = canvasTex(256, 64, (x) => { x.strokeStyle = '#3a3a44'; x.lineWidth = 2; x.beginPath(); x.moveTo(0, 5); x.lineTo(256, 5); x.stroke(); const cs = ['#e8403a', '#ffe14a', '#4fc84a', '#2a9fe6', '#ff5db1', '#ffffff']; for (let k = 0; k < 9; k++) { x.fillStyle = cs[k % cs.length]; x.beginPath(); x.moveTo(k * 28 + 2, 6); x.lineTo(k * 28 + 28, 6); x.lineTo(k * 28 + 15, 52); x.closePath(); x.fill(); } });
+    const m = new THREE.MeshStandardMaterial({ map: TT_BUNT, alphaTest: .5, side: THREE.DoubleSide, roughness: .8, fog: !def.clearRoad });
+    inst(ttGeo('bunting'), m, pts(14, 0, 0, 4.8, true), (d) => ({ sx: 2 * HALF + 2.6, ry: yawN(d.p) })); }
+}
+// the weather of a type, round the camera while you are on its stretch
+const TT_FX = {
+  snow: { c: ['#ffffff'], size: .24, fall: 2.2, sway: .3, lo: -8, hi: 14, n: 600, op: .9 },
+  rain: { c: ['#bfe0ff'], size: .13, fall: 16, sway: 0, lo: -8, hi: 16, n: 700, op: .7 },
+  drips: { c: ['#9fd8ff'], size: .15, fall: 9, sway: 0, lo: -6, hi: 8, n: 250, op: .8 },
+  sparkle: { c: ['#ffffff', '#bff4ff', '#fff6b0'], size: .17, fall: .35, sway: .25, lo: -3, hi: 10, n: 450, op: 1 },
+  aurora: { c: ['#3cff8a', '#c84aff', '#7af8ff'], size: 7, fall: -.15, sway: .8, lo: 9, hi: 26, n: 180, op: .22 },
+  embers: { c: ['#ff8a1e', '#ffd23a', '#ff4a1e'], size: .22, fall: -1.6, sway: .9, lo: -2, hi: 12, n: 350, op: .9 },
+  bubbles: { c: ['#bff4ff', '#ffffff'], size: .18, fall: -.9, sway: .5, lo: -4, hi: 10, n: 300, op: .7 },
+  stars: { c: ['#ffffff', '#ffe14a', '#7af8ff'], size: .12, fall: 0, sway: .1, lo: -8, hi: 14, n: 500, op: 1 },
+  dust: { c: ['#f0dcb0', '#e8d0a0'], size: .3, fall: .2, sway: 1.4, lo: -2, hi: 8, n: 300, op: .35 },
+  petals: { c: ['#ffb3d1', '#ff8ab8', '#ffd6e6'], size: .22, fall: .9, sway: .8, lo: -6, hi: 12, n: 400, op: .9 },
+};
+function buildTrackFx(scene, W) {
+  const dot = canvasTex(32, 32, (x) => { const g = x.createRadialGradient(16, 16, 0, 16, 16, 16); g.addColorStop(0, 'rgba(255,255,255,1)'); g.addColorStop(1, 'rgba(255,255,255,0)'); x.fillStyle = g; x.fillRect(0, 0, 32, 32); });
+  const n = 700, sg = new THREE.BufferGeometry(); sg.setAttribute('position', new THREE.BufferAttribute(new Float32Array(n * 3), 3)); sg.setAttribute('color', new THREE.BufferAttribute(new Float32Array(n * 3), 3));
+  W.fx = new THREE.Points(sg, new THREE.PointsMaterial({ map: dot, size: .2, transparent: true, depthWrite: false, opacity: .9, vertexColors: true })); W.fx.frustumCulled = false; W.fx.visible = false; W.fxKind = null; scene.add(W.fx);
+}
+const typeOf = (r) => { const L = TDEF && TRACK_TYPES[TDEF.id]; return L ? L[Math.min(r || 0, L.length - 1)] : null; };
+function updateTrackType(dt) {
+  const W = WORLD, P = race && race.player; if (!W || !P || !TRACK.routes) return;
+  const T = inRouteSec(P) ? typeOf(P.route) : null, t = performance.now() / 1000;
+  // the weather
+  if (W.fx) { const want = T && T.fx ? T.fx : null;
+    if (want !== W.fxKind) { W.fxKind = want; W.fx.visible = !!want;
+      if (want) { const F = TT_FX[want], sp = W.fx.geometry.attributes.position, cl = W.fx.geometry.attributes.color, cp = W.camera.position, cc = new THREE.Color();
+        for (let i = 0; i < F.n; i++) { sp.setXYZ(i, cp.x + rand(-30, 30), cp.y + rand(F.lo, F.hi), cp.z + rand(-30, 30)); cc.set(pick(F.c)); cl.setXYZ(i, cc.r, cc.g, cc.b); }
+        sp.needsUpdate = cl.needsUpdate = true; W.fx.geometry.setDrawRange(0, F.n); W.fx.material.size = F.size; W.fx.material.opacity = F.op; W.fxCfg = F; } }
+    if (W.fxKind) { const F = W.fxCfg, sp = W.fx.geometry.attributes.position, cp = W.camera.position, span = F.hi - F.lo;
+      for (let i = 0; i < F.n; i++) {
+        let y = sp.getY(i) - dt * F.fall; if (y < cp.y + F.lo) y += span; else if (y > cp.y + F.hi) y -= span; sp.setY(i, y);
+        let x = sp.getX(i) + Math.sin(t + i) * dt * F.sway; if (x < cp.x - 30) x += 60; else if (x > cp.x + 30) x -= 60; sp.setX(i, x);
+        let z = sp.getZ(i) + Math.cos(t * .7 + i) * dt * F.sway * .5; if (z < cp.z - 30) z += 60; else if (z > cp.z + 30) z -= 60; sp.setZ(i, z);
+      } sp.needsUpdate = true; } }
+  // the dark: the night types pull the lights and the fog down while you are on them (not in space: its lights are animated)
+  if (TDEF.id === 'space' || !W.scene) return;
+  const want = T && T.dark ? T.dark : 0; if (T && T.dark) W.dkFog = T.fog || '#05060f';
+  if (W.dk == null) { W.dk = 0; const hemi = W.scene.children.find((o) => o.isHemisphereLight); W.dkBase = { hemi, hi: hemi ? hemi.intensity : 0, sun: W.sun ? W.sun.intensity : 0, env: W.scene.environmentIntensity, fog: W.scene.fog ? { c: W.scene.fog.color.clone(), n: W.scene.fog.near, f: W.scene.fog.far } : null }; }
+  if (Math.abs(want - W.dk) < .002 && !W.dk) return;
+  W.dk += (want - W.dk) * Math.min(1, dt * 2); if (Math.abs(W.dk) < .002 && !want) W.dk = 0;
+  const k = W.dk, B = W.dkBase, sc = W.scene;
+  if (B.hemi) B.hemi.intensity = B.hi * (1 - .72 * k); if (W.sun) W.sun.intensity = B.sun * (1 - .85 * k); sc.environmentIntensity = B.env * (1 - .7 * k);
+  if (B.fog && sc.fog) { sc.fog.color.copy(B.fog.c).lerp(_dkC.set(W.dkFog || '#05060f'), k); sc.fog.near = B.fog.n * (1 - .5 * k); sc.fog.far = B.fog.f * (1 - .62 * k); }
+  if ('backgroundIntensity' in sc) sc.backgroundIntensity = 1 - .82 * k;
+}
+const _dkC = new THREE.Color();
+
+// (v262, the user: "where the road changes, the car bugs into the jump") a variant's points are spaced along ITS OWN
+// length, so in the stretch the same spot on the road has a different distance on every variant (up to 10 m on Robo
+// City). A ramp or a pad stands in one place: on every variant it gets the distance of that road's nearest point.
+function routeSs(W) {
+  if (!TRACK.routes || !TRACK.sec) return;
+  const { i0, i1 } = TRACK.sec, B = TRACK.routes[0], N = B.length;
+  const near = (s, R) => {
+    const i = Math.round(s / STEP) % N; if (i < i0 || i >= i1) return s;
+    const P = B[i]; let best = 1e18, bi = i;
+    for (let j = Math.max(i0, i - 60); j <= Math.min(i1, i + 60); j++) { const q = R[j], d = (q.x - P.x) ** 2 + (q.z - P.z) ** 2; if (d < best) { best = d; bi = j; } }
+    // between that point and its neighbours: where along the segment the spot projects
+    let fr = 0; for (const [a, b, sg] of [[bi, bi + 1, 1], [bi - 1, bi, -1]]) { if (a < i0 || b > i1) continue; const A = R[a], Bq = R[b], vx = Bq.x - A.x, vz = Bq.z - A.z, l2 = vx * vx + vz * vz || 1, t = ((P.x - A.x) * vx + (P.z - A.z) * vz) / l2; if (t >= 0 && t <= 1) { fr = sg > 0 ? t : t - 1; break; } }
+    return (bi + fr) * STEP;
+  };
+  for (const o of W.ramps.concat(W.pads)) o.sr = TRACK.routes.map((R, r) => (r ? near(o.s, R) : o.s));
+}
 function buildArcade(scene, W, def) {
   // jump ramps across the whole road: an orange slope with white chevrons (v119, the user — the same on every map)
   const rampTex = chevrons('#ffffff', '#ffffff', '#ff7a18'); rampTex.wrapS = rampTex.wrapT = THREE.RepeatWrapping; rampTex.repeat.set(4, 1);
@@ -5122,7 +5395,7 @@ function chooseSteer() {
       S.innerHTML = `<div class="ipop card wide"><div class="tag">CONTROLS</div><p>Drive with the keyboard</p><div class="ikeys"><span><kbd>W</kbd> drive</span><span><kbd>A</kbd> <kbd>D</kbd> steer</span><span><kbd>SHIFT</kbd> drift</span><span><kbd>SPACE</kbd> power-up</span></div><button class="btn gold" id="iOk">OK ▶</button></div>`;
       tap($('iOk'), () => { sfx.click(); res(); }); return;
     }
-    const up = isPortrait(), keys = up ? ['joy', 'line', 'follow'] : ['tilt', 'joy', 'line', 'follow'], cur = up ? save.steerP || 'line' : save.steerL || 'line';
+    const up = isPortrait(), keys = up ? ['joy', 'line', 'follow', 'arrows'] : ['tilt', 'joy', 'line', 'follow', 'arrows'], cur = up ? save.steerP || 'line' : save.steerL || 'line';
     S.innerHTML = `<div class="ipop card wide"><div class="tag">CONTROLS</div><p>How do you want to steer?</p><div class="spick">${keys.map((k) => `<button data-v="${k}" class="${k === cur ? 'on' : ''}">${STEER_ART[k]}<span>${STEER_NAME[k]}</span></button>`).join('')}</div><button class="btn gold" id="iOk">OK ▶</button></div>`;
     for (const b of S.querySelectorAll('.spick button')) tap(b, async () => { sfx.click(); const v = b.dataset.v;
       if (v === 'tilt') { const ok = await enableTilt(); if (!ok) { toast('Tilt is not available here', '#ffb0b8', 24); return; } save.tilt = true; }
@@ -5484,8 +5757,21 @@ const FOLLOW = { x: null, held: null, dir: 0, until: 0, t0: 0 };
   addEventListener('blur', letGo, { passive: true });
 }
 /** Let go of every on-screen control. Called whenever a card, a panel or the pause menu takes over. */
-function dropTouches() { FOLLOW.held = null; FOLLOW.x = null; if (STICK.held != null) { STICK.held = null; STICK.x = 0; $('stick').classList.remove('held'); $('knob').style.transform = 'translate(-50%,-50%)'; } }
+function dropTouches() { FOLLOW.held = null; FOLLOW.x = null; ARR.l = ARR.r = false; for (const id of ['arrL', 'arrR']) { const b = $(id); if (b) b.classList.remove('on'); } if (STICK.held != null) { STICK.held = null; STICK.x = 0; $('stick').classList.remove('held'); $('knob').style.transform = 'translate(-50%,-50%)'; } }
 const STICK = { x: 0, held: null };
+// (v263, the user) ARROWS: two big buttons, ◀ and ▶, to tap or hold — they steer like the keyboard's A and D (the
+// kart drives by itself). Each button is its own touch, so one thumb can hold ◀ while the other taps the power-up.
+const ARR = { l: false, r: false };
+for (const [id, k] of [['arrL', 'l'], ['arrR', 'r']]) {
+  const b = $(id); if (!b) continue;
+  const on = () => { ARR[k] = true; b.classList.add('on'); Snd.init(); setCtl('arrows'); }, off = () => { ARR[k] = false; b.classList.remove('on'); };
+  touchHold(b, on, () => {}, off);
+  b.addEventListener('pointerdown', (e) => { if (e.pointerType === 'touch') return; on(); try { b.setPointerCapture(e.pointerId); } catch (x) {} });
+  for (const ev of ['pointerup', 'pointercancel', 'lostpointercapture']) b.addEventListener(ev, (e) => { if (e.pointerType !== 'touch') off(); });
+  b.addEventListener('contextmenu', (e) => e.preventDefault());
+}
+function applySide() { document.body.classList.toggle('ctl-right', save.ctlSide === 'right'); }
+applySide();
 {
   // (v77) a slider: a line across the pad with a dot in the middle; the knob follows the finger left or right only
   const base = $('stick'), knob = $('knob'); let cx = 0, cy = 0, R = 1;
@@ -5518,7 +5804,7 @@ const TOUCH = matchMedia('(pointer: coarse)').matches || navigator.maxTouchPoint
 const steerWant = () => { if (!TOUCH) return 'keys';
   const m = isPortrait() ? (save.steerP || 'line') : (save.steerL || 'line');
   if (m === 'tilt') return (!isPortrait() && save.tilt && tiltG !== null) ? 'tilt' : 'stick';
-  return m === 'joy' ? 'joy' : m === 'follow' ? 'follow' : 'stick'; };
+  return m === 'joy' ? 'joy' : m === 'follow' ? 'follow' : m === 'arrows' ? 'arrows' : 'stick'; };
 let CTL = TOUCH ? 'stick' : 'keys';   // how the player steers: 'wheel' (on screen), 'tilt' (turn the phone) or 'keys'
 function setCtl(c) { if (CTL === c) return; CTL = c; stage.dataset.ctl = c; }
 stage.dataset.ctl = CTL;
@@ -5567,7 +5853,7 @@ async function enableTilt() {
 function ctlHint(on) {
   const h = $('ctlHint'); if (!on) { h.style.opacity = 0; return; }
   const k = (t) => `<kbd>${t}</kbd>`; if (TOUCH && !GPAD.on) setCtl(steerWant());
-  h.innerHTML = CTL === 'keys' && GPAD.on ? `Hold ${k(padName('gas'))} to drive · ${k('stick')} steer · ${k(padName('drift'))} drift · ${k(padName('item'))} power-up · ${k(padName('pause'))} pause` : CTL === 'keys' ? `Hold ${k('W')} to drive · ${k('A')} ${k('D')} steer · ${k('SHIFT')} drift · ${k('SPACE')} power-up` : CTL === 'tilt' ? 'Turn your phone like a wheel to steer' : CTL === 'stick' ? 'Slide the line to steer' : CTL === 'joy' ? 'Drag the joystick to steer' : CTL === 'follow' ? 'Hold the LEFT or RIGHT side of the screen to steer' : '';
+  h.innerHTML = CTL === 'keys' && GPAD.on ? `Hold ${k(padName('gas'))} to drive · ${k('stick')} steer · ${k(padName('drift'))} drift · ${k(padName('item'))} power-up · ${k(padName('pause'))} pause` : CTL === 'keys' ? `Hold ${k('W')} to drive · ${k('A')} ${k('D')} steer · ${k('SHIFT')} drift · ${k('SPACE')} power-up` : CTL === 'arrows' ? 'Tap or hold ◀ ▶ to steer · the kart drives by itself' : CTL === 'tilt' ? 'Turn your phone like a wheel to steer' : CTL === 'stick' ? 'Slide the line to steer' : CTL === 'joy' ? 'Drag the joystick to steer' : CTL === 'follow' ? 'Hold the LEFT or RIGHT side of the screen to steer' : '';
   h.hidden = !h.innerHTML; h.style.opacity = 1;
 }
 let JOYF = null;
@@ -5582,11 +5868,11 @@ let JOYF = null;
 const STEER = { lineExp: 1.25, lineMax: 90, lineRate: 12, joyExp: 1.5, joyMax: 86, joyRate: 8, padExp: 1.25, tiltDead: 3, tiltGain: 3.2, tiltRate: 10, keyRate: 7.5 };
 function updateWheel(dt) {
   { const jf = steerWant() === 'joy'; if (jf !== JOYF) { JOYF = jf; document.body.classList.toggle('joyfloat', jf); } }
-  const kb = (kdown('left') ? -1 : 0) + (kdown('right') ? 1 : 0);
+  const kb = ((kdown('left') || ARR.l) ? -1 : 0) + ((kdown('right') || ARR.r) ? 1 : 0);   // (v263: the ARROWS steer like the keys)
   // the player can change how they steer in the middle of a race: take it up at once, and let go of
   // whatever finger was on the old control rather than waiting for a touch that may never end
   if (TOUCH) { const w = GPAD.on ? 'keys' : steerWant(); if (CTL !== w) { dropTouches(); setCtl(w); } }
-  else if (CTL === 'stick' || CTL === 'joy' || CTL === 'follow') setCtl('keys');
+  else if (CTL === 'stick' || CTL === 'joy' || CTL === 'follow' || CTL === 'arrows') setCtl('keys');
   // (v212, the user: "instead of follow the finger: hold the left side to go left, the right side to go right, with no
   // borders") TAP SIDES: a finger on the left half of the screen turns the wheel left, on the right half right — the
   // full lock, easing in, like the keys; no lane, no road-edge limit; let go and it straightens
@@ -6152,7 +6438,7 @@ function drive(r, dt) {
   // the ground: the road (plus a ramp's slope); nothing at all off the open edges of a space road
   const offEdge = TDEF.edge === 'void' && !WORLD.walls[r.idx] && Math.abs(r.lat) > HALF + 1.3;
   let h = 0;
-  if (!offEdge) for (const rp of WORLD.ramps) { const d = ((r.sc - rp.s) % TRACK.L + TRACK.L) % TRACK.L; if (d < RAMP_LEN && Math.abs(r.lat) < HALF + .3) h = RAMP_H * d / RAMP_LEN; }
+  if (!offEdge) for (const rp of WORLD.ramps) { const d = ((r.sc - (rp.sr ? rp.sr[r.route || 0] : rp.s)) % TRACK.L + TRACK.L) % TRACK.L; if (d < RAMP_LEN && Math.abs(r.lat) < HALF + .3) h = RAMP_H * d / RAMP_LEN; }   // (v262: the ramp's distance on this kart's variant)
   const road = offEdge ? trackY(r) : rideY(r, trackY(r)), g = offEdge ? -1e9 : road + h;
   if (r.air) {
     // (in space, past the top of a jump, the magnets in the road pull the kart back down hard)
@@ -6168,7 +6454,7 @@ function drive(r, dt) {
     if (r.player && !race.tips.trick) { race.tips.trick = 1; toast('TAP the screen\nfor a TRICK!', '#ffe14a', 30); }
   } else { r.y = g; r.rampY = h; }   // the wheels stay on the road over every hill (since v59 only a ramp makes a kart fly)
   // boost pads
-  if (!r.air) for (const pd of WORLD.pads) { const d = ((r.sc - pd.s + 2) % TRACK.L + TRACK.L) % TRACK.L; if (d < 4 && Math.abs(r.lat - pd.lat) < 1.8) { if (r.boostT < TUNE.padTime * .8 && r.player) sfx.pad(); giveBoost(r, TUNE.padTime, TUNE.padMul); } }
+  if (!r.air) for (const pd of WORLD.pads) { const d = ((r.sc - (pd.sr ? pd.sr[r.route || 0] : pd.s) + 2) % TRACK.L + TRACK.L) % TRACK.L; if (d < 4 && Math.abs(r.lat - pd.lat) < 1.8) { if (r.boostT < TUNE.padTime * .8 && r.player) sfx.pad(); giveBoost(r, TUNE.padTime, TUNE.padMul); } }
   // coins on the track (only you pick them up)
   if (r.player && !r.finished) for (const c of WORLD.coins) if (c.on && (r.x - c.x) ** 2 + (r.z - c.z) ** 2 < (1.4 + .8 * upLv('magnet')) ** 2 && Math.abs(r.y + .6 - c.y) < 1.6 + .5 * upLv('magnet')) {
     c.on = false; c.m.visible = false; setTimeout(() => { c.on = true; c.m.visible = true; }, 9000);
@@ -6675,7 +6961,7 @@ function updateRace(dt) {
   if (race.bumpCd) race.bumpCd = Math.max(0, race.bumpCd - gdt);
   race.steer = updateWheel(dt);
   for (const r of race.racers) { useRoute(r); drive(r, gdt); } playerRoute();   // (v194) each racer on its own route through the section
-  updateRouteGates();
+  updateRouteGates(); updateTrackType(Math.min(dt, .05));
   if (race.party && party && race.started) { const now = performance.now(); if (!race.sentAt || now - race.sentAt > 66) { race.sentAt = now; const P = race.player; try { party.P.sendState({ t: race.raceTime, x: +P.x.toFixed(2), y: +P.y.toFixed(2), z: +P.z.toFixed(2), a: +P.angle.toFixed(3), v: +P.speed.toFixed(1), lap: P.lap, s: +P.steerVis.toFixed(2), d: P.drift, air: P.air, fin: P.finished }); } catch (e) {} } }
   updateGates(); updateFormGates(); updatePit(dt); updateCrew(dt); if (race && race.tut) updateTut(dt);
   if (race.aimOpen && (race.ended || !race.item || race.player.finished)) closeTargets();
