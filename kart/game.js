@@ -77,6 +77,9 @@ const TUNE = {
   pitFix: .09,             // +9% steering per right MAINTENANCE answer
   pitWorn: .93,            // worn tyres: a little slower from the moment a stop is due until you take it
   maxImmune: 3,            // puddle shields a racer can hold (the user: "max 3 per racer")
+  // (v269) the question sets, here so the debug hub can change them: garage start 3 sets of garageN, a pit stop 3 sets
+  // of pitN (each pitSecs), the finish line finN questions of finSecs (a Starter gets 2 / 3 seconds more)
+  garageN: 4, pitN: 3, finN: 3, finSecs: 10,
 };
 const LAPS0 = TUNE.laps, PIT_EVERY0 = TUNE.pitEvery, PIT_LAPS0 = TUNE.pitLaps;
 const STEP = .6;   // the spacing of the track's centre-line points (the road's half-width HALF is set per track)
@@ -291,6 +294,13 @@ function showOnly(id) {
 }
 // DEV MODE (the settings): no questions anywhere and unlimited coins. Everything else plays normally.
 const DEV = () => !!save.dev;
+// (v269) THE DEBUG HUB (kart/debug.js): loaded only on a device where it is on (?debug turns it on and remembers it,
+// ?debug=0 turns it off), so players never load it. QDEV = dev mode as the question code sees it: the hub can force one
+// set of questions through dev mode (FK.forceQ) to jump straight to them.
+const QDEV = () => DEV() && !(window.FK && window.FK.forceQ);
+const DBG_KEY = 'foxkarts-debug';
+const dbgOn = () => { try { return !!(JSON.parse(localStorage.getItem(DBG_KEY) || '{}') || {}).on; } catch (e) { return false; } };
+{ const m = /[?&]debug(?:=([^&#]*))?(?=&|#|$)/.exec(location.search); if (m) { try { const d = JSON.parse(localStorage.getItem(DBG_KEY) || '{}') || {}; d.on = !/^(0|off|false|no)$/i.test(m[1] || ''); localStorage.setItem(DBG_KEY, JSON.stringify(d)); } catch (e) {} } }
 // (v141, the user) HOW MANY QUESTIONS A ROUND: the slider on the track screen sets how many jumps a lap carry a
 // question. (v151) Four a lap, always — the "questions a round" slider is gone.
 // (v151) four jumps a lap, always — the "questions a round" slider is gone (the user asked for it to go),
@@ -341,6 +351,7 @@ function openSettings(tab = 'game', onClose) {
   const pages = {
     game: `<div class="srow"><div class="sl"><b>Username</b><small>Shown on your kart and in parties</small></div><input id="uname" maxlength="14" autocomplete="off" spellcheck="false" placeholder="Your name" value="${(save.name || '').replace(/"/g, '&quot;')}"></div>`
       + row('dev', 'Dev mode', 'No questions anywhere and unlimited coins (for testing)')
+      + (dbgOn() || isDevAcct() ? `<div class="srow"><div class="sl"><b>Debug hub</b><small>Jump anywhere, questions, race, steering, kart, graphics (developers and testers)</small></div><button class="sbtn" id="sDbg">DEBUG HUB</button></div>` : '')
       + `<div class="srow"><div class="sl"><b>How to play</b><small>The controls and the rules, with pictures</small></div><button class="sbtn" id="sHelp">OPEN</button></div>`
       + `<div class="srow"><div class="sl"><b>Tutorial</b><small>Foxino's story and the test drive again</small></div><button class="sbtn" id="sTut">PLAY</button></div>`,
     controls: (() => {
@@ -392,6 +403,7 @@ function openSettings(tab = 'game', onClose) {
   const u = S.querySelector('#uname'); if (u) { u.addEventListener('keydown', (e) => e.stopPropagation()); u.addEventListener('keyup', (e) => e.stopPropagation()); u.addEventListener('input', () => { save.name = u.value.trim().slice(0, 14); store(); if (devAccount()) { refreshCounters(); toast('DEV ACCOUNT\n<small>5 000 coins · kart back to level 1</small>', '#ffe14a', 34); } racerPlate(); }); }
   if ($('sHelp')) tap($('sHelp'), () => { S.hidden = true; S.innerHTML = ''; showHelp(() => {}); });
   if ($('sTut')) tap($('sTut'), () => { sfx.click(); S.hidden = true; S.innerHTML = ''; runIntro(); });   // (v172)
+  if ($('sDbg')) tap($('sDbg'), () => { sfx.click(); S.hidden = true; S.innerHTML = ''; if (onClose) onClose(); window.FK.debug(); });   // (v269)
   tap($('sClose'), () => { sfx.click(); S.hidden = true; S.innerHTML = ''; if (onClose) onClose(); });
 }
 function refreshCounters() {
@@ -417,7 +429,7 @@ const renderer = (() => { for (const o of [{ antialias: true, powerPreference: '
 // point, shadows, four lantern lights; a slow phone drops shadows and resolution by itself. HIGH: every device pixel,
 // sharper and wider shadows, six lantern lights (the two nearest cast shadows); the slow-phone fallback is off.
 const gfxOf = (sv) => (sv && sv.gfx) || (sv && sv.res === 'high' ? 'high' : 'default');
-const pixelRatioFor = (q, g = gfxOf(typeof save !== 'undefined' ? save : null)) => (g === 'high' ? Math.min(window.devicePixelRatio || 1, 3) : g === 'low' ? .7 : q === 2 ? .75 : q ? 1 : Math.min(window.devicePixelRatio || 1, 1.75));
+const pixelRatioFor = (q, g = gfxOf(typeof save !== 'undefined' ? save : null)) => (window.FK && window.FK.pr) || (g === 'high' ? Math.min(window.devicePixelRatio || 1, 3) : g === 'low' ? .7 : q === 2 ? .75 : q ? 1 : Math.min(window.devicePixelRatio || 1, 1.75));
 renderer.setPixelRatio((() => { try { const sv = JSON.parse(localStorage.getItem('foxino-kart-v1') || '{}'); return pixelRatioFor(+sv.lowq || 0, gfxOf(sv)); } catch (e) { return pixelRatioFor(0, 'default'); } })());
 renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 1.1;   // (Neutral tone mapping looks brighter but runs at 1/6 the speed in Safari)
@@ -1498,6 +1510,7 @@ function useTrack(id) {
   for (const d of Object.values(TRACK_DEFS)) if (d !== def && d.world) { disposeWorld(d.world); d.world = null; }
   TDEF = def; ({ TRACK, TB, BOUNDS, MID, BUSY, RAMP_AT, PAD_AT, GATE_AT, PIT_AT, HALF } = prepTrack(TDEF));
   TUNE.laps = def.laps || LAPS0; TUNE.pitEvery = def.pitEvery || PIT_EVERY0; TUNE.pitLaps = def.pitLaps || (def.pitEvery ? null : PIT_LAPS0);   // (v161) a long lap (Japan) races fewer of them
+  if (window.FK && window.FK.onTrack) window.FK.onTrack(def);   // (v269) the debug hub's laps / pit laps
   if (!TDEF.world) TDEF.world = buildWorld(TDEF);
   WORLD = TDEF.world; resize(); applyGfx();
   if (WORLD.secret && WORLD.secret.open) closeSecret(WORLD.secret);   // (the wall is whole again for the next race)
@@ -3887,7 +3900,7 @@ function pitStop() {
     P.speed = 0; race.pitBrake = false; race.pitHold = true; race.slowTarget = .02; Snd.skid(0);
     sfx.power(); L.say('Pit stop! Quick questions!');
     const bay = pitBayAt(); if (bay) settleInBox(P, bay.s, bay.lat, () => { if (race === R0 && race.pitHold) crewStart(); }); else crewStart();   // (v189) the exact middle of the box, then the crew come out (v162)
-    runQuiz([['fix', 3], ['spd', 3], ['imm', 3]], 'PIT STOP', (got) => {
+    runQuiz([['fix', TUNE.pitN], ['spd', TUNE.pitN], ['imm', TUNE.pitN]], 'PIT STOP', (got) => {
       if (race !== R0) return;
       race.dialog = null; race.pitHold = false; race.slowTarget = 1; race.learn.pits++; race.pitAuto = false;   // (the way out is yours)
       race.pitPhase = 'out'; pitBoxState('done'); giveBoost(P, 1.5, 1.5); sfx.turbo(2); drawPitHud();
@@ -3915,7 +3928,7 @@ function confettiAt(el, n = 24, spread = 1) {
 }
 function runQuiz(sets, tag, onDone) {
   const P = race.player, R0 = race, lr = race.learn, D = $('dialog'), got = {};
-  if (DEV()) {   // (v250, the user: "dev mode removes all the questions") the crew just does the job: a short stop, full marks
+  if (QDEV()) {   // (v250, the user: "dev mode removes all the questions") the crew just does the job: a short stop, full marks
     // (v255, the user: "in dev mode the pit stop counts as if all 9 questions were right — all the boosts") every set is a
     // PERFECT 100 % (the most a stop can give), the parts light up as the crew works, and the board shows it before you go
     const pct = {}; sets.forEach(([k, n], i) => { pct[k] = 100; setTimeout(() => { if (race !== R0) return; race.pitPhase = k; partGlow(P, (PART_GLOW[k] || [])[0]); }, i * 700); for (let a = 0; a < n; a++) setTimeout(() => { if (race === R0) pitUpFx(P, k, a, true); }, i * 700 + 150 + a * 180); });
@@ -5977,7 +5990,8 @@ let JOYF = null;
 //   tilt     3° dead zone, the full lock at about 31° of turn                 (was about 40°)
 //   keys     90 % of the lock in about 0.3 s, quicker still when you swap sides (was 0.46 s)
 //   tap sides stays as the user tuned it (v226)
-const STEER = { lineExp: 1.25, lineMax: 90, lineRate: 12, joyExp: 1.5, joyMax: 86, joyRate: 8, padExp: 1.25, tiltDead: 3, tiltGain: 3.2, tiltRate: 10, keyRate: 7.5 };
+const STEER = { lineExp: 1.25, lineMax: 90, lineRate: 12, joyExp: 1.5, joyMax: 86, joyRate: 8, padExp: 1.25, tiltDead: 3, tiltGain: 3.2, tiltRate: 10, keyRate: 7.5,
+  outExp: 1.6, tapMin: 34, tapMax: 50, tapRate: 8 };   // (v269: the wheel → steering "soft middle" curve and TAP SIDES, here so the debug hub can tune them)
 function updateWheel(dt) {
   { const jf = steerWant() === 'joy'; if (jf !== JOYF) { JOYF = jf; document.body.classList.toggle('joyfloat', jf); } }
   const kb = ((kdown('left') || ARR.l) ? -1 : 0) + ((kdown('right') || ARR.r) ? 1 : 0);   // (v263: the ARROWS steer like the keys)
@@ -5995,8 +6009,8 @@ function updateWheel(dt) {
     // the wheel snaps to a gentle 34° the moment you press (no easing in), a hold past ~0.4 s slowly opens it to 50°
     // for the hairpins, and letting go straightens it straight away (no 0.25 s tail); the steering assist stays out of it
     const dir = FOLLOW.x != null ? (FOLLOW.x < 0 ? -1 : 1) : FOLLOW.dir, hT = (performance.now() - FOLLOW.t0) / 1000;
-    const tgt = dir * (34 + 16 * clamp((hT - .4) / .8, 0, 1));
-    WHEEL.rot = WHEEL.rot * dir < 30 ? dir * 30 : WHEEL.rot + (tgt - WHEEL.rot) * Math.min(1, dt * 8);
+    const tgt = dir * (STEER.tapMin + (STEER.tapMax - STEER.tapMin) * clamp((hT - .4) / .8, 0, 1));
+    WHEEL.rot = WHEEL.rot * dir < STEER.tapMin - 4 ? dir * (STEER.tapMin - 4) : WHEEL.rot + (tgt - WHEEL.rot) * Math.min(1, dt * STEER.tapRate);
   }
   else if (STICK.held != null && !kb) { const joy = CTL === 'joy'; WHEEL.rot += (STICK.x * (joy ? STEER.joyMax : STEER.lineMax) - WHEEL.rot) * Math.min(1, dt * (joy ? STEER.joyRate : STEER.lineRate)); }
   else
@@ -6008,7 +6022,7 @@ function updateWheel(dt) {
   else if (WHEEL.held == null) WHEEL.rot *= Math.exp(-dt * (CTL === 'follow' ? 18 : 9));
   wheelSvg.style.transform = `rotate(${WHEEL.rot.toFixed(1)}deg)`;
   // a soft middle: small turns of the wheel steer only a little, a full turn still steers fully
-  const s = clamp(WHEEL.rot / 90, -1, 1); return Math.sign(s) * Math.abs(s) ** 1.6;
+  const s = clamp(WHEEL.rot / 90, -1, 1); return Math.sign(s) * Math.abs(s) ** STEER.outExp;
 }
 tap($('slot'), () => useItem());
 $('slot').addEventListener('touchstart', (e) => { e.preventDefault(); Snd.init(); useItem(); }, { passive: false });
@@ -6117,7 +6131,8 @@ function startRaceNow(trackId = save.track || 'alps', opts = {}) {
   Snd.init(); screen = 'race'; showOnly('hud'); $('tracks').hidden = true; $('toasts').innerHTML = ''; WHEEL.rot = 0; WHEEL.held = null; $('wheelHint').style.opacity = 1; ctlHint(true);
   const me = charById(save.char), others = CHARACTERS.filter((c) => c !== me);
   const inParty = !!(party && party.members.length > 1);
-  const order = opts.tut ? [me] : inParty ? party.members.map((m) => (m.me ? me : { remote: m.id, name: m.name, ch: charById(m.char) || me, skin: m.skin })) : [others[0], others[1], me, others[2], others[3]];
+  let order = opts.tut ? [me] : inParty ? party.members.map((m) => (m.me ? me : { remote: m.id, name: m.name, ch: charById(m.char) || me, skin: m.skin })) : [others[0], others[1], me, others[2], others[3]];
+  if (!opts.tut && !inParty && window.FK.rivals != null) order = order.filter((c) => c === me || others.indexOf(c) < window.FK.rivals);   // (v269) the debug hub: fewer rivals
   if (race) { for (const r of race.racers) WORLD.scene.remove(r.model.root); for (const p of race.projectiles) WORLD.scene.remove(p.m); }
   Music.stop();
   for (const b of WORLD.boxes) { b.on = true; b.m.visible = true; b.m.scale.setScalar(1); }
@@ -6164,7 +6179,7 @@ function startRaceNow(trackId = save.track || 'alps', opts = {}) {
   { const nw = $('newW'); if (race.newWords.length) { nw.innerHTML = `<h4>NEW WORDS</h4><div>${race.newWords.map((w) => `<span><i>${w.e}</i><b>${w.w}</b><small>${w.cs}</small></span>`).join('')}</div>`; nw.hidden = false; L.prefetch(race.newWords.map((w) => w.w)); setTimeout(() => L.say(race.newWords.map((w) => `${w.w}.`)), 700); } else nw.hidden = true; }
   drawSlot(); buildMinimap(); lapPill(); drawPitHud();
   countdown();
-  window.FK.race = race;
+  window.FK.race = race; if (window.FK.onRace) window.FK.onRace(race);   // (v269) the debug hub
 }
 // (v170) the grid: two by two behind the line
 const gridSpot = (i) => ({ s: TRACK.L - 2.4 - Math.floor(i / 2) * 4.5 - (i % 2) * 1.8, lat: [-2.8, 2.8, 0, -2.8, 2.8, 0][i] || 0 });
@@ -6243,9 +6258,9 @@ function garageStop(R0, stayIn = false) {
   return new Promise((res) => {
     const P = race.player; race.dialog = 'pitstop'; race.pitHold = true;
     const go = () => {
-    toast('IN THE GARAGE!\n<small>get the kart ready: 4 questions in each</small>', '#ffe14a', 34); L.say('Get your kart ready!');
+    toast(`IN THE GARAGE!\n<small>get the kart ready: ${TUNE.garageN} question${TUNE.garageN === 1 ? '' : 's'} in each</small>`, '#ffe14a', 34); L.say('Get your kart ready!');
     crewStart(); drawPitHud();   // (v199: no pit box at the garage start)
-    runQuiz([['fix', 4], ['spd', 4], ['imm', 4]], 'GARAGE', () => {
+    runQuiz([['fix', TUNE.garageN], ['spd', TUNE.garageN], ['imm', TUNE.garageN]], 'GARAGE', () => {
       if (race !== R0) return res();
       race.dialog = null; race.pitHold = false; race.pitPhase = 'out'; drawPitHud();
       for (const r of race.racers) if (!r.player) for (const k of ['fix', 'spd', 'imm']) pitAward(r, k, rand(55, 88));   // the rivals' crews were busy too
@@ -6357,7 +6372,7 @@ async function countdown() {
   // (v170) the Alps: a pit stop in your garage before the race (4 + 4 + 4, the crew working), then a formation lap
   if (TDEF.pitStart && PITS && !race.party && !race.tut) {
     // (v254, the user) no formation lap any more: answer the garage questions, the screen goes black, and you are on the grid
-    if (!DEV()) await garageStop(R0, true);
+    if (!QDEV() && !window.FK.skipGarage) await garageStop(R0, true);   // (v269: the debug hub can skip it)
     if (race !== R0) return;
     await blackoutToGrid(R0);
     if (race !== R0) return;
@@ -6806,12 +6821,12 @@ function jumpQuestion(P) {
 // rivals' answering times are rolled when the race is set up (quizT).
 function finishLine() {
   const P = race.player;
-  if (DEV()) { P.quizT = 0; finish(); return; }   // (v183, the user) the 3 finish questions are back on every map, right after the line
+  if (QDEV()) { P.quizT = 0; finish(); return; }   // (v183, the user) the 3 finish questions are back on every map, right after the line
   race.slowTarget = .2; race.finQuiz = !race.party; const c0 = resClock(), t0 = performance.now(); let n = 0, right = 0;
   toast(`${ico('icon-flag')} FINISH!\n3 QUESTIONS!`, '#ffe14a', 44); sfx.fanfare();
   const next = () => {
-    if (n === 3) { if (race.finQuiz) { P.doneR = resClock(); P.quizT = P.doneR - c0; race.finQuiz = false; } else P.quizT = (performance.now() - t0) / 1000; P.quizRight = right; race.slowTarget = 1; finish(); return; }
-    n++; askOne('finish', `${ico('icon-flag', 'tico')} FINISH · ${n} OF 3`, 10 + (L.level() === 0 ? 3 : 0), (ok) => { if (ok) right++; next(); });
+    if (n >= TUNE.finN) { if (race.finQuiz) { P.doneR = resClock(); P.quizT = P.doneR - c0; race.finQuiz = false; } else P.quizT = (performance.now() - t0) / 1000; P.quizRight = right; race.slowTarget = 1; finish(); return; }
+    n++; askOne('finish', `${ico('icon-flag', 'tico')} FINISH · ${n} OF ${TUNE.finN}`, TUNE.finSecs + (L.level() === 0 ? 3 : 0), (ok) => { if (ok) right++; next(); });
   };
   next();
 }
@@ -7545,6 +7560,23 @@ window.FK.shot = (yaw, dist, y, lookY) => {
   screen = 'shot'; SHOW.turn.rotation.y = 0; const c = SHOW.camera; c.clearViewOffset();
   c.position.set(Math.sin(yaw) * dist, y, Math.cos(yaw) * dist); c.lookAt(0, lookY, 0); renderer.render(SHOW.scene, c);
 };
+// (v269) THE DEBUG HUB: what kart/debug.js may read and call. It is loaded only when the hub is on for this device
+// (?debug), or opened from Settings → GAME (shown when it is on, or for the dev account) or with the ` key.
+const DBG_API = {
+  VER: new URL(import.meta.url).searchParams.get('v') || '?', SAVE_KEY, L, PACKS, TUNE, STEER, LAPS0, PIT_LAPS0, TRACK_DEFS, TRACK_ORDER, ROUTE_VARIANTS, GROUND_VARIANTS,
+  STEER_NAME, UPGRADES, KART_MAX, TYRE_STYLES, MAP_NEED, ITEMS, BODY_COLORS, LIGHT_COLORS, LOGOS, DEFAULT_SKIN, WHEEL, STICK, FOLLOW, GPAD, renderer, TOUCH,
+  save: () => save, store, race: () => race, screen: () => screen, TDEF: () => TDEF, TRACK: () => TRACK, CTL: () => CTL, steerWant, tilt: () => tiltG,
+  DEV, isDevAcct, toast, refreshCounters, applyGfx, applySide, gfxOf, resize, upsOf, vehLv, paintPool, tyreOwned, crates, setShowRacer, passOf, enableTilt,
+  goMenu, goGarage, goTracks, goPass, goLicence, runIntro, startTutorial, startRace, openCrate, showResults, pauseMenu, hidePodium, closeDialog,
+  pitStop, drawPitHud, drawSlot, lapDone, lapPill, ranking, askOne, ico, at, angleOf, project, placeAll, snapCamera, giveBoost,
+  resume: () => { if (!race) return; closeDialog(); race.dialog = null; race.slowTarget = 1; if (race.started && !race.ended) Music.start(); },
+  leaveRace: () => { if (race) { closeDialog(); cup = null; endRace(); } },
+};
+let dbgMod = null;
+const loadDebug = () => (dbgMod = dbgMod || import('./debug.js?v=1').then((m) => { m.init(DBG_API); return m; }).catch((e) => { dbgMod = null; console.error('debug hub', e); throw e; }));
+window.FK.debug = (tab) => loadDebug().then((m) => m.open(tab));
+if (dbgOn()) loadDebug();
+addEventListener('keydown', (e) => { if (e.key === '`' && (dbgOn() || isDevAcct()) && !(e.target && e.target.closest && e.target.closest('input, textarea'))) { e.preventDefault(); loadDebug().then((m) => m.toggle()); } });
 addEventListener('pointerdown', () => { Snd.init(); L.setAudio(Snd.ctx); L.unlock(); }, { once: true });
 // (v141) turning the phone mid-race no longer pauses: the layout just follows it.
 // switching to another app: pause the race and silence everything; sound comes back when the game is visible again
