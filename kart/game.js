@@ -3934,9 +3934,9 @@ function runQuiz(sets, tag, onDone, onAns = null) {
   if (QDEV()) {   // (v250, the user: "dev mode removes all the questions") the crew just does the job: a short stop, full marks
     // (v255, the user: "in dev mode the pit stop counts as if all 9 questions were right — all the boosts") every set is a
     // PERFECT 100 % (the most a stop can give), the parts light up as the crew works, and the board shows it before you go
-    const pct = {}; sets.forEach(([k, n], i) => { pct[k] = 100; setTimeout(() => { if (race !== R0) return; race.pitPhase = k; partGlow(P, (PART_GLOW[k] || [])[0]); }, i * 700); for (let a = 0; a < n; a++) setTimeout(() => { if (race === R0) pitUpFx(P, k, a, true, !!(onAns && onAns(k, a, true))); }, i * 700 + 150 + a * 180); });
+    const pct = {}; sets.forEach(([k, n], i) => { pct[k] = 100; setTimeout(() => { if (race !== R0) return; race.pitPhase = k; race.quizK = k; partGlow(P, (PART_GLOW[k] || [])[0]); }, i * 700); for (let a = 0; a < n; a++) setTimeout(() => { if (race === R0) pitUpFx(P, k, a, true, !!(onAns && onAns(k, a, true))); }, i * 700 + 150 + a * 180); });
     setTimeout(() => {
-      if (race !== R0) return; partGlow(P, null); race.pitPhase = 'board'; D.hidden = false;
+      if (race !== R0) return; partGlow(P, null); race.pitPhase = 'board'; race.quizK = null; D.hidden = false;
       pitScoreCard(D, sets.map(([k]) => k), pct, tag, () => {
         if (race !== R0) return;
         closeDialog(); Music.duck(false);
@@ -3952,7 +3952,7 @@ function runQuiz(sets, tag, onDone, onAns = null) {
   const step = (j) => {
     if (race !== R0) return;
     if (j >= flat.length) {
-      const pct = {}; for (const k in got) pct[k] = Math.round(got[k].sum / Math.max(1, got[k].n) * 100); race.pitPhase = 'board';
+      const pct = {}; for (const k in got) pct[k] = Math.round(got[k].sum / Math.max(1, got[k].n) * 100); race.pitPhase = 'board'; race.quizK = null;
       pitScoreCard(D, sets.map(([k]) => k), pct, tag, () => {
         if (race !== R0) return;
         closeDialog(); Music.duck(false);
@@ -3961,7 +3961,7 @@ function runQuiz(sets, tag, onDone, onAns = null) {
       });
       return;
     }
-    const q = flat[j], S = PIT_SETS[q.k]; race.pitPhase = q.k;   // (v162) the crew work on what is being asked
+    const q = flat[j], S = PIT_SETS[q.k]; race.pitPhase = q.k; race.quizK = q.k;   // (v273: quizK = what the camera shows)   // (v162) the crew work on what is being asked
     partGlow(P, (PART_GLOW[q.k] || [])[q.i % 4]);   // (v253) that part of the kart lights up yellow
     if (q.i === 0 && j) L.say(S.say);
     const it = L.pickPit(TDEF.words || TDEF.id, 1, lr)[0]; lr.asked.push(it.id); lr.askedAt[it.id] = lr.asked.length;
@@ -3970,7 +3970,7 @@ function runQuiz(sets, tag, onDone, onAns = null) {
       const g = got[q.k]; g.n++; g.res.push(!!ok); if (ok) g.sum += PIT_RIGHT + PIT_FAST * clamp(fast || 0, 0, 1);
       pitUpFx(P, q.k, q.i, !!ok, !!(onAns && onAns(q.k, q.i, !!ok)));   // (v267) the upgrade goes onto your kart as you answer (v270: the garage's wing takes over the label)
       partGlow(P, null); step(j + 1);
-    }, TUNE.pitSecs + (L.level() === 0 ? 2 : 0), null, true);
+    }, TUNE.pitSecs + (L.level() === 0 ? 2 : 0), null, tag !== 'GARAGE');   // (v273, the user: the start doesn't wait for the clock after a wrong answer; pit stops still do)
     // (v160) where you are in the set: three dots in the set's colour; the phone sheet slides up only on the first card
     const card = D.querySelector(".qcard"), top = card && card.querySelector(".qtop");
     if (top) top.insertAdjacentHTML("afterbegin", `<div class="qprog" style="--c:${S.col}">${Array.from({ length: q.n }, (_, k) => `<i class="${k < q.i ? (got[q.k].res[k] ? "done ok" : "done no") : k === q.i ? "now" : ""}"></i>`).join("")}</div>`);
@@ -6378,7 +6378,7 @@ async function blackoutToGrid(R0) {
   if (!B) { B = document.createElement('div'); B.id = 'blackout'; stage.appendChild(B); }
   B.classList.add('on'); await wait(520); if (race !== R0) { B.classList.remove('on'); return; }
   closeDialog(); Music.duck(false); Music.stop();
-  race.dialog = null; race.pitHold = false; race.pitPhase = null; race.garageCam = null; race.formation = false; race.started = false;
+  race.dialog = null; race.pitHold = false; race.pitPhase = null; race.quizK = null; race.garageCam = null; race.formation = false; race.started = false;
   if (WORLD.crew) WORLD.crew.on = false;
   for (const r of race.racers) { r.inGarage = false; r.parked = false; r.gridAim = null; r.grid = null; }
   race.raceTime = 0; race.coinsGot = 0; race.item = null; race.pitDue = false; drawSlot();
@@ -7121,8 +7121,22 @@ function drawMinimap() {
 
 // the chase camera: behind and above the kart, looking ahead; it swings round the kart after the finish
 const camTarget = new THREE.Vector3(), camLook = new THREE.Vector3(), camUp = new THREE.Vector3(0, 1, 0), _v = new THREE.Vector3(), _s = new THREE.Vector3(), _up = new THREE.Vector3(0, 1, 0);
+// (v273) the quiz cameras: f / s / h = metres ahead / to the right / up from the kart; lf / ls / lh = the point looked at
+const QUIZ_CAM = {
+  fix: { f: 3.6, s: 1.5, h: 1.55, lf: 0, ls: 0, lh: .55 },          // the whole kart from the front
+  spd: { f: -2.3, s: .35, h: 1.6, lf: -.8, ls: 0, lh: .62 },        // close behind and a little above, on the rear wing
+  imm: { f: 1.55, s: 1.75, h: .85, lf: .2, ls: .45, lh: .3 },        // low at the front corner, on the wheels
+  spdG: { f: -1.35, s: .25, h: 2.35, lf: -.75, ls: 0, lh: .5 },     // (in the garage: from above and behind, over the props at the back)
+};
 function cameraGoal(out, look) {
   const P = race.player; camUp.set(0, 1, 0);
+  // (v273, the user) while a quiz asks about a part, the camera shows it: MAINTENANCE the whole kart from the front,
+  // SPEED a close-up from behind on the rear wing, REPLACING TYRES a low close-up on the wheels (garage start and pit stops)
+  if (race.dialog === 'pitstop' && QUIZ_CAM[race.quizK] && !race.ended) {
+    const C = (race.garageCam && QUIZ_CAM[race.quizK + 'G']) || QUIZ_CAM[race.quizK], f = fwd(P.angle), sx = f.z, sz = -f.x, K = WORLD.camera.aspect < 1 ? 1.5 : 1;   // (sx, sz: the kart's side; K: an upright phone stands further back)
+    out.set(P.x + f.x * C.f * K + sx * C.s * K, P.y + C.h * (K > 1 ? 1.25 : 1), P.z + f.z * C.f * K + sz * C.s * K);
+    look.set(P.x + f.x * C.lf + sx * C.ls, P.y + C.lh, P.z + f.z * C.lf + sz * C.ls); return;
+  }
   if (race.garageCam) { const g = race.garageCam; out.set(g.cx, g.cy, g.cz); look.set(g.lx, g.ly, g.lz); return; }   // (v195) looking into your garage
   if (race.introT > 0) {   // the fly-round: from in front of the grid, swinging round to behind your kart
     const k = 1 - race.introT / race.introLen, e = k * k * (3 - 2 * k), a = race.camA + Math.PI * (1 - e) * .62, f = fwd(a), d = 16 - 11.3 * e;   // from high up at the side (above the balloons and the banner) round to behind
@@ -7174,6 +7188,10 @@ function updateRace(dt) {
   // the smoothing lags ~speed/rate m behind; lead the goal by that so the kart stays in the same place on screen
   if (locked) { const fv = fwd(P.angle), lead = P.speed * race.slow / rate; camTarget.x += fv.x * lead; camTarget.z += fv.z * lead; }   // (slow motion: it moves less)
   const k = 1 - Math.exp(-dt * rate); WORLD.camera.position.lerp(camTarget, k); WORLD.look.lerp(camLook, k); WORLD.camera.up.lerp(camUp, k).normalize(); WORLD.camera.lookAt(WORLD.look);
+  { const CR = WORLD.crew, on = race.dialog === 'pitstop' && QUIZ_CAM[race.quizK] && CR && CR.on;   // (v273)
+    if (CR && CR.men) for (const m of [...CR.men, { root: CR.rig }, { root: CR.hose }]) { if (!m.root) continue; let hide = false;
+      if (on) { m.root.getWorldPosition(_v); const cx = WORLD.camera.position.x, cz = WORLD.camera.position.z, ax = P.x - cx, az = P.z - cz, L2 = ax * ax + az * az || 1, t = clamp(((_v.x - cx) * ax + (_v.z - cz) * az) / L2, 0, 1), px = cx + ax * t - _v.x, pz = cz + az * t - _v.z; hide = (t < .92 && px * px + pz * pz < .9 * .9) || (_v.x - cx) ** 2 + (_v.z - cz) ** 2 < 1.4 * 1.4; }
+      const U = m.root.userData; if (hide && !U.qHid) { U.qHid = true; m.root.visible = false; } else if (!hide && U.qHid) { U.qHid = false; m.root.visible = true; } } }   // (only ever un-hides what it hid)
   if (window.FK.cam) { const c = window.FK.cam(P); if (c) { WORLD.camera.position.set(c[0], c[1], c[2]); WORLD.camera.up.set(0, 1, 0); WORLD.camera.lookAt(c[3], c[4], c[5]); } }   // test hook: a fixed camera
   // the field of view is vertical: sideways screens need less of it (66° on an upright screen, about 50° on a phone turned sideways)
   const cam = WORLD.camera, base = cam.aspect > 1 ? clamp(66 - (cam.aspect - 1) * 15, 46, 66) : (race.formation ? 80 : 74);   // (v206: upright, a wider view — widest on the formation lap)
