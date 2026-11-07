@@ -864,6 +864,9 @@ const TYRE_STYLES = [
   { id: 'd-solar', name: 'Solar Disc', rar: 'epic', model: 'solar' },
   { id: 'd-turbine', name: 'Turbine', rar: 'epic', model: 'turbine' },
   { id: 'd-starsplit', name: 'Star Split', rar: 'legendary', model: 'starsplit' },
+  // (v274) the two new tyres for the nine tyre levels (same 0.28 × 0.18 m envelope, LED_* parts glow in your light colour)
+  { id: 'd-vortex', name: 'Vortex', rar: 'epic', model: 'vortex' },
+  { id: 'd-hexcore', name: 'Hex Core', rar: 'legendary', model: 'hexcore' },
 ];
 // (v186, the user: no more crates) everything a crate used to give is bought with coins, by rarity
 const RARITY_COST = { common: 0, uncommon: 80, rare: 150, epic: 250, legendary: 400 };
@@ -3820,6 +3823,7 @@ function updateCrew(dt) {
   glowTick(dt);   // (v253) the glow on the part being worked on
   upFxTick(dt);   // (v267) the pit upgrades on your kart
   wingTick(dt);   // (v270) the rear wing popping on
+  tyreTick(dt);   // (v274) the tyres popping on
   const W = WORLD, C = W && W.crew; if (!C) return;
   if (!race || !C.on || C.player !== race.player) { crewWheelsReset(C); if (C.g.visible) C.g.visible = false; C.on = false; if (race) race.pitLift = 0; return; }
   dt = Math.min(dt, .05); C.t += dt;
@@ -3907,7 +3911,7 @@ function pitStop() {
       if (race !== R0) return;
       race.dialog = null; race.pitHold = false; race.slowTarget = 1; race.learn.pits++; race.pitAuto = false;   // (the way out is yours)
       race.pitPhase = 'out'; pitBoxState('done'); giveBoost(P, 1.5, 1.5); sfx.turbo(2); drawPitHud();
-    }, wingOnAns(P, R0));   // (v271) the pit stop's right SPEED answers grow the wing too
+    }, kitOnAns(P, R0));   // (v271) the pit stop's right SPEED answers grow the wing too (v274: and right TYRES answers the tyres)
   };
   setTimeout(brake, 40);
 }
@@ -4126,6 +4130,72 @@ function wingTick(dt) {
   const m = race && race.player && race.player.model, q = m && m.wingPop; if (!q || !m.wing) return;
   q.t += dt; const k = Math.min(1, q.t / .35), s = k < .6 ? .01 + 1.14 * Math.sin(k / .6 * Math.PI / 2) : 1.15 - .15 * (k - .6) / .4;
   m.wing.scale.setScalar(Math.max(.01, s)); if (k >= 1) { m.wing.scale.setScalar(1); m.wingPop = null; }
+}
+/* (v274, the user: "there will be exactly 9 models of tyres in the game and, as with the wings, each question will level
+   up your tyres") TYRE LEVELS: every race starts on level 1 (the Original LED tyre — a kart can't have no tyres); each
+   RIGHT REPLACING TYRES answer (3 at the garage start + 3 at each of the 2 pit stops) fits the next tyre on all four wheels
+   with a pop, sparks and its name; a right answer at level 9 only flashes the wheels; a wrong one keeps them. During a race
+   this overrides the tyre fitted in the garage (the menu and garage kart keep that one). Only your go-kart. */
+const TYRE_LEVELS = ['classic', 'd-steelie', 'd-mesh', 'd-mudclaw', 'd-solar', 'd-turbine', 'd-vortex', 'd-starsplit', 'd-hexcore'];
+const TYRE_HUBS = ['WheelFrontLeft', 'WheelFrontRight', 'WheelRearLeft', 'WheelRearRight'];   // (the order of makeRacerModel's spins)
+// all eight design tyres, loaded while a race sets up (so a level-up never waits or shows the classic wheel)
+function preloadTyres() { return BASE.tyresAll || (BASE.tyresAll = Promise.all(TYRE_LEVELS.map((id) => TYRE_BY_ID[id].model).filter(Boolean).map((md) => loadTyreModel(md)))); }
+// their shaders compiled now, in your light colour (once a race, before the questions)
+function tyreWarm(P) {
+  const m = P && P.model; if (!m || !m.kart || !BASE.tyre || !WORLD || m.tyreWarm) return;
+  if (!TYRE_LEVELS.every((id) => !TYRE_BY_ID[id].model || BASE.tyreModels[TYRE_BY_ID[id].model])) return; m.tyreWarm = true;
+  const tmp = new THREE.Group(); for (const id of TYRE_LEVELS) tmp.add(tyreWheel(.22, .25, 1, { ...(m.look || DEFAULT_SKIN), tyre: id }, 'hi'));
+  tmp.position.set(P.x || 0, (P.y || 0) - 50, P.z || 0); WORLD.scene.add(tmp); try { renderer.compile(WORLD.scene, WORLD.camera); } catch (e) {} WORLD.scene.remove(tmp);
+}
+const tyreOnAns = (P, R0) => (k, i, ok) => {
+  if (!ok || k !== 'imm' || race !== R0) return false;
+  const m = P.model, lv = (m && m.kart && m.tyreLv) || 0; if (!lv) return false;   // (the starship: the old NEW TYRE label)
+  return lv >= TYRE_LEVELS.length ? tyreFx(m, 'MAX TYRES!') : setTyre(P, lv + 1);
+};
+// the garage start and the pit stops: right SPEED answers grow the wing, right REPLACING TYRES answers the tyres
+const kitOnAns = (P, R0) => { const a = wingOnAns(P, R0), b = tyreOnAns(P, R0); return (k, i, ok) => a(k, i, ok) || b(k, i, ok); };
+function setTyre(P, lv, fx = true) {
+  const m = P && P.model; if (!m || !m.kart || !BASE.tyre || (m.spins || []).length < 4) return false;
+  lv = clamp(Math.round(lv) || 1, 1, TYRE_LEVELS.length);
+  if (m.tyreLv === lv) return false;
+  const id = TYRE_LEVELS[lv - 1], md = TYRE_BY_ID[id].model; m.tyreLv = lv;
+  if (md && !BASE.tyreModels[md]) loadTyreModel(md).then((g) => { if (g && m.tyreLv === lv && m.tyreId !== id) tyreFit(m, id); });   // (not loaded yet: the old wheels until it is)
+  else if ((m.tyreId || (m.look && m.look.tyre) || 'classic') !== id) tyreFit(m, id);
+  else m.tyreId = id;
+  return fx ? tyreFx(m, `${TYRE_BY_ID[id].name.toUpperCase()} TYRES`) : true;
+}
+// the new wheel on each hub (in place of the old 'Spin'; the brakes stay); the wheels share the cached geometry and
+// materials, so nothing is freed. The racer's spins (rolling), and the pit crew's wheel swap, now use the new ones.
+function tyreFit(m, id) {
+  const N = m.kart.nodes, look = { ...(m.look || DEFAULT_SKIN), tyre: id }, C = WORLD && WORLD.crew, spins = [];
+  for (const name of TYRE_HUBS) {
+    const a = N[name], [r, w, side] = WHEEL_SIZE[name], old = a.getObjectByName('Spin'), g = tyreWheel(r, w, side, look, 'hi');
+    g.userData.s0 = g.scale.clone();
+    if (old) { g.rotation.x = old.rotation.x; g.visible = old.visible; a.remove(old); }
+    a.add(g); a.updateMatrixWorld(true); spins.push(g);
+    if (C && C.wheels) for (const W of C.wheels) if (W.s === old) {   // (a crewman may be holding this wheel: hand him the new one)
+      W.s = g;
+      if (W.neu) { const n = g.clone(true); n.visible = true; n.matrixAutoUpdate = false; n.matrix.copy(W.neu.matrix); n.matrixWorldNeedsUpdate = true; W.neu.parent.add(n); W.neu.removeFromParent(); W.neu = n; }
+    }
+  }
+  if (m.spins) { m.spins.length = 0; m.spins.push(...spins); } else m.spins = spins;   // (the same array: whoever holds it sees the new wheels)
+  m.tyreId = id; if (m.tyrePop) m.tyrePop.t = 0;
+}
+// the level-up: all four wheels pop (0.01 → 1.15 → 1 over 0.35 s), sparks off each, the tyre's name floats up
+function tyreFx(m, text) {
+  const B = m.body; B.updateMatrixWorld(true); const light = (m.look && m.look.light) || '#ffa424', v = new THREE.Vector3();
+  for (const s of m.spins) if (!s.userData.s0) s.userData.s0 = s.scale.clone();
+  m.tyrePop = { t: 0 };
+  for (const s of m.spins) { s.getWorldPosition(v); for (let n = 0; n < 6; n++) puff(v.x, v.y, v.z, n % 2 ? light : '#fff6c0', rand(.05, .11), rand(.25, .4), rand(-1.8, 1.8), rand(.8, 2.4), rand(-1.8, 1.8), 7); }
+  const at = B.worldToLocal(m.kart.nodes.WheelFrontRight.getWorldPosition(new THREE.Vector3()));   // (over the front wheel the tyre camera looks at)
+  upFxOf(m); upLabel(m, at, text, '#59d8ff'); sfx.spark(Math.min(3, 1 + Math.floor(((m.tyreLv || 1) - 1) / 3)));
+  return true;
+}
+function tyreTick(dt) {
+  const m = race && race.player && race.player.model, q = m && m.tyrePop; if (!q) return;
+  q.t += dt; const k = Math.min(1, q.t / .35), s = k < .6 ? .01 + 1.14 * Math.sin(k / .6 * Math.PI / 2) : 1.15 - .15 * (k - .6) / .4;
+  for (const w of m.spins) if (w.userData.s0) w.scale.copy(w.userData.s0).multiplyScalar(k >= 1 ? 1 : Math.max(.01, s));
+  if (k >= 1) m.tyrePop = null;
 }
 function upFxTick(dt) {
   const m = race && race.player && race.player.model, U = m && m.ups && m.ups.userData; if (!U) return;
@@ -6207,6 +6277,7 @@ function startRaceNow(trackId = save.track || 'alps', opts = {}) {
     const rem = slot.remote ? slot : null, ch = rem ? rem.ch : slot;
     const player = slot === me, { s, lat } = gridSpot(i), p = at(s, lat), pY = p.y;
     const model = makeRacerModel(ch, player ? save.kart.color : ch.color, player ? save.kart.sticker : ch.sticker || 'none', player, rem ? rem.skin : null, !!TDEF.ship); WORLD.scene.add(model.root);
+    if (player) setTyre({ model }, 1, false);   // (v274) every race starts on level-1 tyres (the garage's tyre is for the menu)
     const r = { ch, player, model, x: p.x, z: p.z, angle: angleOf(p.p), speed: 0, idx: Math.round(s / STEP) % TRACK.N, s, lap: 0, dist: 0, steerVis: 0,
       spinT: 0, spinA: 0, slideT: 0, boostT: 0, boostMul: 1, shield: 0, shieldT: 0, iceCd: 0, finished: false, finishTime: 0, bounceT: 0,
       bayDs: PITS ? PITS.bays[i] : null, wantPit: false, pitting: false, pitHoldT: 0, pitStood: false, inPit: false, laneSide: 0,   // (v152) the pit lane
@@ -6226,6 +6297,7 @@ function startRaceNow(trackId = save.track || 'alps', opts = {}) {
   // compile every shader the race can need now (during the fly-round), so nothing compiles mid-race
   { const tmp = new THREE.Group(); tmp.add(WORLD.rocket.clone(), WORLD.snowball.clone(), new THREE.Mesh(WORLD.shieldGeo, WORLD.shieldMat), new THREE.Mesh(WARM_GEO, WORLD.flameMat)); tmp.position.set(race.player.x, race.player.y - 50, race.player.z); WORLD.scene.add(tmp);
     try { renderer.compile(WORLD.scene, WORLD.camera); } catch (e) {} WORLD.scene.remove(tmp); }
+  { const R1 = race; preloadTyres().then(() => { if (race === R1 && !race.started) tyreWarm(race.player); }); }   // (v274) the nine tyre levels, ready before the questions
   // teach a few new words during the fly-round (picture + word + Czech + voice); the pit stops then ask them first
   race.newWords = DEV() ? [] : L.newWords(TDEF.words || TDEF.id, 3); race.learn.queue.push(...race.newWords.map((w) => w.id));
   race.introLen = race.newWords.length ? INTRO + 1.8 : INTRO; race.introT = race.introLen; placeAll(0); snapCamera();
@@ -6314,6 +6386,7 @@ function garageStop(R0, stayIn = false) {
     toast(`IN THE GARAGE!\n<small>get the kart ready: ${TUNE.garageN} question${TUNE.garageN === 1 ? '' : 's'} in each</small>`, '#ffe14a', 34); L.say('Get your kart ready!');
     crewStart(); drawPitHud();   // (v199: no pit box at the garage start)
     setWing(P, 0, false);   // (v270) the kart starts bare; (v271) each right SPEED answer bolts on the next rear wing
+    setTyre(P, 1, false); tyreWarm(P);   // (v274) and level-1 tyres; each right REPLACING TYRES answer fits the next ones
     runQuiz([['fix', TUNE.garageN], ['spd', TUNE.garageN], ['imm', TUNE.garageN]], 'GARAGE', () => {
       if (race !== R0) return res();
       race.dialog = null; race.pitHold = false; race.pitPhase = 'out'; drawPitHud();
@@ -6321,9 +6394,9 @@ function garageStop(R0, stayIn = false) {
       if (!stayIn) for (const r of race.racers) if (!r.player && r.inGarage) { rollDoor(r, true, 550); driveOutOfGarage(r, () => setTimeout(() => rollDoor(r, false), 400), false); }   // (v199) everyone rolls out together, through their own door
       if (stayIn) return res();   // (v254) the screen goes black and everyone is put on the grid instead of rolling out
       if (P.inGarage) { toast('ROLL OUT!', '#4fc84a', 34); driveOutOfGarage(P, () => res()); } else res();   // (v195) out of the garage onto the box
-    }, wingOnAns(P, R0));
+    }, kitOnAns(P, R0));
     };
-    Promise.race([loadPitCrew(TDEF.id), wait(4000)]).then(() => { if (race === R0) go(); else res(); });
+    Promise.race([Promise.all([loadPitCrew(TDEF.id), preloadTyres()]), wait(4000)]).then(() => { if (race === R0) go(); else res(); });
   });
 }
 // (v252, the user) dev mode skips the garage questions, but everyone must still roll out of the garages onto their box
@@ -6427,7 +6500,7 @@ async function countdown() {
   if (TDEF.pitStart && PITS && !race.party && !race.tut) {
     // (v254, the user) no formation lap any more: answer the garage questions, the screen goes black, and you are on the grid
     if (!QDEV() && !window.FK.skipGarage) await garageStop(R0, true);   // (v269: the debug hub can skip it)
-    else if (QDEV()) setWing(race.player, 3, false);   // (v271) dev mode = the start's three SPEED answers right: wing 3 (the pit stops add the rest)
+    else if (QDEV()) { setWing(race.player, 3, false); setTyre(race.player, 4, false); }   // (v271) dev mode = the start's three SPEED answers right: wing 3 (the pit stops add the rest) (v274: and three TYRES answers: tyre level 4)
     if (race !== R0) return;
     await blackoutToGrid(R0);
     if (race !== R0) return;
@@ -7592,6 +7665,7 @@ window.FK.equipTyre = (id) => { if (!tyreOwned().includes(id)) tyreOwned().push(
 window.FK.pitArm = () => { if (race) { race.pitDue = true; drawPitHud(); } return window.FK.pitInfo(); };
 window.FK.crew = () => { const C = WORLD && WORLD.crew; return C && { on: C.on, phase: C.phase, lift: +C.lift.toFixed(2), men: C.men.map((m) => [m.role, +m.pos.x.toFixed(2), +m.pos.z.toFixed(2)]) }; };   // test hook
 window.FK.pitNow = () => { if (race && !race.dialog) pitStop(); };
+window.FK.tyreLv = (lv, fx = false) => { if (race && lv != null) setTyre(race.player, lv, fx); return race && race.player.model.tyreLv; };   // (v274) test hook
 window.FK.tyre = (cells) => { if (cells) { for (const lod of ['hi', 'lo']) Object.assign(TYRE_CELLS[lod], cells[lod] || {}); BASE.tyre = buildTyreLods(BASE.tyreSrc); setShowRacer(); } return BASE.tyre && { hi: BASE.tyre.hiTris, lo: BASE.tyre.loTris, cells: TYRE_CELLS }; };   // test hook
 window.FK.garage = () => { const GP = WORLD && WORLD.garagePaint; return GP && { col: GP.col.length, tex: GP.tex.length, bays: race ? race.racers.map((r) => r.ch.id + ':' + (GARAGE_COL[r.ch.id] || '?')) : null }; };   // test hook
 window.FK.pitBox = (st = '') => { pitBoxState(st); return WORLD.pitBay && WORLD.pitBay.state; };   // test hook: the box's colour
@@ -7643,11 +7717,12 @@ const DBG_API = {
   goMenu, goGarage, goTracks, goPass, goLicence, runIntro, startTutorial, startRace, openCrate, showResults, pauseMenu, hidePodium, closeDialog,
   pitStop, drawPitHud, drawSlot, lapDone, lapPill, ranking, askOne, ico, at, angleOf, project, placeAll, snapCamera, giveBoost,
   REAR_WINGS, wingLv: () => (race && race.player && race.player.model && race.player.model.wingLv) || 0, setWing: (lv) => (race ? setWing(race.player, lv, false) : false),   // (v270)
+  TYRE_LEVELS: TYRE_LEVELS.map((id) => TYRE_BY_ID[id].name), tyreLv: () => (race && race.player && race.player.model && race.player.model.tyreLv) || 0, setTyre: (lv) => (race ? setTyre(race.player, lv, false) : false),   // (v274)
   resume: () => { if (!race) return; closeDialog(); race.dialog = null; race.slowTarget = 1; if (race.started && !race.ended) Music.start(); },
   leaveRace: () => { if (race) { closeDialog(); cup = null; endRace(); } },
 };
 let dbgMod = null;
-const loadDebug = () => (dbgMod = dbgMod || import('./debug.js?v=2').then((m) => { m.init(DBG_API); return m; }).catch((e) => { dbgMod = null; console.error('debug hub', e); throw e; }));
+const loadDebug = () => (dbgMod = dbgMod || import('./debug.js?v=3').then((m) => { m.init(DBG_API); return m; }).catch((e) => { dbgMod = null; console.error('debug hub', e); throw e; }));
 window.FK.debug = (tab) => loadDebug().then((m) => m.open(tab));
 if (dbgOn()) loadDebug();
 addEventListener('keydown', (e) => { if (e.key === '`' && (dbgOn() || isDevAcct()) && !(e.target && e.target.closest && e.target.closest('input, textarea'))) { e.preventDefault(); loadDebug().then((m) => m.toggle()); } });

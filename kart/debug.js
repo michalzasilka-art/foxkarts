@@ -309,6 +309,7 @@ function page(t) {
     return `<div class="srow col dsl" data-lv="kart"><div class="dslh"><b>Kart level</b><span><output>${lvK}</output><small>of ${G.KART_MAX}</small></span></div><input type="range" min="1" max="${G.KART_MAX}" step="1" value="${lvK}"></div>`
       + `<div class="srow col dsl" data-lv="ship"><div class="dslh"><b>Starship level</b><span><output>${lvS}</output><small>of ${G.KART_MAX}</small></span></div><input type="range" min="1" max="${G.KART_MAX}" step="1" value="${lvS}"></div>`
       + (G.REAR_WINGS ? `<div class="srow col dsl" data-wing="1"><div class="dslh"><b>Rear wing (this race)</b><span><output>${G.wingLv() ? G.REAR_WINGS[G.wingLv() - 1].name : 'NONE'}</output><small>0–${G.REAR_WINGS.length} · your go-kart only</small></span></div><input type="range" min="0" max="${G.REAR_WINGS.length}" step="1" value="${G.wingLv()}"></div>` : '')   // (v270)
+      + (G.TYRE_LEVELS ? `<div class="srow col dsl" data-tyre="1"><div class="dslh"><b>Tyres (this race)</b><span><output>${G.TYRE_LEVELS[(G.tyreLv() || 1) - 1]}</output><small>1–${G.TYRE_LEVELS.length} · your go-kart only</small></span></div><input type="range" min="1" max="${G.TYRE_LEVELS.length}" step="1" value="${G.tyreLv() || 1}"></div>` : '')   // (v274)
       + row('Coins', `${G.DEV() ? '∞ (dev mode) · ' : ''}${s.coins} in the save`, btns([btn('act', '+1 000', 'coins:1000'), btn('act', '+10 000', 'coins:10000'), btn('act', '0', 'coins:0')]))
       + row('Unlock', `${s.kart.bodiesOwned.length} paints · ${G.tyreOwned().length} of ${G.TYRE_STYLES.length} tyres · crates ${N.paint || 0} paint, ${N.tyre || 0} tyre`, btns([btn('act', 'ALL PAINTS', 'paints'), btn('act', 'ALL TYRES', 'tyres'), btn('act', '+3 CRATES', 'crates3')]), true)
       + row('Game Pass', `Level ${G.passOf().lv} · ${(s.pass && s.pass.nuts) || 0} nuts`, btns([btn('act', '+100 NUTS', 'nuts:100'), btn('act', '+1 000', 'nuts:1000'), btn('act', 'RESET', 'nuts:0')]))
@@ -361,6 +362,7 @@ async function onClick(e) {
 function onInput(e) {
   const r = e.target; if (r.id === 'dbgTxt') tDbg = r.value; if (r.id === 'dbgSave') tSave = r.value; if (r.type !== 'range') return;
   const w = r.closest('.dsl'), v = +r.value, out = w.querySelector('output');
+  if (w.dataset.tyre) { if (!G.race()) { needRace(); r.value = 1; return; } G.setTyre(v); out.textContent = G.TYRE_LEVELS[v - 1]; return; }   // (v274)
   if (w.dataset.wing) { if (!G.race()) { needRace(); r.value = 0; return; } G.setWing(v); out.textContent = v ? G.REAR_WINGS[v - 1].name : 'NONE'; return; }   // (v270)
   if (w.dataset.lv) { const U = G.upsOf(w.dataset.lv); U.lv = v - 1; G.store(); out.textContent = v; G.setShowRacer(); G.refreshCounters(); return; }
   set(w.dataset.k, v); out.textContent = show(w.dataset.k, v, r.dataset.unit || '');
