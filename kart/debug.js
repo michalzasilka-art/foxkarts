@@ -7,7 +7,7 @@
    red DEBUG tag, so a tester always knows the game is not standard. Game settings that already live in the save (dev
    mode, steering mode, assist, quality, English level, packages, coins, kart level…) are changed in the save itself.
    It never imports three: everything goes through the API object game.js hands to init() (DBG_API). */
-const KEY = 'foxkarts-debug', HUB_V = 1;
+const KEY = 'foxkarts-debug', HUB_V = 2;
 let G = null, FK = null, root = null, bug = null, ovl = null, pausedBy = null, confirmAsk = null, note = '', tDbg = null, tSave = '';   // (the two text boxes keep what was typed or pasted across redraws)
 let st = { on: true, ov: {}, tab: 'jump', jmap: 'alps', jroute: -1 };
 const once = { skip: false, noSkip: false, route: null };
@@ -308,6 +308,7 @@ function page(t) {
     const lvK = G.vehLv('kart') + 1, lvS = G.vehLv('ship') + 1, N = G.crates(), mp = s.mapPts || 0;
     return `<div class="srow col dsl" data-lv="kart"><div class="dslh"><b>Kart level</b><span><output>${lvK}</output><small>of ${G.KART_MAX}</small></span></div><input type="range" min="1" max="${G.KART_MAX}" step="1" value="${lvK}"></div>`
       + `<div class="srow col dsl" data-lv="ship"><div class="dslh"><b>Starship level</b><span><output>${lvS}</output><small>of ${G.KART_MAX}</small></span></div><input type="range" min="1" max="${G.KART_MAX}" step="1" value="${lvS}"></div>`
+      + (G.REAR_WINGS ? `<div class="srow col dsl" data-wing="1"><div class="dslh"><b>Rear wing (this race)</b><span><output>${G.wingLv() ? G.REAR_WINGS[G.wingLv() - 1].name : 'NONE'}</output><small>0–${G.REAR_WINGS.length} · your go-kart only</small></span></div><input type="range" min="0" max="${G.REAR_WINGS.length}" step="1" value="${G.wingLv()}"></div>` : '')   // (v270)
       + row('Coins', `${G.DEV() ? '∞ (dev mode) · ' : ''}${s.coins} in the save`, btns([btn('act', '+1 000', 'coins:1000'), btn('act', '+10 000', 'coins:10000'), btn('act', '0', 'coins:0')]))
       + row('Unlock', `${s.kart.bodiesOwned.length} paints · ${G.tyreOwned().length} of ${G.TYRE_STYLES.length} tyres · crates ${N.paint || 0} paint, ${N.tyre || 0} tyre`, btns([btn('act', 'ALL PAINTS', 'paints'), btn('act', 'ALL TYRES', 'tyres'), btn('act', '+3 CRATES', 'crates3')]), true)
       + row('Game Pass', `Level ${G.passOf().lv} · ${(s.pass && s.pass.nuts) || 0} nuts`, btns([btn('act', '+100 NUTS', 'nuts:100'), btn('act', '+1 000', 'nuts:1000'), btn('act', 'RESET', 'nuts:0')]))
@@ -360,6 +361,7 @@ async function onClick(e) {
 function onInput(e) {
   const r = e.target; if (r.id === 'dbgTxt') tDbg = r.value; if (r.id === 'dbgSave') tSave = r.value; if (r.type !== 'range') return;
   const w = r.closest('.dsl'), v = +r.value, out = w.querySelector('output');
+  if (w.dataset.wing) { if (!G.race()) { needRace(); r.value = 0; return; } G.setWing(v); out.textContent = v ? G.REAR_WINGS[v - 1].name : 'NONE'; return; }   // (v270)
   if (w.dataset.lv) { const U = G.upsOf(w.dataset.lv); U.lv = v - 1; G.store(); out.textContent = v; G.setShowRacer(); G.refreshCounters(); return; }
   set(w.dataset.k, v); out.textContent = show(w.dataset.k, v, r.dataset.unit || '');
   if (!w.classList.contains('mod') && w.dataset.k in st.ov) { w.classList.add('mod'); }

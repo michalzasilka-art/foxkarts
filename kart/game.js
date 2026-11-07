@@ -17,7 +17,8 @@ import * as THREE from './lib/three.module.min.js';
 import { RoomEnvironment } from './lib/RoomEnvironment.js?v=2';
 import { buildFoxino, buildKart, buildHelmet, setDetail } from './models.js?v=52';
 import * as L from './learn.js?v=52';
-import { loadDefaultKart, dressKart, loadHelmet, dressHelmet, DEFAULT_SKIN, DEFAULT_HELMET, BODY_COLORS, LIGHT_COLORS, LOGOS, logoIconURL, WHEEL_SIZE } from './kart-skin.js?v=11';
+import { loadDefaultKart, dressKart, loadHelmet, dressHelmet, DEFAULT_SKIN, DEFAULT_HELMET, BODY_COLORS, LIGHT_COLORS, LOGOS, logoIconURL, logoCanvas, WHEEL_SIZE } from './kart-skin.js?v=11';
+import { buildRearWing, REAR_WINGS } from './rear-wings.js?v=1';   // (v270) the nine rear wings for the garage start
 import { GLTFLoader } from './lib/GLTFLoader.js?v=2';
 import { mergeGeometries } from './lib/BufferGeometryUtils.js?v=2';
 import { BUILDERS } from './racers.js?v=2';
@@ -79,7 +80,7 @@ const TUNE = {
   maxImmune: 3,            // puddle shields a racer can hold (the user: "max 3 per racer")
   // (v269) the question sets, here so the debug hub can change them: garage start 3 sets of garageN, a pit stop 3 sets
   // of pitN (each pitSecs), the finish line finN questions of finSecs (a Starter gets 2 / 3 seconds more)
-  garageN: 4, pitN: 3, finN: 3, finSecs: 10,
+  garageN: 3, pitN: 3, finN: 3, finSecs: 10,   // (v270, the user: the garage start is 3 × 3 = 9 questions, one per rear wing)
 };
 const LAPS0 = TUNE.laps, PIT_EVERY0 = TUNE.pitEvery, PIT_LAPS0 = TUNE.pitLaps;
 const STEP = .6;   // the spacing of the track's centre-line points (the road's half-width HALF is set per track)
@@ -1087,7 +1088,7 @@ function makeRacerModel(ch, kartColor, sticker, player = false, skinOver = null,
     const fronts = [N.WheelFrontLeft, N.WheelFrontRight], spins = wheels.map((n) => n.getObjectByName('Spin') || n.children[0]);
     const driver = driverBody(ch, skinFor(ch, player, skinOver)).clone(); driver.position.copy(BASE.foxPos).add(BASE.seatShift); driver.rotation.copy(BASE.foxRot); body.add(driver);
     let dmesh = null; driver.traverse((o) => { if (o.isMesh && o.morphTargetInfluences && o.morphTargetInfluences.length === 4) dmesh = o; });
-    return { root, body, steer: N.SteeringWheel.children[0], steerAxis: BASE.steerAxis, fronts, spins, driver, dmesh };
+    return { root, body, steer: N.SteeringWheel.children[0], steerAxis: BASE.steerAxis, fronts, spins, driver, dmesh, kart: k, look };   // (v270: kart + look for the rear wing)
   }
   body.add(kartBody(kartColor).clone());
   const steer = BASE.steer.g.clone(); steer.position.copy(BASE.steer.pos); steer.rotation.copy(BASE.steer.rot); body.add(steer);
@@ -3817,6 +3818,7 @@ const _cw = new THREE.Vector3(), _cw2 = new THREE.Vector3(), _cw3 = new THREE.Ve
 function updateCrew(dt) {
   glowTick(dt);   // (v253) the glow on the part being worked on
   upFxTick(dt);   // (v267) the pit upgrades on your kart
+  wingTick(dt);   // (v270) the rear wing popping on
   const W = WORLD, C = W && W.crew; if (!C) return;
   if (!race || !C.on || C.player !== race.player) { crewWheelsReset(C); if (C.g.visible) C.g.visible = false; C.on = false; if (race) race.pitLift = 0; return; }
   dt = Math.min(dt, .05); C.t += dt;
@@ -3926,12 +3928,12 @@ function confettiAt(el, n = 24, spread = 1) {
     an.onfinish = () => d.remove();
   }
 }
-function runQuiz(sets, tag, onDone) {
+function runQuiz(sets, tag, onDone, onAns = null) {
   const P = race.player, R0 = race, lr = race.learn, D = $('dialog'), got = {};
   if (QDEV()) {   // (v250, the user: "dev mode removes all the questions") the crew just does the job: a short stop, full marks
     // (v255, the user: "in dev mode the pit stop counts as if all 9 questions were right — all the boosts") every set is a
     // PERFECT 100 % (the most a stop can give), the parts light up as the crew works, and the board shows it before you go
-    const pct = {}; sets.forEach(([k, n], i) => { pct[k] = 100; setTimeout(() => { if (race !== R0) return; race.pitPhase = k; partGlow(P, (PART_GLOW[k] || [])[0]); }, i * 700); for (let a = 0; a < n; a++) setTimeout(() => { if (race === R0) pitUpFx(P, k, a, true); }, i * 700 + 150 + a * 180); });
+    const pct = {}; sets.forEach(([k, n], i) => { pct[k] = 100; setTimeout(() => { if (race !== R0) return; race.pitPhase = k; partGlow(P, (PART_GLOW[k] || [])[0]); }, i * 700); for (let a = 0; a < n; a++) setTimeout(() => { if (race === R0) pitUpFx(P, k, a, true, !!(onAns && onAns(k, a, true))); }, i * 700 + 150 + a * 180); });
     setTimeout(() => {
       if (race !== R0) return; partGlow(P, null); race.pitPhase = 'board'; D.hidden = false;
       pitScoreCard(D, sets.map(([k]) => k), pct, tag, () => {
@@ -3965,7 +3967,7 @@ function runQuiz(sets, tag, onDone) {
     D.innerHTML = '<div class="veil pit"></div>';
     questionCard(D.firstChild, `${tag} · ${S.name}`, L.makeQuestion(it), (ok, fast) => {
       const g = got[q.k]; g.n++; g.res.push(!!ok); if (ok) g.sum += PIT_RIGHT + PIT_FAST * clamp(fast || 0, 0, 1);
-      pitUpFx(P, q.k, q.i, !!ok);   // (v267) the upgrade goes onto your kart as you answer
+      pitUpFx(P, q.k, q.i, !!ok, !!(onAns && onAns(q.k, q.i, !!ok)));   // (v267) the upgrade goes onto your kart as you answer (v270: the garage's wing takes over the label)
       partGlow(P, null); step(j + 1);
     }, TUNE.pitSecs + (L.level() === 0 ? 2 : 0), null, true);
     // (v160) where you are in the set: three dots in the set's colour; the phone sheet slides up only on the first card
@@ -4048,35 +4050,79 @@ const UPFX_MAT = {};
 const upMat = (c, e = .3, glow = false) => UPFX_MAT[c + e + glow] || (UPFX_MAT[c + e + glow] = glow ? new THREE.MeshBasicMaterial({ color: c, transparent: true, opacity: .95, depthWrite: false, toneMapped: false }) : new THREE.MeshStandardMaterial({ color: c, emissive: c, emissiveIntensity: e, roughness: .35, metalness: .2 }));
 // a little label that pops up off the part and floats away: +GRIP, +SPEED, NEW TYRE
 function upLabel(m, at, text, col) {
-  const cv = document.createElement('canvas'); cv.width = 256; cv.height = 72; const g = cv.getContext('2d'); g.font = '52px "Luckiest Guy", Fredoka, Arial'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.lineWidth = 10; g.strokeStyle = '#1b1f3a'; g.strokeText(text, 128, 40); g.fillStyle = col; g.fillText(text, 128, 40);
+  const cv = document.createElement('canvas'), F = '52px "Luckiest Guy", Fredoka, Arial'; let g = cv.getContext('2d'); g.font = F; const W = Math.max(256, Math.ceil(g.measureText(text).width) + 24);   // (v270: long wing names get a wider label)
+  cv.width = W; cv.height = 72; g = cv.getContext('2d'); g.font = F; g.textAlign = 'center'; g.textBaseline = 'middle'; g.lineWidth = 10; g.strokeStyle = '#1b1f3a'; g.strokeText(text, W / 2, 40); g.fillStyle = col; g.fillText(text, W / 2, 40);
   const t = new THREE.CanvasTexture(cv); t.colorSpace = THREE.SRGBColorSpace; const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: t, transparent: true, depthTest: false, depthWrite: false, toneMapped: false, fog: false }));
-  sp.renderOrder = 999; sp.scale.set(1.1, .31, 1); sp.position.copy(at).add(new THREE.Vector3(0, .5, 0)); m.ups.add(sp); m.ups.userData.labels.push({ sp, t: 0 });
+  sp.renderOrder = 999; sp.scale.set(1.1 * W / 256, .31, 1); sp.position.copy(at).add(new THREE.Vector3(0, .5, 0)); m.ups.add(sp); m.ups.userData.labels.push({ sp, t: 0 });
 }
-function pitUpFx(P, k, i, ok) {
+function pitUpFx(P, k, i, ok, quiet = false) {
   const m = P && P.model; if (!m || !m.body) return; const B = m.body; B.updateMatrixWorld(true);
   const spot = (part) => partSpot(m, part).clone();
   if (!ok) { const w = B.localToWorld(spot((PART_GLOW[k] || [])[i % 4] || 'engine')); for (let n = 0; n < 7; n++) puff(w.x, w.y + .25, w.z, '#8a8a92', rand(.25, .45), rand(.5, .8), rand(-.7, .7), rand(.8, 1.6), rand(-.7, .7)); return; }
-  if (!m.ups) { m.ups = new THREE.Group(); B.add(m.ups); m.ups.userData = { fix: 0, spd: 0, imm: 0, flames: [], pops: [], wing: null, rings: {}, labels: [] }; }
+  upFxOf(m);
   const U = m.ups.userData, ship = (m.spins || []).length < 4, ws = B.getWorldScale(new THREE.Vector3()).y || 1;
   const pop = (o) => { o.scale.setScalar(.01); U.pops.push({ o, t: 0 }); m.ups.add(o); return o; };
   const bx = new THREE.Box3().setFromObject(B), bc = B.worldToLocal(bx.getCenter(new THREE.Vector3())), bs = bx.getSize(new THREE.Vector3()).divideScalar(ws);
   const eng = spot('engine'), ex = spot('exhaust'), back = ship ? -1 : Math.sign(ex.z - spot('nose').z) || 1;
   if (k === 'imm') {
-    upLabel(m, ship ? bc : spot(['fl', 'fr', 'rl'][i % 3]), 'NEW TYRE', '#59d8ff');
+    if (!quiet) upLabel(m, ship ? bc : spot(['fl', 'fr', 'rl'][i % 3]), 'NEW TYRE', '#59d8ff');
     U.imm++;   // (v268, the user: the tyre rings are gone for now; only the label shows)
   } else if (k === 'spd') {
-    upLabel(m, ship ? bc : ex, '+SPEED', '#ff8a1e');
-    if (U.spd >= 3) { U.spd++; U.flameK = Math.min(1.45, 1 + (U.spd - 3) * .1); for (const q of U.flames) U.pops.push({ o: q.userData.g, t: 0, from: 1.3 }); sfx.spark(3); return; }   // more than three: the flames grow
+    if (!quiet) upLabel(m, ship ? bc : ex, '+SPEED', '#ff8a1e');
+    if (U.spd >= 3) { U.spd++; U.flameK = Math.min(1.45, 1 + (U.spd - 3) * .1); for (const q of U.flames) U.pops.push({ o: q.userData.g, t: 0, from: 1.3 }); if (!quiet) sfx.spark(3); return; }   // more than three: the flames grow
     const xs = [-.17, .17, 0], x = xs[U.spd % 3], g = new THREE.Group(), gi = new THREE.Group(); g.add(gi);
     const pipe = new THREE.Mesh(new THREE.CylinderGeometry(.065, .08, .3, 10).rotateX(Math.PI / 2), new THREE.MeshStandardMaterial({ color: '#c8ccd8', roughness: .2, metalness: .95 })); if (!ship) gi.add(pipe);   // (a starship's flames come out of its own engines)
     const fl = new THREE.Mesh(new THREE.ConeGeometry(.075, .42, 10).rotateX(back * Math.PI / 2).translate(0, 0, back * .34), upMat('#ff6a00', 0, true)); gi.add(fl); fl.userData.g = g;
     const core = new THREE.Mesh(new THREE.ConeGeometry(.04, .24, 8).rotateX(back * Math.PI / 2).translate(0, 0, back * .26), upMat('#ffd84a', 0, true)); gi.add(core); core.userData.g = g;
     g.position.set(ship ? bc.x + [-.43, .43, 0][U.spd % 3] * bs.x : x, ship ? bc.y - bs.y * .3 : ex.y + .02, ship ? bc.z + back * bs.z * .4 : ex.z + back * .05); pop(g); U.flames.push(fl, core); U.spd++;
   } else {
-    upLabel(m, ship ? bc : eng, '+GRIP', '#ffc324');
+    if (!quiet) upLabel(m, ship ? bc : eng, '+GRIP', '#ffc324');
     U.fix++;   // (v268, the user: the rear wing is gone for now; only the label shows)
   }
-  sfx.spark(Math.min(3, (U[k] || 1)));
+  if (!quiet) sfx.spark(Math.min(3, (U[k] || 1)));
+}
+// the group on your kart that holds the pit upgrades and their floating labels
+function upFxOf(m) { if (!m.ups) { m.ups = new THREE.Group(); m.body.add(m.ups); m.ups.userData = { fix: 0, spd: 0, imm: 0, flames: [], pops: [], wing: null, rings: {}, labels: [] }; } return m.ups.userData; }
+/* (v270, the user: "change the start 3×4 questions to 3×3 … there are 9 rear wings; you start without the wing and each
+   time you answer right to one of the 9 questions the wing will upgrade to the next one") REAR WINGS AT THE START: your
+   go-kart comes to the garage with a bare rear deck; every RIGHT garage answer (any of the three sets) bolts on the next
+   wing — Duck Tail → Rookie → Arrow → Hoop → Stingray → Twin Jet → Stacker → Razor → Comet — with a pop, sparks, its name
+   and the spark sound. A wrong answer leaves it. It stays on for the race; the next race starts bare (a new kart).
+   Only your go-kart: not the rivals, not the starship. The wings come from rear-wings.js (the other session's builder,
+   in kart-default.glb space, so they go on the dressed kart `m.kart`, painted with your own look). */
+function wingDispose(o, keep) {
+  const tex = (t) => { if (t && !keep.has(t)) t.dispose(); };
+  o.traverse((n) => { if (n.isMesh) { n.geometry.dispose(); [].concat(n.material).forEach((mt) => { tex(mt.map); tex(mt.emissiveMap); mt.dispose(); }); } });
+}
+function setWing(P, lv, fx = true) {
+  const m = P && P.model; if (!m || !m.kart) return false;   // (the starship and the shape-built kart: no wing)
+  lv = clamp(Math.round(lv) || 0, 0, REAR_WINGS.length);
+  if ((m.wingLv || 0) === lv) return false;
+  const old = m.wing, keep = new Set(); m.wing = null; m.wingLv = lv; m.wingPop = null;
+  if (lv) {
+    const W = REAR_WINGS[lv - 1], g = buildRearWing(THREE, W.id, m.look || save.kart.skin || DEFAULT_SKIN, { logoCanvas });
+    // a pivot at the wing's foot, so the pop grows out of the rear deck (not out of the kart's middle)
+    g.updateMatrixWorld(true); const b = new THREE.Box3().setFromObject(g), c = new THREE.Vector3((b.min.x + b.max.x) / 2, b.min.y, (b.min.z + b.max.z) / 2);
+    const piv = new THREE.Group(); piv.name = 'RearWingPivot'; piv.userData.wing = W.id; piv.position.copy(c); g.position.sub(c); piv.add(g); m.kart.add(piv); m.wing = piv;
+    g.traverse((n) => { if (n.isMesh) [].concat(n.material).forEach((mt) => { keep.add(mt.map); keep.add(mt.emissiveMap); }); });   // (the shared carbon texture stays)
+    if (fx) {
+      piv.scale.setScalar(.01); m.wingPop = { t: 0 };
+      const B = m.body; B.updateMatrixWorld(true); const top = m.kart.localToWorld(new THREE.Vector3(c.x, b.max.y, c.z)), light = (m.look && m.look.light) || '#ffa424';
+      upFxOf(m); upLabel(m, B.worldToLocal(top.clone()).add(new THREE.Vector3(0, -.32, 0)), `${W.name.toUpperCase()} WING`, '#ffe14a');   // (starts just over the wing: the garage camera is close and low)
+      for (let n = 0; n < 14; n++) puff(top.x, top.y, top.z, n % 2 ? light : '#fff6c0', rand(.07, .16), rand(.25, .45), rand(-2.4, 2.4), rand(.8, 2.8), rand(-2.4, 2.4), 7);
+      sfx.spark(Math.min(3, 1 + Math.floor((lv - 1) / 3)));
+    }
+  }
+  // the old wing is freed a moment later, once the new one has been drawn: freeing it first would let three.js drop the
+  // shared shader programs and compile them again (a 100–200 ms hitch on every swap)
+  if (old) { old.removeFromParent(); setTimeout(() => wingDispose(old, keep), 600); }
+  return true;
+}
+// the pop: 0.01 → 1.15 → 1 over 0.35 s
+function wingTick(dt) {
+  const m = race && race.player && race.player.model, q = m && m.wingPop; if (!q || !m.wing) return;
+  q.t += dt; const k = Math.min(1, q.t / .35), s = k < .6 ? .01 + 1.14 * Math.sin(k / .6 * Math.PI / 2) : 1.15 - .15 * (k - .6) / .4;
+  m.wing.scale.setScalar(Math.max(.01, s)); if (k >= 1) { m.wing.scale.setScalar(1); m.wingPop = null; }
 }
 function upFxTick(dt) {
   const m = race && race.player && race.player.model, U = m && m.ups && m.ups.userData; if (!U) return;
@@ -6113,7 +6159,7 @@ function pollPad(dt) {
 
 const FLAME_GEO = new THREE.ConeGeometry(.12, .7, 10).rotateX(-Math.PI / 2), WARM_GEO = new THREE.ConeGeometry(.1, .3, 6), TRAP_GEO = new THREE.CylinderGeometry(1.25, 1.25, .06, 20);
 // free what one race made for itself (name tags)
-function freeRacers(list) { for (const r of list) { WORLD.scene.remove(r.model.root); if (r.model.ups) { r.model.ups.removeFromParent(); r.model.ups = null; } if (r.label) { r.label.material.map.dispose(); r.label.material.dispose(); } } }
+function freeRacers(list) { for (const r of list) { WORLD.scene.remove(r.model.root); if (r.model.wing) { r.model.wing.removeFromParent(); wingDispose(r.model.wing, new Set()); r.model.wing = null; r.model.wingLv = 0; }   /* (v270) */ if (r.model.ups) { r.model.ups.removeFromParent(); r.model.ups = null; } if (r.label) { r.label.material.map.dispose(); r.label.material.dispose(); } } }
 // (v266) a race needs the models that load behind the menu: on a slow device a quick start waits for them under a small notice
 function startRace(trackId, opts) {
   if (!BASE.later || BASE.laterDone) return startRaceNow(trackId, opts);
@@ -6260,6 +6306,7 @@ function garageStop(R0, stayIn = false) {
     const go = () => {
     toast(`IN THE GARAGE!\n<small>get the kart ready: ${TUNE.garageN} question${TUNE.garageN === 1 ? '' : 's'} in each</small>`, '#ffe14a', 34); L.say('Get your kart ready!');
     crewStart(); drawPitHud();   // (v199: no pit box at the garage start)
+    setWing(P, 0, false); let wingN = 0;   // (v270) the kart starts bare; every right answer bolts on the next rear wing
     runQuiz([['fix', TUNE.garageN], ['spd', TUNE.garageN], ['imm', TUNE.garageN]], 'GARAGE', () => {
       if (race !== R0) return res();
       race.dialog = null; race.pitHold = false; race.pitPhase = 'out'; drawPitHud();
@@ -6267,7 +6314,7 @@ function garageStop(R0, stayIn = false) {
       if (!stayIn) for (const r of race.racers) if (!r.player && r.inGarage) { rollDoor(r, true, 550); driveOutOfGarage(r, () => setTimeout(() => rollDoor(r, false), 400), false); }   // (v199) everyone rolls out together, through their own door
       if (stayIn) return res();   // (v254) the screen goes black and everyone is put on the grid instead of rolling out
       if (P.inGarage) { toast('ROLL OUT!', '#4fc84a', 34); driveOutOfGarage(P, () => res()); } else res();   // (v195) out of the garage onto the box
-    });
+    }, (k, i, ok) => (ok && race === R0 ? setWing(P, ++wingN) : false));
     };
     Promise.race([loadPitCrew(TDEF.id), wait(4000)]).then(() => { if (race === R0) go(); else res(); });
   });
@@ -6373,6 +6420,7 @@ async function countdown() {
   if (TDEF.pitStart && PITS && !race.party && !race.tut) {
     // (v254, the user) no formation lap any more: answer the garage questions, the screen goes black, and you are on the grid
     if (!QDEV() && !window.FK.skipGarage) await garageStop(R0, true);   // (v269: the debug hub can skip it)
+    else if (QDEV()) setWing(race.player, REAR_WINGS.length, false);   // (v270) dev mode = all nine right: the Comet
     if (race !== R0) return;
     await blackoutToGrid(R0);
     if (race !== R0) return;
@@ -7569,11 +7617,12 @@ const DBG_API = {
   DEV, isDevAcct, toast, refreshCounters, applyGfx, applySide, gfxOf, resize, upsOf, vehLv, paintPool, tyreOwned, crates, setShowRacer, passOf, enableTilt,
   goMenu, goGarage, goTracks, goPass, goLicence, runIntro, startTutorial, startRace, openCrate, showResults, pauseMenu, hidePodium, closeDialog,
   pitStop, drawPitHud, drawSlot, lapDone, lapPill, ranking, askOne, ico, at, angleOf, project, placeAll, snapCamera, giveBoost,
+  REAR_WINGS, wingLv: () => (race && race.player && race.player.model && race.player.model.wingLv) || 0, setWing: (lv) => (race ? setWing(race.player, lv, false) : false),   // (v270)
   resume: () => { if (!race) return; closeDialog(); race.dialog = null; race.slowTarget = 1; if (race.started && !race.ended) Music.start(); },
   leaveRace: () => { if (race) { closeDialog(); cup = null; endRace(); } },
 };
 let dbgMod = null;
-const loadDebug = () => (dbgMod = dbgMod || import('./debug.js?v=1').then((m) => { m.init(DBG_API); return m; }).catch((e) => { dbgMod = null; console.error('debug hub', e); throw e; }));
+const loadDebug = () => (dbgMod = dbgMod || import('./debug.js?v=2').then((m) => { m.init(DBG_API); return m; }).catch((e) => { dbgMod = null; console.error('debug hub', e); throw e; }));
 window.FK.debug = (tab) => loadDebug().then((m) => m.open(tab));
 if (dbgOn()) loadDebug();
 addEventListener('keydown', (e) => { if (e.key === '`' && (dbgOn() || isDevAcct()) && !(e.target && e.target.closest && e.target.closest('input, textarea'))) { e.preventDefault(); loadDebug().then((m) => m.toggle()); } });
