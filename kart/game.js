@@ -3906,7 +3906,7 @@ function pitStop() {
       if (race !== R0) return;
       race.dialog = null; race.pitHold = false; race.slowTarget = 1; race.learn.pits++; race.pitAuto = false;   // (the way out is yours)
       race.pitPhase = 'out'; pitBoxState('done'); giveBoost(P, 1.5, 1.5); sfx.turbo(2); drawPitHud();
-    });
+    }, wingOnAns(P, R0));   // (v271) the pit stop's right SPEED answers grow the wing too
   };
   setTimeout(brake, 40);
 }
@@ -4094,6 +4094,8 @@ function wingDispose(o, keep) {
   const tex = (t) => { if (t && !keep.has(t)) t.dispose(); };
   o.traverse((n) => { if (n.isMesh) { n.geometry.dispose(); [].concat(n.material).forEach((mt) => { tex(mt.map); tex(mt.emissiveMap); mt.dispose(); }); } });
 }
+// (v271, the user) the rear wing grows ONLY with right SPEED answers: 3 at the start + 3 at each of the 2 pit stops = 9 wings
+const wingOnAns = (P, R0) => (k, i, ok) => (ok && k === 'spd' && race === R0 ? setWing(P, Math.min(REAR_WINGS.length, ((P.model && P.model.wingLv) || 0) + 1)) : false);
 function setWing(P, lv, fx = true) {
   const m = P && P.model; if (!m || !m.kart) return false;   // (the starship and the shape-built kart: no wing)
   lv = clamp(Math.round(lv) || 0, 0, REAR_WINGS.length);
@@ -6306,7 +6308,7 @@ function garageStop(R0, stayIn = false) {
     const go = () => {
     toast(`IN THE GARAGE!\n<small>get the kart ready: ${TUNE.garageN} question${TUNE.garageN === 1 ? '' : 's'} in each</small>`, '#ffe14a', 34); L.say('Get your kart ready!');
     crewStart(); drawPitHud();   // (v199: no pit box at the garage start)
-    setWing(P, 0, false); let wingN = 0;   // (v270) the kart starts bare; every right answer bolts on the next rear wing
+    setWing(P, 0, false);   // (v270) the kart starts bare; (v271) each right SPEED answer bolts on the next rear wing
     runQuiz([['fix', TUNE.garageN], ['spd', TUNE.garageN], ['imm', TUNE.garageN]], 'GARAGE', () => {
       if (race !== R0) return res();
       race.dialog = null; race.pitHold = false; race.pitPhase = 'out'; drawPitHud();
@@ -6314,7 +6316,7 @@ function garageStop(R0, stayIn = false) {
       if (!stayIn) for (const r of race.racers) if (!r.player && r.inGarage) { rollDoor(r, true, 550); driveOutOfGarage(r, () => setTimeout(() => rollDoor(r, false), 400), false); }   // (v199) everyone rolls out together, through their own door
       if (stayIn) return res();   // (v254) the screen goes black and everyone is put on the grid instead of rolling out
       if (P.inGarage) { toast('ROLL OUT!', '#4fc84a', 34); driveOutOfGarage(P, () => res()); } else res();   // (v195) out of the garage onto the box
-    }, (k, i, ok) => (ok && race === R0 ? setWing(P, ++wingN) : false));
+    }, wingOnAns(P, R0));
     };
     Promise.race([loadPitCrew(TDEF.id), wait(4000)]).then(() => { if (race === R0) go(); else res(); });
   });
@@ -6420,7 +6422,7 @@ async function countdown() {
   if (TDEF.pitStart && PITS && !race.party && !race.tut) {
     // (v254, the user) no formation lap any more: answer the garage questions, the screen goes black, and you are on the grid
     if (!QDEV() && !window.FK.skipGarage) await garageStop(R0, true);   // (v269: the debug hub can skip it)
-    else if (QDEV()) setWing(race.player, REAR_WINGS.length, false);   // (v270) dev mode = all nine right: the Comet
+    else if (QDEV()) setWing(race.player, 3, false);   // (v271) dev mode = the start's three SPEED answers right: wing 3 (the pit stops add the rest)
     if (race !== R0) return;
     await blackoutToGrid(R0);
     if (race !== R0) return;
