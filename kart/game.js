@@ -2118,6 +2118,7 @@ const THEMES = {
         for (const c of centres) for (let k = 0; k < 60 && chalets.filter((h) => h.v === c).length < 6; k++) { const x = c.x + rand(-26, 26), z = c.z + rand(-26, 26); if (farFromRoad(x, z, 12) && chalets.every((h) => (h.x - x) ** 2 + (h.z - z) ** 2 > 150)) chalets.push({ x, z, s: rand(.85, 1.1), ry: Math.atan2(MID.x - x, MID.z - z) + rand(-.4, .4), v: c }); } }
       for (let k = 0; k < 400 && chalets.length < 24; k++) { const x = rand(BOUNDS.x0 + 20, BOUNDS.x1 - 20), z = rand(BOUNDS.z0 + 30, BOUNDS.z1 - 20); if (farFromRoad(x, z, 12) && chalets.every((c) => (c.x - x) ** 2 + (c.z - z) ** 2 > 400)) chalets.push({ x, z, s: rand(.9, 1.15), ry: rand(0, 6) }); }
       for (let k = 0; k < 400 && snowmen.length < 9; k++) { const x = rand(BOUNDS.x0 + 30, BOUNDS.x1 - 30), z = rand(BOUNDS.z0 + 30, BOUNDS.z1 - 30); if (farFromRoad(x, z, 4.5) && !farFromRoad(x, z, 9)) snowmen.push({ x, z, s: 1, ry: rand(0, 6) }); }
+      if (W.onRoads) for (let k = chalets.length - 1; k >= 0; k--) if (W.onRoads(chalets[k].x, chalets[k].z, 40)) chalets.splice(k, 1);   // (v272, the user) no houses round the changing stretch
       const clear = trees.filter((t) => chalets.every((c) => (c.x - t.x) ** 2 + (c.z - t.z) ** 2 > 64));
       for (const l of [clear, chalets, snowmen]) for (const d of l) d.y = W.groundAt(d.x, d.z) - .1;
       const vcm = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: .85, flatShading: true });
@@ -4401,7 +4402,7 @@ const TRACK_TYPES = {
     { n: 'NIGHT RUN', road: ['#2a2e48', 'asphalt'], kerb: ['#ffe14a', '#1b1f3a'], side: 'lamps', c: '#ffd080', dark: .62, fog: '#0b1030' },
     { n: 'WOODEN BRIDGE', road: ['#a87040', 'planks'], kerb: ['#6a4020', '#c08a50'], side: 'rail', c: '#8a5a30', under: 'posts' },
     { n: 'ICE TUNNEL', road: ['#8cc8ff', 'ice'], kerb: ['#e8f8ff', '#5aa8ff'], side: 'crystals', c: ['#bff4ff', '#7af8ff'], roof: 'tunnel', rc: '#a8d8ff', dark: .3, fx: 'sparkle' },
-    { n: 'VILLAGE STREET', road: ['#8a8a96', 'cobbles'], kerb: ['#e0e0e8', '#6a6a78'], side: 'houses', c: ['#f0c0a0', '#a0c8f0', '#f0e0a0', '#c0e0b0', '#f0b0c0'], roof: 'bunting' },
+    { n: 'VILLAGE STREET', road: ['#8a8a96', 'cobbles'], kerb: ['#e0e0e8', '#6a6a78'], c: ['#f0c0a0', '#a0c8f0', '#f0e0a0', '#c0e0b0', '#f0b0c0'], roof: 'bunting' },   // (v272, the user: no houses around the track here)
     { n: 'FOREST TRAIL', road: ['#6a4a2a', 'dirt'], kerb: ['#4a6a2a', '#2a4a1a'], side: 'pines', c: ['#2f7a3a', '#3a9a4a', '#1f6a2a'] },
     { n: 'FROZEN LAKE', road: ['#c8ecff', 'ice'], kerb: ['#ffffff', '#9fd8ff'], side: 'lake', c: ['#8fd0ff', '#ffffff'], fx: 'sparkle' },
     { n: 'AURORA GLOW', road: ['#141838', 'grid'], kerb: ['#c84aff', '#3a8aff'], side: 'neon', c: ['#7af8ff', '#c84aff', '#3cff8a'], dark: .5, fog: '#0a0a2a', fx: 'aurora' },
@@ -4522,7 +4523,7 @@ function ttGeo(k) {
   }
   return (TT_GEO[k] = g);
 }
-let TT_BUNT = null;
+let TT_BUNT = null, TT_FIRS = null;
 function styleStretch(g, def, r) {
   const list = TRACK_TYPES[def.id]; if (!list || !TRACK.sec) return;
   const T = list[Math.min(r, list.length - 1)]; if (!T || !T.road) return;
@@ -4562,7 +4563,11 @@ function styleStretch(g, def, r) {
     case 'pier': rails(col(0)); inst(ttGeo('pierpost'), std('#6a4a30'), pts(6, HALF + .4, 0, 0)); sheet(col(1), -.9, 22, HALF + 1.1); break;
     case 'houses': { const P = pts(16, HALF + 4.6, .8, H0 - .2).map((d) => ({ ...d, sc: rand(.85, 1.15), ry: yawN(d.p) + (d.sd > 0 ? 0 : Math.PI) }));
       inst(ttGeo('house'), std('#ffffff'), P, (d) => ({ s: d.sc, c: col(d.k) })); inst(ttGeo('roof'), std('#a0403a'), P, (d) => ({ s: d.sc, ry: d.ry + Math.PI / 4 })); break; }
-    case 'pines': { const P = pts(6, lo + .9, 3.2, H0).map((d) => ({ ...d, sc: rand(.8, 1.35) })); inst(ttGeo('trunk'), std('#5a3a20'), P, (d) => ({ s: d.sc })); inst(ttGeo('pine'), std('#ffffff'), P, (d) => ({ s: d.sc, ry: rand(0, 6.3), c: col(d.k) })); break; }
+    case 'pines': if (def.id === 'alps') {   // (v272, the user) the same snowy firs as the rest of Alpine Peaks, set back from the road
+        const F = TT_FIRS || (TT_FIRS = { geos: [firGeo(1), firGeo(2), firGeo(3)], mat: new THREE.MeshStandardMaterial({ vertexColors: true, roughness: .85, flatShading: true }) });
+        const P = pts(6, lo + 2.6, 3.4, H0).map((d) => ({ ...d, s: rand(.55, .9), ry: rand(0, 6.3) }));
+        F.geos.forEach((fg, n) => inst(fg, F.mat, P.filter((_, k) => k % 3 === n))); break;
+      } else { const P = pts(6, lo + .9, 3.2, H0).map((d) => ({ ...d, sc: rand(.8, 1.35) })); inst(ttGeo('trunk'), std('#5a3a20'), P, (d) => ({ s: d.sc })); inst(ttGeo('pine'), std('#ffffff'), P, (d) => ({ s: d.sc, ry: rand(0, 6.3), c: col(d.k) })); break; }
     case 'palms': { const P = pts(11, lo + 1.2, 2.5, H0).map((d) => ({ ...d, sc: rand(.8, 1.2) })); inst(ttGeo('palmTrunk'), std(col(1)), P, (d) => ({ s: d.sc })); inst(ttGeo('fronds'), std(col(0)), P, (d) => ({ s: d.sc, ry: rand(0, 6.3) })); lamps('#ffd080', 26, lo + .2); break; }
     case 'lake': sheet(col(0), -.22, 16, HALF + 1.1); inst(ttGeo('crystal'), new THREE.MeshStandardMaterial({ color: '#ffffff', emissive: '#bff4ff', emissiveIntensity: .5, roughness: .25, fog: !def.clearRoad }), pts(14, HALF + 4, 8, -.2), (d) => ({ s: rand(.6, 1.6), ry: rand(0, 6.3) })); break;
     case 'tide': sheet(col(0), -.18, 14, HALF + 1.1); rocks(col(1), 8, HALF + 2.5, 6); break;
