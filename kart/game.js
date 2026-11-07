@@ -1535,7 +1535,7 @@ function strip(a, b, ya, yb, { colour, uvLen, only } = {}) {
 const M = (color, o = {}) => new THREE.MeshStandardMaterial({ color, roughness: .8, ...o });
 // (v266, the user) THE ELECTRIC FIELD: the yellow shield sphere with real 3D lightning on it — eight jagged arcs that
 // crawl over the sphere, redrawn 14 times a second, and a glowing core ring; no emoji
-const SPARK_N = 8, SPARK_SEG = 7;
+const SPARK_N = 5, SPARK_SEG = 6, SHIELD_K = .78;   // (v268, the user: a smaller shield, calmer sparks)
 function makeShield() {
   const g = new THREE.Group(); g.add(new THREE.Mesh(WORLD.shieldGeo, WORLD.shieldMat));
   const n = SPARK_N * SPARK_SEG, geo = new THREE.BufferGeometry(); geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(n * 2 * 3), 3));
@@ -1544,14 +1544,14 @@ function makeShield() {
   const rg = new THREE.BufferGeometry(), idx = []; rg.setAttribute('position', new THREE.BufferAttribute(new Float32Array(n * 8 * 3), 3));
   for (let i = 0; i < n * 2; i++) { const o = i * 4; idx.push(o, o + 1, o + 2, o + 1, o + 3, o + 2); } rg.setIndex(idx);
   const rib = new THREE.Mesh(rg, WORLD.sparkGlow); rib.frustumCulled = false; g.add(rib);
-  const ring = new THREE.Mesh(new THREE.TorusGeometry(1.5, .035, 6, 40).rotateX(Math.PI / 2), new THREE.MeshBasicMaterial({ color: '#ffd23a', toneMapped: false, transparent: true, opacity: .75 })); g.add(ring);
+  const ring = new THREE.Mesh(new THREE.TorusGeometry(1.5, .035, 6, 40).rotateX(Math.PI / 2), new THREE.MeshBasicMaterial({ color: '#ffd23a', toneMapped: false, transparent: true, opacity: .4 })); g.add(ring);
   g.userData = { arcs, rib, ring, t: 0 }; return g;
 }
 const _sa = new THREE.Vector3(), _sb = new THREE.Vector3(), _sp = new THREE.Vector3(), _sq = new THREE.Vector3(), _sd = new THREE.Vector3(), _s1 = new THREE.Vector3(), _s2 = new THREE.Vector3();
 function sparkShield(g, t) {
   const U = g.userData; if (!U || !U.arcs) return; U.ring.rotation.z = t * 1.7; U.ring.position.y = Math.sin(t * 2.2) * .9;
-  if (t - U.t < .07) return; U.t = t;
-  const a = U.arcs.geometry.attributes.position, rb = U.rib.geometry.attributes.position, R = 1.47, W = .045; let k = 0, q = 0;
+  if (t - U.t < .1) return; U.t = t;
+  const a = U.arcs.geometry.attributes.position, rb = U.rib.geometry.attributes.position, R = 1.47, W = .03; let k = 0, q = 0;
   const quad = (px, py, pz, side) => { rb.setXYZ(q++, px - side.x, py - side.y, pz - side.z); rb.setXYZ(q++, px + side.x, py + side.y, pz + side.z); };
   for (let n = 0; n < SPARK_N; n++) {
     _sa.set(rand(-1, 1), rand(-1, 1), rand(-1, 1)).normalize(); _sb.copy(_sa).add(_sp.set(rand(-1, 1), rand(-1, 1), rand(-1, 1)).multiplyScalar(.9)).normalize();
@@ -1564,7 +1564,7 @@ function sparkShield(g, t) {
       _sq.copy(_sp);
     }
   }
-  a.needsUpdate = true; rb.needsUpdate = true; const f = .65 + Math.random() * .35; U.arcs.material.opacity = f; U.rib.material.opacity = f * .9;
+  a.needsUpdate = true; rb.needsUpdate = true; const f = .3 + Math.random() * .2; U.arcs.material.opacity = f; U.rib.material.opacity = f * .8;
 }
 function cone(parent, r, h, y, mat, seg = 8, x = 0, z = 0) { const m = new THREE.Mesh(new THREE.ConeGeometry(r, h, seg), mat); m.position.set(x, y, z); parent.add(m); return m; }
 function box(parent, w, h, d, mat, x, y, z, ry = 0) { const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat); m.position.set(x, y, z); m.rotation.y = ry; parent.add(m); return m; }
@@ -4050,14 +4050,7 @@ function pitUpFx(P, k, i, ok) {
   const eng = spot('engine'), ex = spot('exhaust'), back = ship ? -1 : Math.sign(ex.z - spot('nose').z) || 1;
   if (k === 'imm') {
     upLabel(m, ship ? bc : spot(['fl', 'fr', 'rl'][i % 3]), 'NEW TYRE', '#59d8ff');
-    if (ship) { if (U.imm < 3) { const r = Math.max(bs.x, bs.z) * .3, t = pop(new THREE.Mesh(new THREE.TorusGeometry(r, .045, 8, 48).rotateX(Math.PI / 2), upMat('#2ad0ff', 0, true))); t.position.copy(bc); t.position.y += -bs.y * .22 + U.imm * .14; } }
-    else for (const part of i % 3 === 2 ? ['rl', 'rr'] : [['fl', 'fr', 'rl'][i % 3]]) {
-      const w = m.spins.find((sp) => B.worldToLocal(sp.getWorldPosition(new THREE.Vector3())).distanceTo(spot(part)) < .05) || m.spins[0];
-      const wb = new THREE.Box3().setFromObject(w), R = (wb.max.y - wb.min.y) / 2 / ws;
-      if (U.rings[part]) { U.pops.push({ o: U.rings[part], t: 0, from: 1.35 }); continue; }   // (a later stop: that tyre flashes again)
-      const t = pop(new THREE.Mesh(new THREE.TorusGeometry(R * 1.0, R * .17, 8, 32).rotateY(Math.PI / 2), upMat('#2ad0ff', 0, true))); t.position.copy(spot(part)); U.rings[part] = t;
-    }
-    U.imm++;
+    U.imm++;   // (v268, the user: the tyre rings are gone for now; only the label shows)
   } else if (k === 'spd') {
     upLabel(m, ship ? bc : ex, '+SPEED', '#ff8a1e');
     if (U.spd >= 3) { U.spd++; U.flameK = Math.min(1.45, 1 + (U.spd - 3) * .1); for (const q of U.flames) U.pops.push({ o: q.userData.g, t: 0, from: 1.3 }); sfx.spark(3); return; }   // more than three: the flames grow
@@ -4068,12 +4061,7 @@ function pitUpFx(P, k, i, ok) {
     g.position.set(ship ? bc.x + [-.43, .43, 0][U.spd % 3] * bs.x : x, ship ? bc.y - bs.y * .3 : ex.y + .02, ship ? bc.z + back * bs.z * .4 : ex.z + back * .05); pop(g); U.flames.push(fl, core); U.spd++;
   } else {
     upLabel(m, ship ? bc : eng, '+GRIP', '#ffc324');
-    U.fix++; const col = ['#ffc324', '#ff8a1e', '#e8a800'][Math.min(2, U.fix - 1)];
-    if (!U.wing) { const g = new THREE.Group(), w = ship ? bs.x * .7 : 1.0;
-      g.add(new THREE.Mesh(new THREE.BoxGeometry(w, .045, .26), upMat(col, .5)));
-      for (const sx of [-1, 1]) { const e = new THREE.Mesh(new THREE.BoxGeometry(.04, .22, .3), upMat('#1b1f3a', .1)); e.position.set(sx * w / 2, -.06, 0); g.add(e); const st = new THREE.Mesh(new THREE.BoxGeometry(.04, .3, .06), upMat('#1b1f3a', .1)); st.position.set(sx * w * .22, -.17, 0); g.add(st); }
-      g.position.set(0, ship ? bc.y + bs.y * .5 : eng.y + .42, ship ? bc.z + back * bs.z * .3 : eng.z + back * .3); U.wing = pop(g);
-    } else { U.wing.children[0].material = upMat(col, .3 + Math.min(3, U.fix) * .1); U.pops.push({ o: U.wing, t: 0, from: 1.25 }); if (U.fix <= 3) U.wing.position.y += .05; }
+    U.fix++;   // (v268, the user: the rear wing is gone for now; only the label shows)
   }
   sfx.spark(Math.min(3, (U[k] || 1)));
 }
@@ -6744,7 +6732,7 @@ function placeAll0(dt) {
     if (m.dmesh) gripTurn(m.dmesh, turn);   // (v209) the hands go round with the wheel
     for (const s of m.spins) s.rotation.x += r.speed / (BASE.dk ? .22 : .14) * dt;   // (v5 wheels: radius about .22)
     if (m.hover) m.hover.position.y = SHIP_LIFT + Math.sin(t * 3.1 + r.idx * .01) * .035;   // (v184) the starship floats
-    r.bubble.visible = !!r.shield; if (r.shield) { r.bubble.scale.setScalar(1 + Math.sin(t * 8) * .03); sparkShield(r.bubble, t); }
+    r.bubble.visible = !!r.shield; if (r.shield) { r.bubble.scale.setScalar(SHIELD_K * (1 + Math.sin(t * 8) * .02)); sparkShield(r.bubble, t); }
     r.flame.visible = r.boostT > 0; if (r.boostT > 0) r.flame.scale.set(1 + Math.random() * .4, 1 + Math.random() * .4, .8 + Math.random() * .9);
     if (r.beam) { const on = !!(TDEF.magnet && r.air === 'ramp' && r.vy < 0); r.beam.visible = on; if (on) { r.beam.scale.set(1 + Math.sin(t * 30) * .08, Math.max(.5, r.y - trackY(r) + .3), 1 + Math.cos(t * 30) * .08); r.beam.position.y = .3; } }
     if (!dt || !race.started || ro) continue;   // (no puffs inside a corkscrew: they live in the flat frame)
