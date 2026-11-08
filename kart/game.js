@@ -4588,6 +4588,7 @@ function ttGeo(k) {
     case 'bush': g = new THREE.SphereGeometry(.9, 8, 6).translate(0, 1.2, 0); break;
     case 'planter': g = new THREE.BoxGeometry(2, .7, 1.2).translate(0, .35, 0); break;
     case 'bunting': g = new THREE.BoxGeometry(1, .6, .04); break;
+    case 'bpost': g = new THREE.CylinderGeometry(.12, .16, 5.3, 8).translate(0, 2.65, 0); break;   // (v275) the posts the flag lines hang from
     case 'goldbar': g = new THREE.BoxGeometry(.9, .4, .5).translate(0, .2, 0); break;
     case 'pierpost': g = new THREE.CylinderGeometry(.22, .22, 4, 7).translate(0, -2, 0); break;
   }
@@ -4664,7 +4665,11 @@ function styleStretch(g, def, r) {
     inst(ttGeo('lamp'), lit('#dff0ff'), pts(10, 0, 0, 6.0, true), (d) => ({ ry: yawN(d.p) })); }
   if (T.roof === 'bunting') { if (!TT_BUNT) TT_BUNT = canvasTex(256, 64, (x) => { x.strokeStyle = '#3a3a44'; x.lineWidth = 2; x.beginPath(); x.moveTo(0, 5); x.lineTo(256, 5); x.stroke(); const cs = ['#e8403a', '#ffe14a', '#4fc84a', '#2a9fe6', '#ff5db1', '#ffffff']; for (let k = 0; k < 9; k++) { x.fillStyle = cs[k % cs.length]; x.beginPath(); x.moveTo(k * 28 + 2, 6); x.lineTo(k * 28 + 28, 6); x.lineTo(k * 28 + 15, 52); x.closePath(); x.fill(); } });
     const m = new THREE.MeshStandardMaterial({ map: TT_BUNT, alphaTest: .5, side: THREE.DoubleSide, roughness: .8, fog: !def.clearRoad });
-    inst(ttGeo('bunting'), m, pts(14, 0, 0, 4.8, true), (d) => ({ sx: 2 * HALF + 2.6, ry: yawN(d.p) })); }
+    // (v275, the user: fewer flag lines, about 10 over the whole stretch, each hung between two posts so none floats in the air)
+    const B = pts(Math.max(14, Math.ceil((i1 - i0 - 6) / 10)), 0, 0, 4.8, true), PO = [];
+    for (const d of B) for (const s of [-1, 1]) { const q = rolled(d.p, s * (HALF + 1.3), H0); PO.push({ x: q[0], y: q[1], z: q[2] }); }
+    inst(ttGeo('bunting'), m, B, (d) => ({ sx: 2 * HALF + 2.6, ry: yawN(d.p) }));
+    inst(ttGeo('bpost'), std('#5a4030', { roughness: .7 }), PO); }
 }
 // the weather of a type, round the camera while you are on its stretch
 const TT_FX = {
@@ -7201,6 +7206,7 @@ const QUIZ_CAM = {
   imm: { f: 1.55, s: 1.75, h: .85, lf: .2, ls: .45, lh: .3 },        // low at the front corner, on the wheels
   spdG: { f: -1.35, s: .25, h: 2.35, lf: -.75, ls: 0, lh: .5 },     // (in the garage: from above and behind, over the props at the back)
 };
+let QUIZ_VIEWY = .12;   // (v275) how far an upright phone's picture slides up while a quiz camera shows the kart (it was .3: the kart sat under the top bar)
 function cameraGoal(out, look) {
   const P = race.player; camUp.set(0, 1, 0);
   // (v273, the user) while a quiz asks about a part, the camera shows it: MAINTENANCE the whole kart from the front,
@@ -7273,7 +7279,7 @@ function updateRace(dt) {
   race.viewX = (race.viewX || 0) + ((inQ() && race.dialog !== 'aim' && cam.aspect > 1 ? .2 : 0) - (race.viewX || 0)) * Math.min(1, dt * 6);
   // (sideways, the picture is also lifted a little, so your kart sits well above the bottom edge)
   // (v162) upright, during a pit stop the picture slides up so your kart and the crew sit above the question sheet
-  race.viewY = (race.viewY || 0) + ((cam.aspect < 1 && race.dialog === 'pitstop' && WORLD.crew && WORLD.crew.on ? .3 : 0) - (race.viewY || 0)) * Math.min(1, dt * 5);
+  race.viewY = (race.viewY || 0) + ((cam.aspect < 1 && race.dialog === 'pitstop' && WORLD.crew && WORLD.crew.on ? (QUIZ_CAM[race.quizK] ? QUIZ_VIEWY : .3) : 0) - (race.viewY || 0)) * Math.min(1, dt * 5);   // (v275, the user: on a 9:16 phone the quiz shots sit lower, in the middle of the picture between the top bar and the question card)
   const lift = cam.aspect > 1 ? .12 : race.viewY > .002 ? race.viewY : 0;
   if (race.viewX > .002 || lift) { const w = stage.clientWidth, h = stage.clientHeight; cam.setViewOffset(w, h, -w * race.viewX, h * lift, w, h); } else if (cam.view && cam.view.enabled) cam.clearViewOffset(); else cam.updateProjectionMatrix();
   // a racer right under the camera would block the view: hide it until it moves away
@@ -7644,6 +7650,7 @@ window.FK = { auto: false, answer: null, steer: STEER };   // (steer: the v251 s
 window.FK.renderer = renderer; window.FK.world = () => WORLD; window.FK.start = (id) => startRace(id); window.FK.THREE = THREE;
 window.FK.char = (id) => { save.char = id; setShowRacer(); };
 window.FK.SHOW = SHOW;
+window.FK.quizViewY = (v) => { if (v != null) QUIZ_VIEWY = +v; return QUIZ_VIEWY; };   // (v275) test hook: the quiz picture's slide on upright phones
 window.FK.track = () => TRACK; window.FK.half = () => HALF; window.FK.at = (d, l = 0) => at(d, l);   // test hooks: the track and a point on it
 window.FK.ask = (secs = 30) => race && !race.dialog && askOne('jump', `${ico('icon-jump', 'tico')} JUMP QUESTION!`, secs, () => {});   // test hook: a race question now
 // test hook: nudge how an official character sits (FK.fit('rob', { s: 1.2, helm: { r: .42 } }))
