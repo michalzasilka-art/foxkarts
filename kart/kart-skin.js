@@ -260,14 +260,15 @@ function buildBrake(THREE, r, wdt, side, skin) {
   const c = new THREE.Mesh(W.cal, glowMat(THREE, skin.light)); c.scale.set(wdt, r, r); c.position.set(-side * wdt * .12, r * .32, -r * .28); c.rotation.x = .5; g.add(c);
   return g;
 }
-export async function loadDefaultKart(THREE, GLTFLoader, url = 'kart-default.glb') {
-  if (!KART) {
-    KART = study((await new GLTFLoader().loadAsync(url)).scene);
+export async function loadDefaultKart(THREE, GLTFLoader, url = 'kart-default.glb', upgrade = false) {   // (v277: upgrade swaps the low-res start-up model for the full one, in one step)
+  if (!KART || upgrade) {
+    const next = study((await new GLTFLoader().loadAsync(url)).scene);
     // the clean repaint: the body and the steering wheel get sorted geometry (the texture lights are folded in: the neon
     // strips replace them), then straight neon strips are traced along the body
-    const N = {}; KART.scene.traverse((o) => { if (o.name) N[o.name] = o; });
-    for (const o of [N.Body, N.SteeringWheelMesh]) if (o && o.isMesh) o.geometry = cleanGeometry(THREE, o, KART, { keepLights: false, minIsland: o === N.Body ? 40 : 12 });
-    KART.strips = neonStrips(THREE, N.Body);
+    const N = {}; next.scene.traverse((o) => { if (o.name) N[o.name] = o; });
+    for (const o of [N.Body, N.SteeringWheelMesh]) if (o && o.isMesh) o.geometry = cleanGeometry(THREE, o, next, { keepLights: false, minIsland: o === N.Body ? 40 : 12 });
+    next.strips = neonStrips(THREE, N.Body);
+    KART = next; kartMats.clear(); cleanMats.clear();
   }
   return withNodes(KART.scene.clone(true));
 }
@@ -316,8 +317,8 @@ export function skinMaterial(THREE, skin = DEFAULT_SKIN) {
 
 /* ---------- the helmet ---------- */
 let HELMET = null;
-export async function loadHelmet(THREE, GLTFLoader, url = 'helmet.glb') {
-  if (!HELMET) { HELMET = study((await new GLTFLoader().loadAsync(url)).scene, { orange: true, minL: .17, pale: false }); const sh = HELMET.scene.getObjectByName('Shell'); sh.traverse((o) => { if (o.isMesh) o.geometry = cleanGeometry(THREE, o, HELMET, { keepLights: true, minIsland: 24 }); }); }
+export async function loadHelmet(THREE, GLTFLoader, url = 'helmet.glb', upgrade = false) {
+  if (!HELMET || upgrade) { const prev = HELMET; HELMET = study((await new GLTFLoader().loadAsync(url)).scene, { orange: true, minL: .17, pale: false }); if (prev) helmMats.clear(); const sh = HELMET.scene.getObjectByName('Shell'); sh.traverse((o) => { if (o.isMesh) o.geometry = cleanGeometry(THREE, o, HELMET, { keepLights: true, minIsland: 24 }); }); }
   return withNodes(HELMET.scene.clone(true));
 }
 const helmMats = new Map();

@@ -17,7 +17,7 @@ import * as THREE from './lib/three.module.min.js';
 import { RoomEnvironment } from './lib/RoomEnvironment.js?v=2';
 import { buildFoxino, buildKart, buildHelmet, setDetail } from './models.js?v=52';
 import * as L from './learn.js?v=52';
-import { loadDefaultKart, dressKart, loadHelmet, dressHelmet, DEFAULT_SKIN, DEFAULT_HELMET, BODY_COLORS, LIGHT_COLORS, LOGOS, logoIconURL, logoCanvas, WHEEL_SIZE } from './kart-skin.js?v=11';
+import { loadDefaultKart, dressKart, loadHelmet, dressHelmet, DEFAULT_SKIN, DEFAULT_HELMET, BODY_COLORS, LIGHT_COLORS, LOGOS, logoIconURL, logoCanvas, WHEEL_SIZE } from './kart-skin.js?v=12';
 import { buildRearWing, REAR_WINGS } from './rear-wings.js?v=1';   // (v270) the nine rear wings for the garage start
 import { GLTFLoader } from './lib/GLTFLoader.js?v=2';
 import { mergeGeometries } from './lib/BufferGeometryUtils.js?v=2';
@@ -429,8 +429,9 @@ const renderer = (() => { for (const o of [{ antialias: true, powerPreference: '
 // LOW: 0.7 pixels per point, no shadows, no lantern lights — fast on any phone, plainer. DEFAULT: up to 1.75 pixels per
 // point, shadows, four lantern lights; a slow phone drops shadows and resolution by itself. HIGH: every device pixel,
 // sharper and wider shadows, six lantern lights (the two nearest cast shadows); the slow-phone fallback is off.
+let BOOT_LOW = true;   // (v277, the user: "it automatically loads on low res and then starts loading the higher resolutions") the first picture is drawn at 1x, then upgradeAssets() raises it
 const gfxOf = (sv) => (sv && sv.gfx) || (sv && sv.res === 'high' ? 'high' : 'default');
-const pixelRatioFor = (q, g = gfxOf(typeof save !== 'undefined' ? save : null)) => (window.FK && window.FK.pr) || (g === 'high' ? Math.min(window.devicePixelRatio || 1, 3) : g === 'low' ? .7 : q === 2 ? .75 : q ? 1 : Math.min(window.devicePixelRatio || 1, 1.75));
+const pixelRatioFor = (q, g = gfxOf(typeof save !== 'undefined' ? save : null)) => (window.FK && window.FK.pr) || Math.min(BOOT_LOW ? 1 : 9, g === 'high' ? Math.min(window.devicePixelRatio || 1, 3) : g === 'low' ? .7 : q === 2 ? .75 : q ? 1 : Math.min(window.devicePixelRatio || 1, 1.75));
 renderer.setPixelRatio((() => { try { const sv = JSON.parse(localStorage.getItem('foxino-kart-v1') || '{}'); return pixelRatioFor(+sv.lowq || 0, gfxOf(sv)); } catch (e) { return pixelRatioFor(0, 'default'); } })());
 renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 1.1;   // (Neutral tone mapping looks brighter but runs at 1/6 the speed in Safari)
@@ -615,23 +616,28 @@ function clipAbove(geo, y, zFront = Infinity) {
   for (const name of Object.keys(g.attributes)) { const a = g.attributes[name], n = a.itemSize, arr = new Float32Array(keep.length * n); keep.forEach((i, k) => { for (let c = 0; c < n; c++) arr[k * n + c] = a.array[i * n + c]; }); out.setAttribute(name, new THREE.BufferAttribute(arr, n)); }
   return out;
 }
-async function loadOfficial() {
-  BASE.off = {};
+// (v277) start-up models: small 256 px textures from low/, the full ones follow in upgradeAssets(); a download that hangs can never hold up the loading screen again
+const lowGLB = (file) => `low/${file}.glb?v=1`;
+const giveUp = (p, ms = 15000) => Promise.race([p, new Promise((_, no) => setTimeout(() => no(new Error('timed out')), ms))]);
+const gltf = (url, ms) => giveUp(new GLTFLoader().loadAsync(url), ms);
+async function loadOfficial(hi = false) {
+  BASE.off = BASE.off || {};
   await Promise.all(Object.keys(CHAR_FIT).map(async (id) => {
-    try { const g = await new GLTFLoader().loadAsync(`chars/${id}.glb?v=4`); g.scene.traverse((o) => { if (o.isMesh) { BASE.off[id] = o; o.material.envMapIntensity = .8; } }); }
+    try { const g = await gltf(hi ? `chars/${id}.glb?v=4` : lowGLB(id)); g.scene.traverse((o) => { if (o.isMesh) { BASE.off[id] = o; o.material.envMapIntensity = .8; } }); }
     catch (e) { console.warn('official model missing', id, e); }
   }));
 }
 // the default kart: the Meshy model from the user's purple-and-gold sheet (kart-skin.js recolours it per look).
 // Drivers sit at its Seat node, which is higher and further back than the old shape-built kart's seat.
 const OLD_SEAT = new THREE.Vector3(0, .19, -.2);
-async function loadKart() {
-  try { BASE.dk = await loadDefaultKart(THREE, GLTFLoader, 'kart-default.glb?v=3'); BASE.seatShift = BASE.dk.nodes.Seat.position.clone().sub(OLD_SEAT).add(new THREE.Vector3(0, 0, .12)); /* a little forward of the Seat node, so the hands reach the wheel */ BASE.steerAxis = wheelNormal(BASE.dk.nodes.SteeringWheel.children[0].geometry); }
-  catch (e) { console.warn('default kart did not load; using the shape-built one', e); BASE.dk = null; }
+async function loadKart(hi = false) {
+  try { BASE.dk = await giveUp(loadDefaultKart(THREE, GLTFLoader, hi ? 'kart-default.glb?v=3' : lowGLB('kart-default'), hi)); BASE.seatShift = BASE.dk.nodes.Seat.position.clone().sub(OLD_SEAT).add(new THREE.Vector3(0, 0, .12)); /* a little forward of the Seat node, so the hands reach the wheel */ BASE.steerAxis = wheelNormal(BASE.dk.nodes.SteeringWheel.children[0].geometry); }
+  catch (e) { console.warn('default kart did not load; using the shape-built one', e); if (!hi) BASE.dk = null; }
   // the Meshy racing helmet (the user's purple / white / orange sheet); the shape-built helmet stays as a fallback
-  try { BASE.helmet = await loadHelmet(THREE, GLTFLoader, 'helmet.glb?v=1'); } catch (e) { console.warn('helmet did not load; using the shape-built one', e); BASE.helmet = null; }
+  try { BASE.helmet = await giveUp(loadHelmet(THREE, GLTFLoader, hi ? 'helmet.glb?v=1' : lowGLB('helmet'), hi)); } catch (e) { console.warn('helmet did not load; using the shape-built one', e); if (!hi) BASE.helmet = null; }
   // (v184, the user) the starship (the support worker's low-poly Blender hover kart) is the only vehicle on Star Loop
-  try { const g = (await new GLTFLoader().loadAsync('models/hoverkart.glb?v=6')).scene; prepShip(g); BASE.ship = g; } catch (e) { console.warn('starship did not load; Star Loop uses the kart', e); BASE.ship = null; }
+  try { const g = (await gltf(hi ? 'models/hoverkart.glb?v=6' : lowGLB('hoverkart'))).scene; prepShip(g); BASE.ship = g; } catch (e) { console.warn('starship did not load; Star Loop uses the kart', e); if (!hi) BASE.ship = null; }
+  if (hi) return;
   // (v187) Foxino in his space suit for the starship: loaded in the background (2 MB), the usual driver until it arrives
   new GLTFLoader().loadAsync('models/foxino-driver-posed.glb?v=4').then((g) => { g.scene.traverse((o) => { if (o.isMesh) { o.castShadow = true; if (o.material && o.material.name === 'M_Visor') { const v = o.material; v.color.set('#0c1330'); v.opacity = .78; v.metalness = .85; v.roughness = .06; v.envMapIntensity = 1.6; } } });   /* (v247, the user: a darker visor, smoked and glossy, the face only faintly through it) */ BASE.foxSuit = g.scene; if (SHOW.racer && GARAGE_VEH === 'ship') setShowRacer(); }).catch((e) => console.warn('space-suit Foxino did not load', e));
 }
@@ -832,14 +838,14 @@ function buildTyreLods(src) {
   }
   return lods;
 }
-async function loadTyre() {
+async function loadTyre(hi = false) {
   try {
-    const g = await new GLTFLoader().loadAsync('models/tyre-led.glb?v=1'); g.scene.updateMatrixWorld(true);
+    const g = await gltf(hi ? 'models/tyre-led.glb?v=1' : lowGLB('tyre-led')); g.scene.updateMatrixWorld(true);
     const src = []; g.scene.traverse((o) => { if (o.isMesh) { o.geometry.applyMatrix4(o.matrixWorld); o.material.envMapIntensity = .8; src.push(o); } });
     if (!src.find((m) => m.name === 'LED_Strip')) throw new Error('no LED_Strip in the tyre');
     BASE.tyreSrc = src; BASE.tyre = buildTyreLods(src);
     console.log(`tyre: ${BASE.tyre.hiTris} / ${BASE.tyre.loTris} triangles a wheel (hi / lo)`);
-  } catch (e) { console.warn('tyre model missing; the code-built wheels stay', e); BASE.tyre = null; }
+  } catch (e) { console.warn('tyre model missing; the code-built wheels stay', e); if (!hi) BASE.tyre = null; }
 }
 // one LED material per light colour and one spoke material per body colour, shared by every wheel of that colour
 const tyreMats = new Map();
@@ -911,21 +917,29 @@ function tyreWheel(r, w, side, skin, lod) {
 const LDP = { on: null };   // (v266) the loading screen's progress inside the model loading
 async function loadFoxino() {
   const P = (f) => { if (LDP.on) LDP.on(f); };
-  await loadKart(); P(.25);
-  await loadOfficial(); P(.55);
-  await loadPitGarage('alps'); P(.65);   // (the garage screen uses the Alps one)
-  await loadTyre(); P(.95);
-  { const t = TYRE_BY_ID[(save.kart && save.kart.skin || {}).tyre]; if (t && t.model) await loadTyreModel(t.model); }   // (v186) your design tyre, before the first race
+  let done = 0; const tick = () => P(++done / 4 * .95);   // (v277: all at once, not one after another, so one slow file costs only its own time)
+  await Promise.all([loadKart().then(tick), loadOfficial().then(tick), giveUp(loadPitGarage('alps')).catch((e) => console.warn(e)).then(tick), loadTyre().then(tick)]);   // (the garage screen uses the Alps one)
+  { const t = TYRE_BY_ID[(save.kart && save.kart.skin || {}).tyre]; if (t && t.model) await giveUp(loadTyreModel(t.model), 8000).catch((e) => console.warn(e)); }   // (v186) your design tyre, before the first race
   // (v266, the user: slow devices sat on the loading screen) what only the races need — the cave's crystals and
   // stalagmites, the other four maps' pit garages (about 6 MB) — now downloads behind the menu; a race waits for it
   BASE.later = Promise.all([loadCrystals(), loadStalagmites(), ...['beach', 'city', 'mines', 'space'].map((id) => loadPitGarage(id))]).catch((e) => console.warn(e)).then(() => { BASE.laterDone = true; });
   loadPitCrew();   // (v163) the Blender pit crew: not waited for, the stops come much later
   if (BASE.off && BASE.off.foxino) return;   // the official Foxino is in; the old Higgsfield one stays only as a fallback
   try {
-    const g = await new GLTFLoader().loadAsync('foxino-seated.glb?v=1'); g.scene.updateMatrixWorld(true);
+    const g = await gltf('foxino-seated.glb?v=1', 10000); g.scene.updateMatrixWorld(true);
     g.scene.traverse((o) => { if (o.isMesh) BASE.hf = o; });
     if (BASE.hf) { const m = BASE.hf.material; m.envMapIntensity = .9; if (m.metalnessMap) { m.metalness = .6; } }
   } catch (e) { console.warn('Foxino model did not load; using the shape-built one', e); }
+}
+// (v277) once the menu is up: the screen goes to its full sharpness and the full-size models replace the small ones, one at a time and never during a race.
+// A phone set to Low graphics stays on the small ones.
+async function upgradeAssets() {
+  BOOT_LOW = false; renderer.setPixelRatio(pixelRatioFor(+save.lowq || 0)); resize();
+  if (gfxOf(save) === 'low') return;
+  const calm = async () => { while (screen === 'race' || document.hidden) await wait(1500); };
+  await calm(); await loadOfficial(true); await calm(); await loadKart(true); await calm(); await loadTyre(true);
+  driverCache.clear(); kartCache.clear(); BASE.hires = true; await calm();
+  try { setShowRacer(); renderFaces(); } catch (e) { console.warn(e); }
 }
 function buildBase() {
   setDetail(.3, .45);
@@ -1303,10 +1317,10 @@ function drawRouteSign(name) {
   x.fillStyle = '#10163a'; x.fillRect(0, 0, 1024, 160); x.strokeStyle = '#7af8ff'; x.lineWidth = 10; x.strokeRect(5, 5, 1014, 150);
   x.fillStyle = '#7af8ff'; x.font = '84px "Luckiest Guy", Fredoka, Arial'; x.textAlign = 'center'; x.textBaseline = 'middle'; x.fillText(name, 512, 86); S.tx.needsUpdate = true;
 }
-// (v196) which variant is drawn: this lap's, and any one a racer is still driving on
+// (v196) which variant is drawn: this lap's, and no other (v277)
 function updateRouteGates() {
   const W = WORLD; if (!W || !W.routeGroups || !race) return; const open = routeFor();
-  W.routeGroups.forEach((g, r) => { g.visible = r === open || race.racers.some((x) => (x.route || 0) === r && inRouteSec(x)); });
+  W.routeGroups.forEach((g, r) => { g.visible = r === open; });
   if (W.routeShown !== open) { W.routeShown = open; drawRouteSign(TRACK.sec.spec[open].name); miniBase = null; buildMinimap(); }   // (the minimap redrawn with this variant)
 }
 // (v199) the ten road shapes of the ground maps (a, b: the two stretches); lateral only, no height change, no tilt.
@@ -1408,7 +1422,14 @@ function routeFor() {
   if (!TRACK.routes || !race || race.formation || !race.routeSeq || !race.player) return 0;
   const lap = Math.max(1, race.player.lap); return race.routeSeq[Math.min(race.routeSeq.length - 1, lap - 1)];   // (v196: a new one every lap)
 }
-function useRoute(r) { if (!TRACK.routes) return; if (!inRouteSec(r)) r.route = routeFor(); TRACK.pts = TRACK.routes[r.route || 0]; }
+// (v277, the user: "barriers inside the road and you can go through them") only ONE variant ever exists on screen: everybody drives on the
+// player's. A rival still in the section when the variant changes (you are at the line then, far away) is carried across, same place on the road.
+function moveToRoute(r, to) {
+  const N = TRACK.N, i = ((r.idx % N) + N) % N, A = TRACK.routes[r.route || 0][i], B = TRACK.routes[to][i]; if (!A || !B) return;
+  const dx = r.x - A.x, dz = r.z - A.z, lat = dx * A.nx + dz * A.nz, along = dx * A.tx + dz * A.tz;
+  r.x = B.x + B.nx * lat + B.tx * along; r.z = B.z + B.nz * lat + B.tz * along; r.y += B.y - A.y; r.angle += wrapA(angleOf(B) - angleOf(A));
+}
+function useRoute(r) { if (!TRACK.routes) return; const to = routeFor(); if ((r.route || 0) !== to) { if (inRouteSec(r) && !r.remote) moveToRoute(r, to); r.route = to; } TRACK.pts = TRACK.routes[to]; }
 function playerRoute() { if (TRACK.routes) TRACK.pts = TRACK.routes[(race && race.player && race.player.route) || 0]; }
 // (v197) is a lap fraction inside one of the two windows that change? (the shared middle between them does not)
 const inRoutesF = (f, def = TDEF) => { const R = def && def.routes; if (!R) return false; const t = (f - R.f0) / (R.f1 - R.f0), m = .025 / (R.f1 - R.f0), A = R.wa, B = R.wb;
@@ -3603,6 +3624,21 @@ function pitBoxState(st) {
   }
   B.state = st; B.doneT = st === 'done' ? 7 : 0;
 }
+/* (v277, the user: "make automatic driving into the pits faster and not that buggy… when I exit the pit it will bug my kart") the crew drives you
+   along ONE smooth line, in and out: where the kart is depends only on how far it has come, so it cannot wobble, touch a wall or differ on a slow phone. */
+function pitLineIn(P) { const from = Math.max(dsOf(P.sc), PITS.entry - 20); race.pitLine = { from, to: Math.max(PITS.tIn + 8, from + 25), a: null, b: bayLat() }; }
+function pitLineOut() { race.pitLine = PITS ? { from: PITS.tOut - 12, to: PITS.exit + 6, a: bayLat(), b: 3 * PITS.side, out: true } : null; }
+function pitLinePoint(L, s) {
+  const ds = dsOf(s), lat = L.a + (L.b - L.a) * smoothstep(L.from, L.to, ds), f = s / STEP, i = Math.floor(f), u = f - i, A = tp(i), B = tp(i + 1);
+  return { x: A.x + A.nx * lat + (B.x + B.nx * lat - A.x - A.nx * lat) * u, z: A.z + A.nz * lat + (B.z + B.nz * lat - A.z - A.nz * lat) * u };
+}
+function followPitLine(r, dt) {
+  const L = race.pitLine; if (L.a == null) L.a = r.lat; if (L.s == null) L.s = r.sc;   // (its own distance: r.sc saw-tooths on a bend when the kart is far from the centre line)
+  const P0 = pitLinePoint(L, L.s), P1 = pitLinePoint(L, L.s + 1.2), dx = P1.x - P0.x, dz = P1.z - P0.z, len = Math.hypot(dx, dz) || 1.2;   // (metres driven are metres on the line, not on the road's centre)
+  const s = L.s += r.speed * dt * 1.2 / len, q = pitLinePoint(L, s);
+  r.x = q.x; r.z = q.z; r.angle += wrapA(Math.atan2(dx, -dz) - r.angle) * Math.min(1, dt * 16);
+  if (L.out && dsOf(s) >= L.to) race.pitLine = null;   // merged: yours again
+}
 function updatePit(dt) {
   const W = WORLD, B = W && W.pitBay; if (!W || !race) return;
   // the hologram barrier: on only while a stop is waiting, its bars scrolling downwards
@@ -3625,7 +3661,7 @@ function updatePit(dt) {
   _pitCol.set(PIT_BOX_COL[B.state || 'wait']).multiplyScalar(k);
   for (const m of B.box.mats) m.color.copy(_pitCol);
   if (PITS && due && !race.pitAuto && !race.dialog && !race.ended && race.started && !P.finished) {
-    const ds = dsOf(P.sc); if (ds > PITS.entry - 45 && ds < PITS.entry + 10) { race.pitAuto = true; if (P.drift) endDrift(P); toast('PIT STOP\n<small>the crew is bringing you in</small>', '#4fc84a', 30); L.say('Pit stop! We bring you in.'); }
+    const ds = dsOf(P.sc); if (ds > PITS.entry - 45 && ds < PITS.entry + 10) { race.pitAuto = true; pitLineIn(P); if (P.drift) endDrift(P); toast('PIT STOP\n<small>the crew is bringing you in</small>', '#4fc84a', 30); L.say('Pit stop! We bring you in.'); }
   }
   if (!due || race.ended || !race.started || race.dialog || P.finished || P.air) return;
   // the stop begins from ten metres out, if you are lined up with the box
@@ -3634,7 +3670,7 @@ function updatePit(dt) {
   // on its own as it brakes (the stop steers to the box's line), so hugging the pit wall is no trap
   // (v256, the user) the last 30 m in: the kart is guided onto the box's line while it still rolls forward and lines up
   // straight with the lane, so it drives into the MIDDLE of the box and stops there — no sideways shift at the end
-  if (race.pitAuto && PITS && P.inPit && !race.pitHold && d < 30) {
+  if (race.pitAuto && !race.pitLine && PITS && P.inPit && !race.pitHold && d < 30) {
     const p = tp(P.idx), k = Math.min(1, dt * (d < 12 ? 5 : 2.5)), dl = (bayLat() - P.lat) * k;
     P.x += p.nx * dl; P.z += p.nz * dl; P.lat += dl; P.angle += wrapA(angleOf(p) - P.angle) * Math.min(1, dt * 4);
   }
@@ -3912,12 +3948,12 @@ function pitStop() {
   const brake = () => {
     if (race !== R0) return;
     if (P.speed > .5) { setTimeout(brake, 40); return; }
-    P.speed = 0; race.pitBrake = false; race.pitHold = true; race.slowTarget = .02; Snd.skid(0);
+    P.speed = 0; race.pitBrake = false; race.pitHold = true; race.pitLine = null; race.slowTarget = .02; Snd.skid(0);
     sfx.power(); L.say('Pit stop! Quick questions!');
     const bay = pitBayAt(); if (bay) settleInBox(P, bay.s, bay.lat, () => { if (race === R0 && race.pitHold) crewStart(); }); else crewStart();   // (v189) the exact middle of the box, then the crew come out (v162)
     runQuiz([['fix', TUNE.pitN], ['spd', TUNE.pitN], ['imm', TUNE.pitN]], 'PIT STOP', (got) => {
       if (race !== R0) return;
-      race.dialog = null; race.pitHold = false; race.slowTarget = 1; race.learn.pits++; race.pitAuto = false;   // (the way out is yours)
+      race.dialog = null; race.pitHold = false; race.slowTarget = 1; race.learn.pits++; race.pitAuto = false; pitLineOut();   // (v277: the crew sends you out along the line and hands you the wheel once you have merged)
       race.pitPhase = 'out'; pitBoxState('done'); giveBoost(P, 1.5, 1.5); sfx.turbo(2); drawPitHud();
     }, kitOnAns(P, R0));   // (v271) the pit stop's right SPEED answers grow the wing too (v274: and right TYRES answers the tyres)
   };
@@ -6255,7 +6291,7 @@ function startRace(trackId, opts) {
   if (!BASE.later || BASE.laterDone) return startRaceNow(trackId, opts);
   if (BASE.raceWait) return; BASE.raceWait = true;
   const n = document.createElement('div'); n.className = 'mapwait'; n.innerHTML = '<i></i><b>Loading the map\u2026</b>'; document.body.appendChild(n);
-  BASE.later.then(() => { n.remove(); BASE.raceWait = false; startRaceNow(trackId, opts); });
+  Promise.race([BASE.later, wait(10000)]).then(() => { n.remove(); BASE.raceWait = false; startRaceNow(trackId, opts); });   // (v277: never waits for ever)
 }
 function startRaceNow(trackId = save.track || 'alps', opts = {}) {
   if (!TRACK_DEFS[trackId]) trackId = 'alps';   // (v168: a save may still name Japan)
@@ -6562,7 +6598,7 @@ function respawn(r) {
 }
 // your kart drives itself while a pit-stop or gate question is open, and on to the arch you picked
 const QDLG = new Set(['pit', 'pitstop', 'gate', 'jump', 'lap', 'finish', 'aim']), inQ = () => !!race && QDLG.has(race.dialog);
-const autoDrive = () => inQ() || race.steerTo != null || !!race.pitAuto;
+const autoDrive = () => inQ() || race.steerTo != null || !!race.pitAuto || !!race.pitLine;
 function drive(r, dt) {
   if (!race.started) return;
   if (r.remote) {
@@ -6573,7 +6609,7 @@ function drive(r, dt) {
     project(r); if (st) r.lap = st.obj.lap;   // (the lap comes from the state, not from crossing the line here)
     return;
   }
-  project(r); if (!race.formation) gateWalls(r, dt); pitWalls(r, dt); pitGateWall(r, dt);   // (v175: the formation gates never steer you)
+  project(r); if (!race.formation) gateWalls(r, dt); if (!(r.player && race.pitLine)) pitWalls(r, dt); pitGateWall(r, dt);   // (v175: the formation gates never steer you)
   if (race.formation) gridPark(r, dt);
   // (v152) in the pit lane. It latches on over the stretch where the lane has walls of its own, where
   // there is no doubt, and off again when you are back on the road — so a kart hugging the edge of the
@@ -6606,10 +6642,10 @@ function drive(r, dt) {
   r.surf = surfOf(r); if (r.surf === 'snow') max *= SNOW_SLOW;   // (v267, the user) snow: a bit slower — noticeable, not much   // (v199) a longer road variant is driven that much faster: the same time on every one   // (v190, the user: a bit faster again; v181 22 / 20, before 15 / 13)
   if (race.formation && r.parked) { max = 0; r.speed = 0; }
   else if (race.formation && r.grid && r.lap >= 1 && r.sc > TRACK.L * .6) { const dg = r.grid.s - r.sc; if (!r.player || race.gridBrake) { max = Math.min(max, Math.max(0, dg) * (r.player ? 2.6 : 1.3) + (r.player ? 0 : .4)); if (r.speed > max) r.speed = max; } }   // (rivals a touch behind, so the arches are yours to see)   // (v170) the formation lap: a steady pace for everyone
-  if (r.player && race.pitDue) max *= TUNE.pitWorn;                                        // (v151) a stop is due: the tyres are off
+  if (r.player && race.pitDue && !race.pitAuto) max *= TUNE.pitWorn;                                        // (v151) a stop is due: the tyres are off
   // (v256, the user: "drive straight into the middle of the box, not to the side and then shift") on the way in the
   // autopilot lines up with the box early and eases off so the kart rolls to a stop right on its middle
-  if (r.player && race.pitAuto && !race.dialog && r.inPit) { const left = bayAhead(r); if (left < 60) max = Math.min(max, Math.sqrt(2 * 6 * Math.max(0, left - .25)) + .35); }
+  if (r.player && race.pitAuto && !race.dialog && r.inPit) { const left = bayAhead(r); if (left < 60) max = Math.min(max, Math.sqrt(2 * 16 * Math.max(0, left)), left * 3.4 + .4); }   // (v277: brakes late and hard, then eases onto the middle of the box)
   if (r.player && race.pitHold) { max = 0; r.speed = 0; }                                   // (v151) standing in your box while the crew works
   else if (r.player && race.pitBrake) {
     // (v151) rolling to a stop ON your box: the speed is tied to the metres left, so the kart lands on the
@@ -6683,7 +6719,7 @@ function drive(r, dt) {
         : r.player && autoDrive() ? race.steerTo ?? race.holdLat
         : (r.player ? 0 : r.lane) + Math.sin(race.raceTime * .4 + r.phase) * 1.1;
       const tgt = at(r.idx * STEP + 11, aim), want = Math.atan2(tgt.x - r.x, -(tgt.z - r.z));
-      const d = wrapA(want - r.angle), turn = 4 * dt; r.angle += clamp(d, -turn, turn); steer = clamp(d * 3, -1, 1);
+      const d = wrapA(want - r.angle), turn = 4 * dt; if (!(r.player && race.pitLine && race.pitLine.a != null)) r.angle += clamp(d, -turn, turn); steer = clamp(d * 3, -1, 1);
       r.aiDrift = Math.abs(d) > .22 && r.speed > 15 ? Math.sign(d) : 0;   // AI karts slide round bends (just for show)
     }
     // on a keyboard you hold W (or ↑) to drive; on a phone the kart drives by itself
@@ -6699,7 +6735,8 @@ function drive(r, dt) {
   if (r.surf === 'ice' && !r.air && !r.inPit) { if (r.vAng == null) r.vAng = r.angle; r.vAng += Math.atan2(Math.sin(r.angle - r.vAng), Math.cos(r.angle - r.vAng)) * Math.min(1, dt * (r.player ? ICE_GRIP : ICE_GRIP * 2)); mv = r.vAng; }
   else if (r.vAng != null) { const d = Math.atan2(Math.sin(r.angle - r.vAng), Math.cos(r.angle - r.vAng)); if (Math.abs(d) < .01) r.vAng = null; else { r.vAng += d * Math.min(1, dt * 9); mv = r.vAng; } }
   if (r.player && r.surf !== race.surfSaid) { race.surfSaid = r.surf; if (r.surf === 'ice') toast('ICE! It is slippery', '#9fdcff', 30); else if (r.surf === 'snow') toast('SNOW! A bit slower', '#ffffff', 30); }
-  const f = fwd(mv); r.x += f.x * r.speed * dt; r.z += f.z * r.speed * dt;
+  const f = fwd(mv), PL = r.player && !race.pitHold && !r.air && race.pitLine;
+  if (PL && (PL.a != null || dsOf(r.sc) >= PL.from)) followPitLine(r, dt); else { r.x += f.x * r.speed * dt; r.z += f.z * r.speed * dt; }
   r.x = clamp(r.x, BOUNDS.x0, BOUNDS.x1); r.z = clamp(r.z, BOUNDS.z0, BOUNDS.z1);
   // the walls (all round every track): the kart stops with its wheels against the wall face, instead of a quarter of a
   // metre inside it, and the same holds in the air, so no jump, hill or dip can put a kart through a wall
@@ -6832,7 +6869,7 @@ function updateRocks(dt) {
 }
 // (v206, the user: "in the pit we kept bumping into each other — make them ghost cars") a kart on its way into the pit,
 // in the pit lane, at its box or in its garage passes through the others, and puddles leave it alone
-const pitGhost = (r) => !!(r.inPit || r.pitting || r.inGarage || r.parkedPit || (r.player && race && (race.pitAuto || race.pitHold || race.dialog === 'pitstop')));
+const pitGhost = (r) => !!(r.inPit || r.pitting || r.inGarage || r.parkedPit || (r.player && race && (race.pitAuto || race.pitLine || race.pitHold || race.dialog === 'pitstop')));
 function collide() {
   const rs = race.racers;
   for (let i = 0; i < rs.length; i++) for (let j = i + 1; j < rs.length; j++) {
@@ -7763,6 +7800,6 @@ document.addEventListener('visibilitychange', () => {
     await step(100, 'Ready!');
     if (!save.introDone && !save.races && !DEV() && !/[?&]nointro/.test(location.search)) runIntro(); else { if (!save.introDone) { save.introDone = true; store(); } goMenu(); }   // (v172) the first open: the story first
     $('loading').style.opacity = 0; setTimeout(() => $('loading').remove(), 500);
-    window.FK.ready = true; LDP.on = null; requestAnimationFrame(loop);
+    window.FK.ready = true; LDP.on = null; requestAnimationFrame(loop); setTimeout(() => upgradeAssets().catch((e) => console.warn('upgrade', e)), 1200);
   } catch (e) { lt.textContent = 'Oops: ' + e.message; console.error(e); if (window.__ldFail) window.__ldFail(e.message); }
 })();
