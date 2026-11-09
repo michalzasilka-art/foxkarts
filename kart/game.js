@@ -80,7 +80,7 @@ const TUNE = {
   maxImmune: 3,            // puddle shields a racer can hold (the user: "max 3 per racer")
   // (v269) the question sets, here so the debug hub can change them: garage start 3 sets of garageN, a pit stop 3 sets
   // of pitN (each pitSecs), the finish line finN questions of finSecs (a Starter gets 2 / 3 seconds more)
-  garageN: 3, pitN: 3, finN: 3, finSecs: 10,   // (v270, the user: the garage start is 3 × 3 = 9 questions, one per rear wing)
+  garageN: 3, pitN: 3, finN: 3, finSecs: 6,   // (v270, the user: the garage start is 3 × 3 = 9 questions, one per rear wing)
 };
 const LAPS0 = TUNE.laps, PIT_EVERY0 = TUNE.pitEvery, PIT_LAPS0 = TUNE.pitLaps;
 const STEP = .6;   // the spacing of the track's centre-line points (the road's half-width HALF is set per track)
@@ -5918,8 +5918,9 @@ function questionCard(host, title, q, done, limit = 0, ctl = null, waitWrong = f
     // Starter (young children who don't read yet): after a mistake on a word, hear its Czech meaning too
     L.say(!ok && q.it.kind === 'word' && L.level() === 0 ? [q.full, { cs: q.it.cs }] : q.full);
     if (change) setTimeout(() => toast(change > 0 ? `Level up! English ${L.LEVEL_NAMES[L.level()]}` : `Easier questions for a while`, '#ffe14a', 26), 400);
-    if (ok) { sfx.right(); fb.hidden = false; fb.innerHTML = `<span class="yes">${q.fmt === 'gap' ? 'Yes!' : q.fmt === 'reply' ? 'Yes!' : `Yes! ${q.it.e} ${q.it.w}`}</span>`; if (bt) confettiAt(bt, limit ? 22 : 30); setTimeout(() => done(true, fast), limit ? 300 : 1100); return; }   // (v206, the user: right answers move on at once, with confetti)
+    if (ok) { sfx.right(); fb.hidden = false; fb.innerHTML = `<span class="yes">${q.fmt === 'gap' ? 'Yes!' : q.fmt === 'reply' ? 'Yes!' : `Yes! ${q.it.e} ${q.it.w}`}</span>`; if (bt) confettiAt(bt, waitWrong === 'quick' ? 80 : limit ? 22 : 30, waitWrong === 'quick' ? 1.7 : 1); setTimeout(() => done(true, fast), limit ? 300 : 1100); return; }   // (v206, the user: right answers move on at once, with confetti)
     sfx.wrong();
+    if (waitWrong === 'quick') { setTimeout(() => done(false, 0), 700); return; }   // (v280, the user) at the finish a wrong answer only flashes the right one, then the next question
     const hint = o ? (q.why && q.why[o]) || q.cs || '' : '';
     fb.hidden = false; fb.innerHTML = `${o ? '' : '<div class="late">Time is up!</div>'}<div class="full">${q.fmt === 'word' || q.fmt === 'pic' ? `${q.it.e} <b>${q.it.w}</b>` : `<b>${q.full}</b>`}</div>${hint ? `<div class="cz">CZ: ${hint}</div>` : ''}<button class="btn small" id="qok" style="--c:var(--green);margin:10px auto 0">OK ▶</button>`;
     let gone = false; const go = () => { if (gone) return; gone = true; done(false, 0); };
@@ -6981,7 +6982,7 @@ function askOne(kind, title, secs, onDone, ctl = null) {
   const P = race.player, lr = race.learn, D = $('dialog'), it = L.pickPit(TDEF.words || TDEF.id, 1, lr)[0]; lr.asked.push(it.id); lr.askedAt[it.id] = lr.asked.length;
   race.dialog = kind; Music.duck(true); if (P.drift) endDrift(P); race.holdLat = clamp(P.lat, -HALF + 1.8, HALF - 1.8);
   D.hidden = false; D.innerHTML = '<div class="veil pit"></div>';
-  questionCard(D.firstChild, title, L.makeQuestion(it), (ok) => { closeDialog(); race.dialog = null; Music.duck(false); onDone(ok); }, secs, ctl, kind === 'finish');
+  questionCard(D.firstChild, title, L.makeQuestion(it), (ok) => { closeDialog(); race.dialog = null; Music.duck(false); onDone(ok); }, secs, ctl, kind === 'finish' ? 'quick' : false);
 }
 // every jump asks a question: the flight runs in slow motion and the clock IS the flight — you have until you land.
 // Right: a boost and 3 coins on landing. (The flight time is estimated from the launch speed; in space the magnets
@@ -6995,17 +6996,17 @@ function jumpQuestion(P) {
     if (ok) { giveBoost(P, 1.2, 1.4); race.coinsGot += 3; P.coins = Math.min(TUNE.maxCoins, P.coins + 1); sfx.coin(); toast(`${ico('coin')} +3 ${ico('icon-boost')} BOOST!`, '#ffe14a', 34); }
   }, ctl);
 }
-// the finish line asks THREE questions (slow motion, the rivals race on): your place is your lap time PLUS the seconds
+// the finish line keeps asking until you have THREE right (v280; slow motion, the rivals race on): your place is your lap time PLUS the seconds
 // you needed for them, so a rival who crosses the line a second after you can still win by answering faster. The
 // rivals' answering times are rolled when the race is set up (quizT).
 function finishLine() {
   const P = race.player;
   if (QDEV()) { P.quizT = 0; finish(); return; }   // (v183, the user) the 3 finish questions are back on every map, right after the line
-  race.slowTarget = .2; race.finQuiz = !race.party; const c0 = resClock(), t0 = performance.now(); let n = 0, right = 0;
-  toast(`${ico('icon-flag')} FINISH!\n3 QUESTIONS!`, '#ffe14a', 44); sfx.fanfare();
+  race.slowTarget = .2; race.finQuiz = !race.party; const c0 = resClock(), t0 = performance.now(); let right = 0;
+  toast(`${ico('icon-flag')} FINISH!\nGET 3 RIGHT!`, '#ffe14a', 44); sfx.fanfare();
   const next = () => {
-    if (n >= TUNE.finN) { if (race.finQuiz) { P.doneR = resClock(); P.quizT = P.doneR - c0; race.finQuiz = false; } else P.quizT = (performance.now() - t0) / 1000; P.quizRight = right; race.slowTarget = 1; finish(); return; }
-    n++; askOne('finish', `${ico('icon-flag', 'tico')} FINISH · ${n} OF ${TUNE.finN}`, TUNE.finSecs + (L.level() === 0 ? 3 : 0), (ok) => { if (ok) right++; next(); });
+    if (right >= TUNE.finN) { if (race.finQuiz) { P.doneR = resClock(); P.quizT = P.doneR - c0; race.finQuiz = false; } else P.quizT = (performance.now() - t0) / 1000; P.quizRight = right; race.slowTarget = 1; finish(); return; }
+    askOne('finish', `${ico('icon-flag', 'tico')} FINISH · ${right} OF ${TUNE.finN} RIGHT`, TUNE.finSecs + (L.level() === 0 ? 3 : 0), (ok) => { if (ok) right++; next(); });
   };
   next();
 }
