@@ -7274,15 +7274,16 @@ function cameraGoal(out, look) {
   const fol = false;   // (v212: TAP SIDES uses the normal chase camera; the raised follow-finger camera is gone)
   const f = fwd(race.camA), boost = P.boostT > 0 ? .7 : 0, d = (fol ? 7.0 : 4.7) + boost, sh = race.shake;   // (v184: follow 6.1 -> 7.0 back)
   const ro = P.rollNow || 0;
-  if (ro) {   // in a corkscrew: behind and "above" the kart in the road's rolled frame, so the road stays under you and the stars turn
-    const p = tp(P.idx), K = P.model.root.position; camUp.set(-p.nx * Math.sin(ro), Math.cos(ro), -p.nz * Math.sin(ro)); race.camY = P.y;
-    out.set(K.x - f.x * d + camUp.x * 2.05, K.y + camUp.y * 2.05, K.z - f.z * d + camUp.z * 2.05); look.set(K.x + f.x * 6 + camUp.x * .95, K.y + camUp.y * .95, K.z + f.z * 6 + camUp.z * .95); return;
-  }
-  const cy = race.camY = race.camY === undefined ? P.y : race.camY + (P.y - race.camY) * (race.camK || .15);
   // (v206, the user: "on the phone upright you cannot see much — especially on the formation lap") upright, the tall
   // picture is used for road: the camera sits higher and further back and looks further ahead; on the formation lap
   // even more, so the gates and their words come into view early
+  // (v279, the user: "on the space map it bugs between close up and further up shot") the tilted-road camera below uses these too: one shot, tilted or not
   const up = isPortrait() && !fol, fm = up && race.formation, dd = up ? (fm ? 3.1 : 1.9) : 0, hh = up ? (fm ? 1.9 : 1.15) : 0, la = up ? (fm ? 11 : 9) : 6;
+  if (ro) {   // in a corkscrew: behind and "above" the kart in the road's rolled frame, so the road stays under you and the stars turn
+    const p = tp(P.idx), K = P.model.root.position; camUp.set(-p.nx * Math.sin(ro), Math.cos(ro), -p.nz * Math.sin(ro)); race.camY = P.y;
+    const ch = 2.05 + hh, lh = .95 - (up ? .35 : 0); out.set(K.x - f.x * (d + dd) + camUp.x * ch, K.y + camUp.y * ch, K.z - f.z * (d + dd) + camUp.z * ch); look.set(K.x + f.x * la + camUp.x * lh, K.y + camUp.y * lh, K.z + f.z * la + camUp.z * lh); return;
+  }
+  const cy = race.camY = race.camY === undefined ? P.y : race.camY + (P.y - race.camY) * (race.camK || .15);
   out.set(P.x - f.x * (d + dd) + rand(-sh, sh) * .4, cy + (fol ? 2.9 : 2.05) + hh + rand(-sh, sh) * .3, P.z - f.z * (d + dd)); look.set(P.x + f.x * la, cy + (fol ? .65 : .95) - (up ? .35 : 0), P.z + f.z * la);   // (v184: follow 4.25 -> 2.9 up, looking at .65)
 }
 function snapCamera() { cameraGoal(camTarget, camLook); WORLD.camera.up.copy(camUp); WORLD.camera.position.copy(camTarget); WORLD.camera.lookAt(camLook); WORLD.look = camLook.clone(); }
