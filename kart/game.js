@@ -233,6 +233,7 @@ const Music = {
 // HTML helpers
 const $ = (id) => document.getElementById(id);
 const stage = $('stage');
+let podT = null;   // (v278) the names and times under the three podium blocks
 const el = (tag, cls, html) => { const e = document.createElement(tag); if (cls) e.className = cls; if (html != null) e.innerHTML = html; return e; };
 const tap = (e, fn) => e.addEventListener('click', (ev) => { Snd.init(); if (Snd.ctx) L.setAudio(Snd.ctx); fn(ev); });
 const wait = (ms) => new Promise((ok) => setTimeout(ok, ms));
@@ -285,7 +286,7 @@ function toast(s, color = '#fff', size = 30, kind) {
 const gapHTML = (s) => s.replace('___', '<span class="gap">&nbsp;</span>');
 let GARAGE_VEH = 'kart';   // (v184) which vehicle the garage is showing and painting: 'kart' or 'ship'
 function showOnly(id) {
-  if (id !== 'garage' && GARAGE_VEH === 'ship') { GARAGE_VEH = 'kart'; if (SHOW.racer) setShowRacer(); }   // (v184) leaving the garage: the kart again
+ if (podT && id !== 'results') podT.hidden = true;  if (id !== 'garage' && GARAGE_VEH === 'ship') { GARAGE_VEH = 'kart'; if (SHOW.racer) setShowRacer(); }   // (v184) leaving the garage: the kart again
   for (const s of ['menu', 'garage', 'hud', 'results']) $(s).hidden = s !== id;
   if (id !== 'garage') { $('gspots').hidden = true; if ($('gveh')) $('gveh').hidden = true; }
   document.body.dataset.scr = id;
@@ -3953,7 +3954,7 @@ function pitStop() {
     const bay = pitBayAt(); if (bay) settleInBox(P, bay.s, bay.lat, () => { if (race === R0 && race.pitHold) crewStart(); }); else crewStart();   // (v189) the exact middle of the box, then the crew come out (v162)
     runQuiz([['fix', TUNE.pitN], ['spd', TUNE.pitN], ['imm', TUNE.pitN]], 'PIT STOP', (got) => {
       if (race !== R0) return;
-      race.dialog = null; race.pitHold = false; race.slowTarget = 1; race.learn.pits++; race.pitAuto = false; pitLineOut();   // (v277: the crew sends you out along the line and hands you the wheel once you have merged)
+      race.dialog = null; race.pitHold = false; race.slowTarget = 1; race.learn.pits++; race.pitAuto = false; pitLineOut(); { const G = P.model && P.model.glow; if (G) { G.want = 0; G.k = 0; G.s.visible = false; } if (WORLD.crew) crewWheelsReset(WORLD.crew); }   /* (v278: nothing of the stop stays on the kart as it leaves) */   // (v277: the crew sends you out along the line and hands you the wheel once you have merged)
       race.pitPhase = 'out'; pitBoxState('done'); giveBoost(P, 1.5, 1.5); sfx.turbo(2); drawPitHud();
     }, kitOnAns(P, R0));   // (v271) the pit stop's right SPEED answers grow the wing too (v274: and right TYRES answers the tyres)
   };
@@ -6892,7 +6893,7 @@ function placeAll0(dt) {
   for (const r of race.racers) {
     const m = r.model; if (TRACK.routes) TRACK.pts = TRACK.routes[r.route || 0];   // (v194) drawn on its own route
     // a drifting kart points further into the bend than it is actually going
-    const want = r.drift ? r.drift * (.14 + .48 * (r.driftK === undefined ? .6 : r.driftK)) : r.aiDrift ? r.aiDrift * .22 : 0; r.driftYaw += (want - r.driftYaw) * Math.min(1, dt * 8);   // (the slide angle follows the stick)
+    const want = r.drift ? r.drift * (.14 + .48 * (r.driftK === undefined ? .6 : r.driftK)) : r.aiDrift && !r.player ? r.aiDrift * .22 : 0; r.driftYaw +=   /* (v278, the user: "it still bugs my car": the autopilot's show-slide stayed on your kart after it handed you the wheel, drawing it sideways) */ (want - r.driftYaw) * Math.min(1, dt * 8);   // (the slide angle follows the stick)
     if (r.trick) r.trickT = Math.min(1, r.trickT + dt * 2.4);
     // in a corkscrew the kart (and everything on it) is drawn in the road's rolled frame; the physics stays flat
     const ro = r.rollNow = rollAt(r.sc), tpi = tp(r.idx);
@@ -7165,6 +7166,7 @@ function finish() {
   setTimeout(() => showResults(place), 2200);
 }
 const fmtTime = (t) => `${Math.floor(t / 60)}:${(t % 60).toFixed(1).padStart(4, '0')}`;
+const raceTimeOf = (r) => (r.finished ? fmtTime(r.doneR != null ? r.doneR : r.finishTime + (r.quizT || 0)) : '—');
 // one row of the leaderboard: medal or place, face, name, time (or cup points); your own row is gold
 const leaderRow = (r, i, right) => `<div class="row${r.player ? ' me' : ''}"><b class="pl">${i < 3 ? ico(`icon-medal-${i + 1}`, 'medal') : i + 1}</b><span class="face" style="${faceStyle(r.ch)}"></span><span class="nm">${r.player ? 'You' : r.ch.name}</span><i class="tm">${right}</i></div>`;
 // (v209, the user: "make the round end a bit different, with a tab of what you've learned") three tabs: RACE, LEARNED, LICENCE
@@ -7176,7 +7178,7 @@ function resultsTab(t) {
 for (const b of document.querySelectorAll('#results .rtabs button')) tap(b, () => { sfx.click(); resultsTab(b.dataset.t); });
 function showResults(place) {
   if (!race) return; resultsTab('race');
-  showPodium(ranking()); setTimeout(() => { if (screen === 'podium') { $('results').hidden = false; $('results').classList.add('up'); } }, 2600);
+  showPodium(ranking(), raceTimeOf); setTimeout(() => { if (screen === 'podium') { $('results').hidden = false; $('results').classList.add('up'); } }, 2600);
   screen = 'podium'; $('toasts').innerHTML = ''; const order = ranking(), coins = TUNE.coinsForPlace[place - 1] + race.coinsGot;
   const open0 = TRACK_ORDER.filter(trackOpen); save.coins += coins; save.races++; if (place === 1) { save.wins++; save.winsBy = save.winsBy || {}; save.winsBy[TDEF.id] = (save.winsBy[TDEF.id] || 0) + 1; } save.best = save.best || {}; save.best[TDEF.id] = Math.min(save.best[TDEF.id] || 9, place);
   { const g = MAP_PTS[place - 1] ?? MAP_PTS[MAP_PTS.length - 1]; mapPts(); mapsOpen(); save.mapPts += g; const opened = TRACK_ORDER.filter((id) => trackOpen(id) && !open0.includes(id)); for (const id of opened) if (!save.mapsOpen.includes(id)) save.mapsOpen.push(id); race.mapGain = { g, opened }; }   // (v249) map points
@@ -7185,7 +7187,8 @@ function showResults(place) {
   const newBest = myT > minT && (!save.times[TDEF.id] || myT < save.times[TDEF.id]); if (newBest) save.times[TDEF.id] = myT; store();
   showOnly('results'); $('results').hidden = true; $('results').classList.remove('up'); $('hud').hidden = true;
   $('rTitle').textContent = place === 1 ? 'YOU WIN!' : `${ord(place)} PLACE`;
-  $('order').innerHTML = order.map((r, i) => leaderRow(r, i, r.finished ? fmtTime(r.doneR != null ? r.doneR : r.finishTime + (r.quizT || 0)) : '—')).join('');
+  // (v278, the user: "so it fits on one screen… the ones that aren't in the top 3 in the leaderboard, the top 3 times under them in the top image")
+  $('order').innerHTML = order.slice(3).map((r, i) => leaderRow(r, i + 3, raceTimeOf(r))).join('');
   $('rsub').innerHTML = `${ico('icon-timer')} ${fmtTime(myT)}${race.player.quizT ? ` + ${race.player.quizT.toFixed(0)} s for 3 questions` : ''}${newBest ? ' · <b style="color:var(--yellow)">NEW BEST!</b>' : save.times[TDEF.id] ? ` · best ${fmtTime(save.times[TDEF.id])}` : ''}<br>${TUNE.coinsForPlace[place - 1]} for ${ord(place)} place + ${race.coinsGot} from the track · Coins: ${save.coins}${TUNE.energy ? ` · Energy: ${save.energy}/${TUNE.maxEnergy}` : ""}`;
   { // the English from this race: every word practised (green = right), and the ones fixed after a mistake
     const lr = race.learn, seen = new Map(); for (const p of lr.practised) seen.set(p.id, { label: p.label, ok: (seen.get(p.id) || { ok: true }).ok && p.ok, fixed: lr.fixed.has(p.id) });
@@ -7211,7 +7214,7 @@ function showResults(place) {
     if (cup.i < 3) { $('rTitle').innerHTML = `${place === 1 ? 'YOU WIN!' : `${ord(place)} PLACE`}<small class="cupsub">Grand Prix · race ${cup.i} of 3</small>`; $('again').textContent = 'NEXT RACE ▶'; $('again').classList.remove('dim'); }
     else {
       bonus = CUP_BONUS[cp - 1]; save.coins += bonus; if (cp === 1) save.cups = (save.cups || 0) + 1; store();
-      $('rTitle').innerHTML = cp === 1 ? `${ico('icon-trophy', 'tico')} CUP WINNER!` : `${ord(cp)} IN THE CUP`; $('again').hidden = true; showPodium(stand);
+      $('rTitle').innerHTML = cp === 1 ? `${ico('icon-trophy', 'tico')} CUP WINNER!` : `${ord(cp)} IN THE CUP`; $('again').hidden = true; showPodium(stand, (r) => `${cup.pts[r.ch.id]} pts`);
       setTimeout(() => { L.say(cp === 1 ? 'You win the cup!' : `You are ${['first', 'second', 'third', 'fourth', 'fifth'][cp - 1]}!`); }, 600);
       cup = null;
     }
@@ -7573,7 +7576,10 @@ function updateArena(dt, cam) {
   ARENA.fw.instanceMatrix.needsUpdate = true;
 }
 // the winners' podium: the top three karts on the pillars 2-1-3 in the finals arena, confetti
-function showPodium(order) {
+function showPodium(order, right) {
+  if (!podT) { podT = el('div', 'podtags'); stage.appendChild(podT); }
+  ARENA.oy = null;
+  podT.hidden = true; podT.innerHTML = order.slice(0, 3).map((r) => `<div class="podtag${r.player ? ' me' : ''}"><b>${r.player ? 'You' : r.ch.name}</b><i>${right ? right(r) : ''}</i></div>`).join('');
   if (!ARENA.scene || ARENA.id !== TDEF.id) buildArena(TDEF.id); const P = ARENA.podium; ARENA.camD = 0;   // (v266) the arena of the map you raced on
   for (const r of SHOW.podRacers || []) P.remove(r.root);
   SHOW.podRacers = order.slice(0, 3).map((r, i) => {
@@ -7593,8 +7599,13 @@ function updatePodium(dt) {
   ARENA.camD = ARENA.camD ? ARENA.camD + (want - ARENA.camD) * Math.min(1, dt * 3) : want; const D = ARENA.camD;
   cam.position.set(Math.sin(t * .25) * 1.2, 3.2 + (D - 12.5) * .15, D); cam.lookAt(0, 1.6, 0);
   // with the results showing, the podium moves into the free space on their left
-  if (!R.hidden && isPortrait()) cam.setViewOffset(w, h, 0, h * .3, w, h);
+  if (!R.hidden && isPortrait()) {   // (v278) the podium sits right above the results, with room for the times under it, however tall the panel is
+    const top = R.getBoundingClientRect().top - stage.getBoundingClientRect().top; let oy = ARENA.oy ?? h * .15; cam.setViewOffset(w, h, 0, oy, w, h); cam.updateMatrixWorld();
+    _hp.set(0, .34, 1.12).project(cam); const want = clamp(oy + (1 - _hp.y) / 2 * h - (top - 58), 0, h * .4); oy = ARENA.oy == null ? want : oy + (want - oy) * Math.min(1, dt * 8); ARENA.oy = oy; cam.setViewOffset(w, h, 0, oy, w, h);
+  }
   else if (!R.hidden) { cam.setViewOffset(w, h, w / 2 - left / 2, h * .04, w, h); } else cam.updateProjectionMatrix();
+  if (podT) { const on = !R.hidden && screen === 'podium' && !!ARENA.blocks; podT.hidden = !on;
+    if (on) { cam.updateMatrixWorld(); [...podT.children].forEach((d, i) => { const b = ARENA.blocks[i]; _hp.set(b.position.x, .34, 1.12).project(cam); d.style.left = (_hp.x + 1) / 2 * w + 'px'; d.style.top = (1 - _hp.y) / 2 * h + 5 + 'px'; }); } }
   (SHOW.podRacers || []).forEach((m, i) => { m.body.position.y = Math.abs(Math.sin(t * 3 + i)) * .12; m.driver.rotation.z = Math.sin(t * 4 + i) * .15; });
   if (ARENA.scene) { updateArena(Math.min(dt, .05), cam); renderer.render(ARENA.scene, cam); } else renderer.render(SHOW.scene, cam);
 }
