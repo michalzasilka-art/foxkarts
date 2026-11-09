@@ -1471,11 +1471,11 @@ function prepTrack(def) {
   const ramps = Array.from({ length: nJ }, (_, i) => onShared(i * wJ + inJ, (i + 1) * wJ - inJ));
   const pads = [[.02, .12], [.24, .38], [.56, .68], [.86, .98], [.32, .46]].map(([a, b], i) => ({ f: onShared(a, b), lat: [0, -2.6, 2.6, 0, 2.6][i] }));
   // (v258, the user: "there shouldn't be a jump in the way to the pit stop") no ramp on the way INTO the pit lane (from
-  // 70 m before its entry to 15 m past where the pit wall begins) or where it merges back (its exit, +15 m); along the walled part a
+  // 70 m before its entry to 15 m past where the pit wall begins) or where it merges back (v276: from 25 m before the lane starts to rejoin, a jump's flight, to its exit, +15 m); along the walled part a
   // ramp on the main road is harmless (the wall stops a jump too). A ramp there moves to the nearest flat free spot.
   { const PS = PIT_SPECS[def.id], Lt = TRACK.L;
     if (PS) {
-      const zones = [[PS.entry - 70, PS.tIn + 15], [PS.tOut, PS.exit + 15]].map(([a, b]) => [a / Lt, b / Lt]);   // (a fast jump flies ~25 m)
+      const zones = [[PS.entry - 70, PS.tIn + 15], [PS.tOut - 25, PS.exit + 15]].map(([a, b]) => [a / Lt, b / Lt]);   // (a fast jump flies ~25 m)
       const wd = (f) => { const w = ((f % 1) + 1) % 1; return w > .5 ? w - 1 : w; }, wrap = (f) => ((f % 1) + 1) % 1;
       const inZone = (f) => zones.some(([a, b]) => wd(f) > a && wd(f) < b);
       const gap = (a, b) => { const d = Math.abs(wrap(a) - wrap(b)); return Math.min(d, 1 - d); };
@@ -1839,10 +1839,12 @@ function buildWorld(def) {
   THEMES[def.id].ground(scene, W, def);
   // the road: asphalt (or a glowing space road) with speckles and a dashed centre line
   const drawRoad = (line) => (x, w, h) => {
+    // (v276) a fixed seed: the road and the pit lane get the very same grain, so a lane lying on the road cannot be told from it
+    let sd = 276; const rnd = () => { sd = (sd + 0x6D2B79F5) | 0; let t = Math.imul(sd ^ (sd >>> 15), 1 | sd); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }, rand = (a, b) => a + rnd() * (b - a);
     x.fillStyle = def.road; x.fillRect(0, 0, w, h);
     if (space) { x.strokeStyle = 'rgba(122,248,255,.35)'; x.lineWidth = 2; for (let k = 0; k <= 4; k++) { x.beginPath(); x.moveTo(k * w / 4, 0); x.lineTo(k * w / 4, h); x.stroke(); } for (let k = 0; k <= 8; k++) { x.beginPath(); x.moveTo(0, k * h / 8); x.lineTo(w, k * h / 8); x.stroke(); } }
     else {
-      for (let k = 0; k < 2600; k++) { x.fillStyle = Math.random() < .3 ? 'rgba(255,255,255,.05)' : 'rgba(30,34,44,.1)'; x.fillRect(rand(0, w), rand(0, h), rand(1, 2.5), rand(1, 2.5)); }
+      for (let k = 0; k < 2600; k++) { x.fillStyle = rnd() < .3 ? 'rgba(255,255,255,.05)' : 'rgba(30,34,44,.1)'; x.fillRect(rand(0, w), rand(0, h), rand(1, 2.5), rand(1, 2.5)); }
       x.fillStyle = 'rgba(0,0,0,.12)'; x.fillRect(w * .2, 0, w * .12, h); x.fillRect(w * .68, 0, w * .12, h);   // two worn tyre lanes
     }
     if (line) { x.fillStyle = def.line; x.fillRect(w / 2 - 3, 0, 6, h * .42); }
@@ -1852,7 +1854,7 @@ function buildWorld(def) {
   const roadLook = (tex) => ({ map: tex, fog: !def.clearRoad, roughness: space ? .35 : .82, metalness: space ? .2 : 0, ...(space ? { emissive: '#ffffff', emissiveMap: tex, emissiveIntensity: .35, side: THREE.DoubleSide } : {}) });
   const roadMat = new THREE.MeshStandardMaterial(roadLook(roadTex));
   // (v181, the user) the pit lane is paved with the same road (no centre line: it has its own edge lines)
-  if (PITS) { const pt = canvasTex(128, 512, drawRoad(false)); pt.wrapT = THREE.RepeatWrapping; W.pitRoadMat = new THREE.MeshStandardMaterial({ ...roadLook(pt), polygonOffset: true, polygonOffsetFactor: -2 }); }
+  if (PITS) { const pt = canvasTex(128, 512, drawRoad(false)); pt.wrapS = pt.wrapT = THREE.RepeatWrapping; W.pitRoadMat = new THREE.MeshStandardMaterial({ ...roadLook(pt), polygonOffset: true, polygonOffsetFactor: -2 }); }
   // kerbs: two colours that alternate (they glow in space)
   const k1 = new THREE.Color(def.kerb[0]), k2 = new THREE.Color(def.kerb[1]), kerbC = (i) => (Math.floor(i / 4) % 2 ? k2 : k1);
   const vc = space ? new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.DoubleSide }) : new THREE.MeshStandardMaterial({ vertexColors: true, roughness: .7, fog: !def.clearRoad });
@@ -2315,7 +2317,7 @@ const THEMES = {
       }
       // (v98) sky bridges over the road: a deck with cyan glowing edges, frame struts, two towers
       { const deckM = M('#d8dce6', { roughness: .4, metalness: .3 }), frameM = M('#3a3f58', { roughness: .4, metalness: .6 }), glowM = new THREE.MeshStandardMaterial({ color: '#5fe8ff', emissive: '#5fe8ff', emissiveIntensity: 1.2 });
-        for (const f0 of [.12, .36, .64, .88]) { let f = null; for (let d = 0; d < .05 && f === null; d += .004) for (const c of [f0 + d, f0 - d]) if (f === null && !BUSY.some((b) => Math.abs(b - c) < .009)) f = c; if (f === null) continue; const p = at(f * TRACK.L).p, g = new THREE.Group(), span = HALF * 2 + 8; g.position.set(p.x, p.y, p.z); g.rotation.y = Math.atan2(p.nx, p.nz) - Math.PI / 2; scene.add(g);
+        for (const f0 of [.12, .36, .64, .88]) { let f = null; for (let d = 0; d < .05 && f === null; d += .004) for (const c of [f0 + d, f0 - d]) if (f === null && !BUSY.some((b) => Math.abs(b - c) < .009) && !(PITS && dsOf(c * TRACK.L) > PITS.entry - 8 && dsOf(c * TRACK.L) < PITS.exit + 8)) f = c; if (f === null) continue;   /* (v276: a tower stood in the pit lane) */ const p = at(f * TRACK.L).p, g = new THREE.Group(), span = HALF * 2 + 8; g.position.set(p.x, p.y, p.z); g.rotation.y = Math.atan2(p.nx, p.nz) - Math.PI / 2; scene.add(g);
           box(g, span, .6, 3.4, deckM, 0, 8.2, 0); for (const z of [-1.7, 1.7]) { box(g, span, .14, .14, glowM, 0, 7.92, z); box(g, span, .1, .1, frameM, 0, 9.4, z); for (let k = 0; k <= 10; k++) box(g, .1, 1.2, .1, frameM, -span / 2 + k * span / 10, 8.85, z); }
           for (const x of [-span / 2 - 1.2, span / 2 + 1.2]) { box(g, 2.4, 10.5, 4, deckM, x, 5.25, 0); box(g, .16, 10.5, .16, glowM, x - 1.21 * Math.sign(x), 5.25, 2.01); box(g, .16, 10.5, .16, glowM, x - 1.21 * Math.sign(x), 5.25, -2.01); } } }
       // flying roadsters: a low wedge body in bright paint, a dark glass canopy, red tail and white head lights, a cyan hover glow
@@ -3265,20 +3267,22 @@ function setPanel(pn, txt, state) { gatePanelDraw(pn.x, txt, state); pn.t.needsU
 const PIT_SPECS = {
   alps: {
     side: -1,                           // which side of the road the lane is on (−1 = the outside here)
-    entry: -178, tIn: -104,             // the mouth, and where the lane has fully pulled away
-    tOut: 44, exit: 112,                // the way back on
+    // (v276, the user: "make the road shorter, like the size of the pitstop") the lane is now just the garage row and a short
+    // ramp on and off each end: 122 m instead of 290. It rejoins BEFORE the grid, so nothing is painted over the line or the grid boxes.
+    entry: -140, tIn: -104,             // the mouth, and where the lane has fully pulled away
+    tOut: -44, exit: -18,               // the way back on
     mouthIn: 2.0, mouthOut: 6.9,        // at the mouth the lane is the near half of the road, opening outwards
     laneU: 13.2, laneW: 4.2,            // then its own 8.4 m road, 13.2 m out from the centre line
-    bays: [-73.2, -62.6, -52, -41.4, -30.8],   // five garages side by side at a 10.6 m pitch; yours is the middle one
+    bays: [-94.8, -84.2, -73.6, -63, -52.4],   // five garages side by side at a 10.6 m pitch; yours is the middle one
     me: 2, bayU: 14.9,                  // you stop on the garage side of the lane
-    gateFrom: -252, gateTo: -124,       // where the hologram barrier sweeps across the track
+    gateFrom: -214, gateTo: -114,       // where the hologram barrier sweeps across the track
   },
   // (v177, the user) every map has a pit lane now, on the outside of the start, built the same way
-  beach: { side: -1, entry: -178, tIn: -104, tOut: 44, exit: 112, mouthIn: 2.0, mouthOut: 6.9, laneU: 13.2, laneW: 4.2, bays: [-73.2, -62.6, -52, -41.4, -30.8], me: 2, bayU: 14.9, gateFrom: -252, gateTo: -124 },
-  city: { side: -1, entry: -178, tIn: -104, tOut: 44, exit: 112, mouthIn: 2.0, mouthOut: 6.9, laneU: 13.2, laneW: 4.2, bays: [-73.2, -62.6, -52, -41.4, -30.8], me: 2, bayU: 14.9, gateFrom: -252, gateTo: -124 },
-  mines: { side: 1, entry: -178, tIn: -104, tOut: -25, exit: -6, mouthIn: 2.0, mouthOut: 6.9, laneU: 13.2, laneW: 4.2, bays: [-73.2, -62.6, -52, -41.4, -30.8], me: 2, bayU: 14.9, gateFrom: -252, gateTo: -124 },
-  // (Star Loop: the figure-of-eight crosses itself just after the line, so the lane comes back on before it)
-  space: { side: -1, entry: -235, tIn: -165, tOut: -40, exit: 28, mouthIn: 2.0, mouthOut: 7.9, laneU: 14.2, laneW: 4.2, bays: [-130, -119.4, -108.8, -98.2, -87.6], me: 2, bayU: 15.9, gateFrom: -300, gateTo: -180 },
+  beach: { side: -1, entry: -140, tIn: -104, tOut: -44, exit: -18, mouthIn: 2.0, mouthOut: 6.9, laneU: 13.2, laneW: 4.2, bays: [-94.8, -84.2, -73.6, -63, -52.4], me: 2, bayU: 14.9, gateFrom: -214, gateTo: -114 },
+  city: { side: -1, entry: -140, tIn: -104, tOut: -44, exit: -18, mouthIn: 2.0, mouthOut: 6.9, laneU: 13.2, laneW: 4.2, bays: [-94.8, -84.2, -73.6, -63, -52.4], me: 2, bayU: 14.9, gateFrom: -214, gateTo: -114 },
+  mines: { side: 1, entry: -140, tIn: -104, tOut: -44, exit: -18, mouthIn: 2.0, mouthOut: 6.9, laneU: 13.2, laneW: 4.2, bays: [-94.8, -84.2, -73.6, -63, -52.4], me: 2, bayU: 14.9, gateFrom: -214, gateTo: -114 },
+  // (Star Loop: the same short lane round its own garage row, which stands further back from the line)
+  space: { side: -1, entry: -175, tIn: -139, tOut: -79, exit: -53, mouthIn: 2.0, mouthOut: 7.9, laneU: 14.2, laneW: 4.2, bays: [-130, -119.4, -108.8, -98.2, -87.6], me: 2, bayU: 15.9, gateFrom: -249, gateTo: -149 },
 };
 let PITS = null;                        // the spec for the track in play (null = no pit lane here)
 // metres from the start/finish line, −L/2 … +L/2
@@ -3331,9 +3335,14 @@ function pitStrip(a, b, ya, yb, opts = {}) {
     const A = pitPt(ds, A1(ds), Y1(ds)), B = pitPt(ds, B1(ds), Y2(ds)), C = pitPt(d2, A1(d2), Y1(d2)), D = pitPt(d2, B1(d2), Y2(d2));
     if (P.side > 0) pos.push(...A, ...B, ...C, ...B, ...D, ...C); else pos.push(...B, ...A, ...C, ...D, ...B, ...C);
     if (per) { const v1 = v + step / per; uv.push(0, v, 1, v, 0, v1, 1, v, 1, v1, 0, v1); v = v1; }
+    if (opts.roadUv) {   // (v276, the user: "the same texture as the normal road") the road's own texture coordinates, carried on sideways past its edge: where the lane lies on the road it matches it exactly, tile for tile, and it never stretches
+      const uOf = (e) => e * P.side / (2 * HALF) + .5, tiles = Math.round(TRACK.L / 12), vOf = (d) => ((d % TRACK.L) + TRACK.L) % TRACK.L / TRACK.L * tiles;
+      const ua = uOf(A1(ds)), ub = uOf(B1(ds)), uc = uOf(A1(d2)), ud = uOf(B1(d2)), v0 = vOf(ds), v1 = v0 + (d2 - ds) / TRACK.L * tiles;
+      if (P.side > 0) uv.push(ua, v0, ub, v0, uc, v1, ub, v0, ud, v1, uc, v1); else uv.push(ub, v0, ua, v0, uc, v1, ud, v1, ub, v0, uc, v1);
+    }
   }
   const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
-  if (per) g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+  if (per || opts.roadUv) g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
   g.computeVertexNormals(); return g;
 }
 // a group standing on the lane: local +x points away from the track, +z runs along it
@@ -3423,9 +3432,8 @@ function buildPitLane(scene, W, def) {
   // pits: it puts you in them, behind the pit wall, where you cannot get back out onto the track
   const G0 = -(HALF + 1.1), G1 = pitEdges(P.gateTo)[0] + 2.8;
   // 1. the tarmac
-  const tar = new THREE.MeshStandardMaterial({ map: pitTarTex(def.road), roughness: .82, fog: !def.clearRoad, polygonOffset: true, polygonOffsetFactor: -2 });
   // (v181) the lane itself in the road's own texture, at the road's scale (the road: one tile across its width, every 12 m)
-  const lane = new THREE.Mesh(pitStrip(inner, outer, Y, Y, { uvLen: 12 * P.laneW / HALF }), W.pitRoadMat || tar); lane.receiveShadow = true; scene.add(lane);
+  const lane = new THREE.Mesh(pitStrip(inner, outer, Y, Y, { roadUv: true }), W.pitRoadMat); lane.receiveShadow = true; scene.add(lane);
   // a white line down each edge
   const paint = M('#f2f5fa', { roughness: .6, fog: !def.clearRoad, polygonOffset: true, polygonOffsetFactor: -4 });
   scene.add(new THREE.Mesh(pitStrip((d) => inner(d) + .12, (d) => inner(d) + .42, Y + .005, Y + .005), paint));
@@ -3456,7 +3464,7 @@ function buildPitLane(scene, W, def) {
   const edgeU = HALF - .5;
   const gapFrom = (() => { for (let d = P.entry; d < P.tIn; d += .5) if (pitEdges(d)[0] > edgeU) return d; return P.tIn; })();
   const gapTo = (() => { for (let d = P.exit; d > P.tOut; d -= .5) if (pitEdges(d)[0] > edgeU) return d; return P.tOut; })();
-  scene.add(new THREE.Mesh(pitStrip(edgeU, inner, Y - .005, Y - .005, { from: gapFrom, to: gapTo }), tar));
+  { const gap = new THREE.Mesh(pitStrip(edgeU, inner, Y - .005, Y - .005, { from: gapFrom, to: gapTo, roadUv: true }), W.pitRoadMat); gap.receiveShadow = true; scene.add(gap); }   // (v276: the same road, not a flat grey)
   const skirt = M('#8e97a6', { roughness: .9, fog: !def.clearRoad });
   scene.add(new THREE.Mesh(pitStrip((d) => outer(d), (d) => outer(d) + 1.4, Y, -.45, { from: gapFrom, to: gapTo }), skirt));
   const guard = M('#c8d2e0', { roughness: .45, metalness: .35, fog: !def.clearRoad });
@@ -3526,7 +3534,7 @@ function buildPitLane(scene, W, def) {
   // floodlights down the far side, so the lane reads as a built place and not a layby
   { const pole = new THREE.CylinderGeometry(.08, .11, 5.4, 8), poleM = M('#434b5a', { roughness: .5, metalness: .4, fog: !def.clearRoad });
     const head = new THREE.BoxGeometry(.5, .22, 1.3), headM = new THREE.MeshStandardMaterial({ color: '#2a3450', emissive: '#fff4d6', emissiveIntensity: .5, roughness: .6, fog: !def.clearRoad });
-    for (let ds = P.tIn + 16; ds < P.tOut - 8; ds += 34) { if (ds > P.bays[0] - 7 && ds < P.bays[P.bays.length - 1] + 7) continue;   // (the garages stand here)
+    for (const ds of [g0 - 2, g1 + 2]) {   // (v276: one at each end of the garage row; the lane is no longer than the row)
       const gp = pitGroup(scene, ds, pitEdges(ds)[1] + 4.6);
       const m = new THREE.Mesh(pole, poleM); m.position.y = 2.7; m.castShadow = true; gp.add(m);
       const h = new THREE.Mesh(head, headM); h.position.set(-.3, 5.3, 0); gp.add(h); } }
@@ -6619,7 +6627,7 @@ function drive(r, dt) {
   // a few seconds in their own (unmarked) bay and rejoin after the line.
   if (PITS && !r.player && !r.remote && r.wantPit && !r.pitting && !r.finished) {
     const pds = dsOf(r.sc);
-    if (pds > PITS.entry - 8 && pds < PITS.entry + 40) { r.pitting = true; r.pitStood = false; r.pitHoldT = 0; }
+    if (pds > PITS.entry - 8 && pds < PITS.entry + 12) { r.pitting = true; r.pitStood = false; r.pitHoldT = 0; }
   }
   if (PITS && r.pitting) {
     const pds = dsOf(r.sc);
