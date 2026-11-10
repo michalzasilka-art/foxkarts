@@ -6186,18 +6186,23 @@ let JOYF = null;
 //   tilt     3° dead zone, the full lock at about 31° of turn                 (was about 40°)
 //   keys     90 % of the lock in about 0.3 s, quicker still when you swap sides (was 0.46 s)
 //   tap sides stays as the user tuned it (v226)
-const STEER = { lineExp: .72, lineMax: 90, lineRate: 16, joyExp: .72, joyMax: 90, joyRate: 14, padExp: 1.25, tiltDead: 3, tiltGain: 3.2, tiltRate: 10, keyRate: 7.5,
+const STEER = { lineExp: .72, lineMax: 90, lineRate: 16, joyExp: .72, joyMax: 72, joyRate: 14, padExp: 1.25, tiltDead: 3, tiltGain: 3.2, tiltRate: 10, keyRate: 7.5,
   outExp: 1.6, tapMin: 34, tapMax: 50, tapRate: 8 };   // (v269: the wheel → steering "soft middle" curve and TAP SIDES, here so the debug hub can tune them)
 // (v281, the user: the option to change the joystick sensitivity) JOYSTICK SENSITIVITY in Settings → CONTROLS, 50–150 %
 // (save.joySens 0.5…1.5, 1 = the tuned feel above). It works on the joystick, the line and a controller's stick:
 // higher = a small push turns more (a straighter push curve), the full lock a little wider and the wheel follows a little
 // quicker; lower = a calmer middle, a slightly smaller full lock, a little slower. 100 % changes nothing.
-// (v285) on the joystick and the line a full push is ALWAYS the full lock, at every sensitivity; the sensitivity bends the
-// curve: half a push ≈ 23 % of the lock at 50 %, 42 % at 100 %, 52 % at 150 %
+// (v285) on the line a full push is ALWAYS the full lock; (v288) on the joystick the full push is 55 / 70 / 86 % of the lock
+// at 50 / 100 / 150 % sensitivity, and half a push ≈ 19 / 29 / 40 %
 const joySens = () => clamp(+save.joySens || 1, .5, 1.5);
-const sensExp = (e) => e / joySens() ** .75;
+const sensExp = (e) => e / joySens() ** .3;   // (v288: .3, was .75 — at 50 % a 30 % push gave 4 %, dead again; the ceiling below does most of the work)
 const sensMax = (m) => m * (1 + (joySens() - 1) * .2);
 const sensRate = (r) => r * (.7 + .3 * joySens());
+// (v288, the user: "make that the joystick at 90 degrees doesn't mean the kart turns 90 degrees") a FULL sideways push on
+// the JOYSTICK is a firm turn, not the full lock: joyMax 72° on the wheel = 70 % of the lock (the full lock swung the kart
+// round 90° in about half a second at race speed; now about 0.8 s). The sensitivity moves that ceiling: about 55 % at 50 %,
+// 70 % at 100 %, 85 % at 150 %. (The line, the keys and a controller still reach the full lock.)
+const joyWheel = () => Math.min(90, STEER.joyMax * (1 + (joySens() - 1) * .28));
 function updateWheel(dt) {
   { const jf = steerWant() === 'joy'; if (jf !== JOYF) { JOYF = jf; document.body.classList.toggle('joyfloat', jf); } }
   const kb = ((kdown('left') || ARR.l) ? -1 : 0) + ((kdown('right') || ARR.r) ? 1 : 0);   // (v263: the ARROWS steer like the keys)
@@ -6218,7 +6223,7 @@ function updateWheel(dt) {
     const tgt = dir * (STEER.tapMin + (STEER.tapMax - STEER.tapMin) * clamp((hT - .4) / .8, 0, 1));
     WHEEL.rot = WHEEL.rot * dir < STEER.tapMin - 4 ? dir * (STEER.tapMin - 4) : WHEEL.rot + (tgt - WHEEL.rot) * Math.min(1, dt * STEER.tapRate);
   }
-  else if (STICK.held != null && !kb) { const joy = CTL === 'joy'; WHEEL.rot += (STICK.x * (joy ? STEER.joyMax : STEER.lineMax) - WHEEL.rot) * Math.min(1, dt * sensRate(joy ? STEER.joyRate : STEER.lineRate)); }
+  else if (STICK.held != null && !kb) { const joy = CTL === 'joy'; WHEEL.rot += (STICK.x * (joy ? joyWheel() : STEER.lineMax) - WHEEL.rot) * Math.min(1, dt * sensRate(joy ? STEER.joyRate : STEER.lineRate)); }
   else
   // (gentle since v40: a full turn needs the phone tilted about 40°, and the keys turn the wheel in more slowly)
   if (CTL === 'tilt' && WHEEL.held == null && !kb) { const t = Math.abs(tiltG) < STEER.tiltDead ? 0 : tiltG - Math.sign(tiltG) * STEER.tiltDead; WHEEL.rot += (clamp(t * STEER.tiltGain, -110, 110) - WHEEL.rot) * Math.min(1, dt * STEER.tiltRate); }
