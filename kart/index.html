@@ -1122,6 +1122,15 @@ body.portrait #tutb{top:calc(26% + var(--st))}
 .lguide p{flex-basis:100%;margin:2px 0 0;text-align:center;font-size:13px;color:#c8d4f0}
 body.portrait .licw{padding-top:calc(70px + env(safe-area-inset-top,0px))}
 /* (v186) tyre picker: a design tyre fills its button, every tyre has its name under it */
+/* (v298) the draw-your-own LED logo pad: the white pad on the left, the LED preview and the tools beside it */
+.dpad{display:flex;gap:16px;justify-content:center;align-items:center;flex-wrap:wrap;margin:6px 0 2px}
+.dcol{display:flex;flex-direction:column;align-items:center;gap:5px}.dcol small{font:400 12px/1 'Lilita One',var(--f);letter-spacing:.1em;color:#6a5fb0}
+.dside{display:flex;flex-direction:column;align-items:center;gap:10px;width:min(230px,100%)}
+#dialog:has(.dwide){z-index:30}
+#dialog .card.dwide{width:auto;max-width:min(620px,74vw)}
+#dpC{width:min(42vw,38vh,270px);height:auto;aspect-ratio:1;background:#fff;border-radius:14px;touch-action:none;cursor:crosshair;box-shadow:0 0 0 3px #2c2470,0 4px 0 3px rgba(20,14,60,.35)}
+#dpL{width:min(22vw,17vh,110px);height:auto;aspect-ratio:1}
+.dtools{display:flex;gap:6px;justify-content:center;flex-wrap:wrap}.dtools .btn.small{font-size:14px;padding:6px 11px;margin:0}.dtools .dt.on{box-shadow:0 0 0 3px #ffb800}
 .stickers.big:has(.ty){row-gap:26px;padding-bottom:16px}.st.ty{position:relative}
 .st.ty .tyn{position:absolute;left:-6px;right:-6px;bottom:-17px;font-size:11px;line-height:1;color:var(--ink);text-align:center;white-space:nowrap;text-shadow:none;pointer-events:none}
 @media (prefers-reduced-motion:reduce){.lic,.lstamp,.lshine{animation:none}}
@@ -1831,7 +1840,7 @@ addEventListener('unhandledrejection',function(e){if(window.FK&&FK.ready||window
 <script src="packages.js?v=1"></script>
 <script src="/shared/pack-picker.js?v=8"></script>
 <script type="importmap">{"imports":{"three":"./lib/three.module.min.js"}}</script>
-<link rel="modulepreload" href="lib/three.module.min.js"><link rel="modulepreload" href="game.js?v=297"><link rel="modulepreload" href="rear-wings.js?v=1"><link rel="modulepreload" href="models.js?v=52"><link rel="modulepreload" href="learn.js?v=52"><link rel="modulepreload" href="kart-skin.js?v=20"><link rel="modulepreload" href="lib/GLTFLoader.js?v=2"><link rel="modulepreload" href="lib/BufferGeometryUtils.js?v=2"><link rel="modulepreload" href="racers.js?v=2"><link rel="modulepreload" href="lib/RoomEnvironment.js?v=2">
-<script type="module" src="game.js?v=297"></script>
+<link rel="modulepreload" href="lib/three.module.min.js"><link rel="modulepreload" href="game.js?v=298"><link rel="modulepreload" href="rear-wings.js?v=1"><link rel="modulepreload" href="models.js?v=52"><link rel="modulepreload" href="learn.js?v=52"><link rel="modulepreload" href="kart-skin.js?v=21"><link rel="modulepreload" href="lib/GLTFLoader.js?v=2"><link rel="modulepreload" href="lib/BufferGeometryUtils.js?v=2"><link rel="modulepreload" href="racers.js?v=2"><link rel="modulepreload" href="lib/RoomEnvironment.js?v=2">
+<script type="module" src="game.js?v=298"></script>
 </body>
 </html>

@@ -17,7 +17,7 @@ import * as THREE from './lib/three.module.min.js';
 import { RoomEnvironment } from './lib/RoomEnvironment.js?v=2';
 import { buildFoxino, buildKart, buildHelmet, setDetail } from './models.js?v=52';
 import * as L from './learn.js?v=52';
-import { loadDefaultKart, dressKart, loadHelmet, dressHelmet, DEFAULT_SKIN, DEFAULT_HELMET, BODY_COLORS, LIGHT_COLORS, LOGOS, logoIconURL, logoCanvas, WHEEL_SIZE, makeMetal, metalOf, swatchCSS } from './kart-skin.js?v=20';
+import { loadDefaultKart, dressKart, loadHelmet, dressHelmet, DEFAULT_SKIN, DEFAULT_HELMET, BODY_COLORS, LIGHT_COLORS, LOGOS, logoIconURL, logoCanvas, isInk, inkFromCanvas, inkLayer, WHEEL_SIZE, makeMetal, metalOf, swatchCSS } from './kart-skin.js?v=21';
 import { buildRearWing, REAR_WINGS } from './rear-wings.js?v=1';   // (v270) the nine rear wings for the garage start
 import { GLTFLoader } from './lib/GLTFLoader.js?v=2';
 import { mergeGeometries } from './lib/BufferGeometryUtils.js?v=2';
@@ -6090,15 +6090,53 @@ function openPicker(kind, sk) {
   if (kind === 'tyre') return openTyrePicker(sk);
   const K2 = save.kart, items = kind === 'body' ? [...BODY_COLORS.map((c) => ({ ...c, cost: c.color === DEFAULT_SKIN.body ? 0 : 100 }))].map((c) => ({ ...c, id: c.color, on: sk.body === c.color, own: K2.bodiesOwned.includes(c.color) }))
     : kind === 'light' ? LIGHT_COLORS.map((c, i) => ({ ...c, cost: i ? 60 : 0, id: c.color, on: sk.light === c.color, own: K2.lightsOwned.includes(c.color) }))
-    : LOGOS.map((lg) => ({ ...lg, cost: lg.id === 'fox' || lg.id === 'none' ? 0 : 60, on: sk.logo === lg.id, own: K2.logosOwned.includes(lg.id) }));
+    : LOGOS.map((lg) => lg.id === 'draw' ? { ...lg, cost: 0, on: isInk(sk.logo), own: true, draw: true } : ({ ...lg, cost: lg.id === 'fox' || lg.id === 'none' ? 0 : 60, on: sk.logo === lg.id, own: K2.logosOwned.includes(lg.id) }));
   const D = dialog({ body: 'BODY COLOUR', light: 'LIGHT COLOUR', logo: 'LED LOGO' }[kind], `<div class="${kind === 'logo' ? 'stickers' : 'swatches'} big${kind === 'body' ? ' five' : ''}" id="pickGrid"></div><button class="btn small" id="pickClose" style="--c:#8a94a8;margin:4px auto 0">Close</button>`);
   const grid = D.querySelector('#pickGrid');
   for (const it of items) {
     const b = el('button', (kind === 'logo' ? 'st' : 'sw' + (kind === 'light' ? ' glow' : '')) + (it.on ? ' on' : '') + (it.crate ? ' crt' : ''), it.own ? '' : it.crate ? '<span class="price crate"><img src="ui/crate-paint.png?v=2" alt=""></span>' : `<span class="price"><i class="coin"></i>${it.cost}</span>`);
-    if (kind === 'logo') b.style.backgroundImage = `url(${logoIconURL(it.id, sk.light)})`; else b.style.setProperty('--c', kind === 'body' ? swatchCSS(it.color) : it.color);   // (v283: metal paints show brushed metal)
-    b.title = it.name; tap(b, () => { closeDialog(); buy(kind, it); }); grid.appendChild(b);
+    if (kind === 'logo') b.style.backgroundImage = `url(${it.draw ? drawTileURL(sk) : logoIconURL(it.id, sk.light)})`; else b.style.setProperty('--c', kind === 'body' ? swatchCSS(it.color) : it.color);   // (v283: metal paints show brushed metal)
+    b.title = it.name; tap(b, () => { closeDialog(); if (it.draw) openDrawPad(); else buy(kind, it); }); grid.appendChild(b);
   }
   tap(D.querySelector('#pickClose'), () => { sfx.click(); closeDialog(); });
+}
+// (v298, the user) DRAW YOUR OWN LED LOGO: draw black on a white pad; the kart shows it glowing in the light colour on black
+function drawTileURL(sk) {
+  if (save.kart.ink) return logoIconURL(save.kart.ink, sk.light);
+  const c = document.createElement('canvas'); c.width = c.height = 96; const x = c.getContext('2d');
+  x.fillStyle = '#050508'; x.beginPath(); x.roundRect(4, 4, 88, 88, 18); x.fill();
+  x.translate(48, 46); x.rotate(-Math.PI / 4); x.strokeStyle = sk.light; x.lineWidth = 5; x.lineJoin = x.lineCap = 'round'; x.shadowColor = sk.light; x.shadowBlur = 8;
+  x.strokeRect(-9, -30, 18, 40); x.beginPath(); x.moveTo(-9, 10); x.lineTo(0, 26); x.lineTo(9, 10); x.moveTo(-9, -20); x.lineTo(9, -20); x.stroke();
+  x.setTransform(1, 0, 0, 1, 0, 0); x.beginPath(); x.moveTo(22, 80); x.quadraticCurveTo(36, 70, 48, 80); x.quadraticCurveTo(60, 90, 74, 80); x.stroke();
+  return c.toDataURL();
+}
+function openDrawPad() {
+  const sk = { ...DEFAULT_SKIN, ...(save.kart.skin || {}) }, P = 288;
+  const D = dialog('DRAW YOUR LOGO', `<div class="dpad"><div class="dcol"><canvas id="dpC" width="${P}" height="${P}"></canvas><small>DRAW IN BLACK</small></div>
+    <div class="dside"><div class="dcol"><canvas id="dpL" width="192" height="192"></canvas><small>ON YOUR KART</small></div>
+    <div class="dtools"><button class="btn small dt on" data-w="9">Thin</button><button class="btn small dt" data-w="20">Thick</button><button class="btn small dt" data-w="-1">Eraser</button><button class="btn small" id="dpU" style="--c:#8a94a8">Undo</button><button class="btn small" id="dpX" style="--c:#8a94a8">Clear</button></div>
+    <div class="dtools"><button class="btn small" id="dpCancel" style="--c:#8a94a8">Cancel</button><button class="btn small" id="dpOk" style="--c:#36c26a">Use it</button></div></div></div>`);
+  D.querySelector('.card').classList.add('dwide');
+  const C = D.querySelector('#dpC'), x = C.getContext('2d'), L = D.querySelector('#dpL'), lx = L.getContext('2d'), undo = [];
+  x.fillStyle = '#fff'; x.fillRect(0, 0, P, P);
+  if (save.kart.ink) { const pad = P * .1, t = inkLayer(save.kart.ink, '#000', P, pad); x.drawImage(t, 0, 0); }
+  let W = 9, last = null, queued = false;
+  const preview = () => { if (queued) return; queued = true; requestAnimationFrame(() => { queued = false; const id = inkFromCanvas(C); lx.clearRect(0, 0, 192, 192); lx.drawImage(logoCanvas(id || 'draw', sk.light, sk.body, 192, true), 0, 0); }); };
+  const at = (e) => { const r = C.getBoundingClientRect(); return [(e.clientX - r.left) / r.width * P, (e.clientY - r.top) / r.height * P]; };
+  const line = (a, b) => { x.strokeStyle = W < 0 ? '#fff' : '#000'; x.lineWidth = W < 0 ? 28 : W; x.lineCap = x.lineJoin = 'round'; x.beginPath(); x.moveTo(a[0], a[1]); x.lineTo(b[0], b[1]); x.stroke(); };
+  C.addEventListener('pointerdown', (e) => { e.preventDefault(); C.setPointerCapture(e.pointerId); undo.push(x.getImageData(0, 0, P, P)); if (undo.length > 25) undo.shift(); last = at(e); line(last, last); preview(); });
+  C.addEventListener('pointermove', (e) => { if (!last) return; e.preventDefault(); const p = at(e); line(last, p); last = p; preview(); });
+  const up = () => { last = null; }; C.addEventListener('pointerup', up); C.addEventListener('pointercancel', up);
+  for (const b of D.querySelectorAll('.dt')) tap(b, () => { sfx.click(); W = +b.dataset.w; for (const o of D.querySelectorAll('.dt')) o.classList.toggle('on', o === b); });
+  tap(D.querySelector('#dpU'), () => { sfx.click(); if (undo.length) { x.putImageData(undo.pop(), 0, 0); preview(); } });
+  tap(D.querySelector('#dpX'), () => { sfx.click(); undo.push(x.getImageData(0, 0, P, P)); x.fillStyle = '#fff'; x.fillRect(0, 0, P, P); preview(); });
+  tap(D.querySelector('#dpCancel'), () => { sfx.click(); closeDialog(); });
+  tap(D.querySelector('#dpOk'), () => {
+    const id = inkFromCanvas(C); if (!id) { sfx.wrong(); const m = D.querySelector('.dcol small'); m.textContent = 'DRAW SOMETHING FIRST!'; m.style.color = '#e8333a'; return; }
+    sfx.coin(); closeDialog(); const K2 = save.kart; K2.ink = id; K2.skin = { ...DEFAULT_SKIN, ...(K2.skin || {}) }; K2.skin.logo = id;
+    setShowRacer(); SHOW.spin = 1; store(); goGarage();
+  });
+  preview();
 }
 function openTyrePicker(sk) {
   const D = dialog('TYRES', '<div class="stickers big" id="pickGrid"></div><div class="tyname" id="tyName"></div><button class="btn small" id="pickClose" style="--c:#8a94a8;margin:4px auto 0">Close</button>');
@@ -6138,7 +6176,7 @@ function goGarage() {
     drawPicks(sk);
     BODY_COLORS.forEach((c) => { const cost = c.color === DEFAULT_SKIN.body ? 0 : 100, own = K2.bodiesOwned.includes(c.color), b = el('button', 'sw' + (sk.body === c.color ? ' on' : ''), own ? '' : `<span class="price"><i class="coin"></i>${cost}</span>`); b.style.setProperty('--c', swatchCSS(c.color)); b.title = c.name; tap(b, () => buy('body', { ...c, cost })); sw.appendChild(b); });
     LIGHT_COLORS.forEach((c, i) => { const cost = i ? 60 : 0, own = K2.lightsOwned.includes(c.color), b = el('button', 'sw glow' + (sk.light === c.color ? ' on' : ''), own ? '' : `<span class="price"><i class="coin"></i>${cost}</span>`); b.style.setProperty('--c', c.color); b.title = c.name; tap(b, () => buy('light', { ...c, cost })); $('lightRow').appendChild(b); });
-    LOGOS.forEach((lg) => { const cost = lg.id === 'fox' || lg.id === 'none' ? 0 : 60, own = K2.logosOwned.includes(lg.id), b = el('button', 'st' + (sk.logo === lg.id ? ' on' : ''), own ? '' : `<span class="price"><i class="coin"></i>${cost}</span>`); b.style.backgroundImage = `url(${logoIconURL(lg.id, sk.light)})`; b.title = lg.name; tap(b, () => buy('logo', { ...lg, cost })); $('logos').appendChild(b); });
+    LOGOS.forEach((lg) => { if (lg.id === 'draw') { const b = el('button', 'st' + (isInk(sk.logo) ? ' on' : '')); b.style.backgroundImage = `url(${drawTileURL(sk)})`; b.title = lg.name; tap(b, () => openDrawPad()); $('logos').appendChild(b); return; } const cost = lg.id === 'fox' || lg.id === 'none' ? 0 : 60, own = K2.logosOwned.includes(lg.id), b = el('button', 'st' + (sk.logo === lg.id ? ' on' : ''), own ? '' : `<span class="price"><i class="coin"></i>${cost}</span>`); b.style.backgroundImage = `url(${logoIconURL(lg.id, sk.light)})`; b.title = lg.name; tap(b, () => buy('logo', { ...lg, cost })); $('logos').appendChild(b); });
   }
   if (!BASE.dk) for (const c of KART_COLORS) {
     const own = K2.colorsOwned.includes(c.color), b = el('button', 'sw' + (K2.color === c.color ? ' on' : ''), own ? '' : `<span class="price"><i class="coin"></i>${c.cost}</span>`);

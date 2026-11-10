@@ -31,7 +31,7 @@ export const LIGHT_COLORS = [
 ];
 export const LOGOS = [
   { id: 'fox', name: 'Fox' }, { id: 'star', name: 'Star' }, { id: 'heart', name: 'Heart' }, { id: 'bolt', name: 'Lightning' },
-  { id: 'paw', name: 'Paw' }, { id: 'crown', name: 'Crown' }, { id: 'none', name: 'No logo' },
+  { id: 'paw', name: 'Paw' }, { id: 'crown', name: 'Crown' }, { id: 'draw', name: 'Draw your own' }, { id: 'none', name: 'No logo' },
 ];
 
 // ---- colours ----
@@ -440,8 +440,43 @@ function drawLogo(x, id, S) {
   else if (id === 'paw') { x.moveTo(c + 40 * k, c + 30 * k); x.ellipse(c, c + 30 * k, 40 * k, 32 * k, 0, 0, Math.PI * 2); for (const [a, b] of [[-50, -14], [-18, -46], [18, -46], [50, -14]]) { x.moveTo(c + (a + 16) * k, c + b * k); x.ellipse(c + a * k, c + b * k, 16 * k, 20 * k, 0, 0, Math.PI * 2); } }
   else if (id === 'crown') { const p = [[-70, 50], [-70, -30], [-35, 10], [0, -56], [35, 10], [70, -30], [70, 50]]; p.forEach(([a, b], i) => (i ? x.lineTo : x.moveTo).call(x, c + a * k, c + b * k)); x.closePath(); }
 }
+// (v298, the user) DRAW YOUR OWN: a logo drawn black on white is kept as a 96 × 96 one-bit mask in the logo id itself
+// ('ink:' + base64), so it travels with the skin (party, helmet, rear wing); it lights up in the LED colour on black
+export const INK = 96;
+const inkMasks = new Map();
+export function inkFromCanvas(src) {   // a drawing (black on white, any size) → 'ink:…', fitted to the plate; null if empty
+  const W = src.width, H = src.height, d = src.getContext('2d').getImageData(0, 0, W, H).data; let x0 = W, y0 = H, x1 = -1, y1 = -1;
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) if (d[(y * W + x) * 4] < 128) { if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; }
+  if (x1 < 0) return null;
+  const c = document.createElement('canvas'); c.width = c.height = INK; const x = c.getContext('2d'); x.fillStyle = '#fff'; x.fillRect(0, 0, INK, INK);
+  const bw = x1 - x0 + 1, bh = y1 - y0 + 1, k = Math.min((INK - 8) / bw, (INK - 8) / bh, INK / W * 1.6), w = bw * k, h = bh * k;
+  x.imageSmoothingQuality = 'high'; x.drawImage(src, x0, y0, bw, bh, (INK - w) / 2, (INK - h) / 2, w, h);
+  const p = x.getImageData(0, 0, INK, INK).data, bytes = new Uint8Array(INK * INK / 8);
+  for (let i = 0; i < INK * INK; i++) if (p[i * 4] < 140) bytes[i >> 3] |= 128 >> (i & 7);
+  let str = ''; bytes.forEach((b) => { str += String.fromCharCode(b); }); return 'ink:' + btoa(str);
+}
+export const isInk = (id) => typeof id === 'string' && id.startsWith('ink:');
+function inkMask(id) {   // the mask as a white-on-clear canvas
+  if (!inkMasks.has(id)) {
+    const c = document.createElement('canvas'); c.width = c.height = INK; const x = c.getContext('2d'), im = x.createImageData(INK, INK);
+    try { const b = atob(id.slice(4)); for (let i = 0; i < INK * INK; i++) if (b.charCodeAt(i >> 3) & (128 >> (i & 7))) im.data.set([255, 255, 255, 255], i * 4); } catch (e) { /* a broken id draws nothing */ }
+    x.putImageData(im, 0, 0); inkMasks.set(id, c);
+  }
+  return inkMasks.get(id);
+}
+export function inkLayer(id, color, S, pad) {   // the mask, smoothly scaled up and filled with one colour
+  const t = document.createElement('canvas'); t.width = t.height = S; const x = t.getContext('2d');
+  x.imageSmoothingEnabled = true; x.imageSmoothingQuality = 'high'; x.drawImage(inkMask(id), pad, pad, S - 2 * pad, S - 2 * pad);
+  x.globalCompositeOperation = 'source-in'; x.fillStyle = color; x.fillRect(0, 0, S, S); return t;
+}
+const paler = (c, f) => { const [r, g, b] = hex(c); return `rgb(${[r, g, b].map((v) => Math.round(v + (255 - v) * f)).join(',')})`; };
 export function logoCanvas(id, logoColor, body, S = 256, plate = true) {
   const cv = document.createElement('canvas'); cv.width = cv.height = S; const x = cv.getContext('2d');
+  if (isInk(id) || id === 'draw') {   // black plate, the drawing glows in the LED colour with a paler core
+    if (plate) { x.fillStyle = '#050508'; x.beginPath(); x.roundRect(4, 4, S - 8, S - 8, S * .2); x.fill(); }
+    if (isInk(id)) { const pad = S * .13; x.shadowColor = logoColor; x.shadowBlur = plate ? S * .07 : 0; x.drawImage(inkLayer(id, logoColor, S, pad), 0, 0); x.drawImage(inkLayer(id, logoColor, S, pad), 0, 0); x.shadowBlur = 0; x.globalAlpha = .45; x.drawImage(inkLayer(id, paler(logoColor, .4), S, pad), 0, 0); x.globalAlpha = 1; }
+    return cv;
+  }
   if (plate) { const [h, s, l] = rgb2hsl(...hex(body).map((v) => v / 255)), q = hsl2rgb(h, Math.min(1, s * .9), Math.min(.16, l * .3)); x.fillStyle = `rgb(${q.map((v) => v * 255 | 0)})`; x.beginPath(); x.roundRect(4, 4, S - 8, S - 8, S * .2); x.fill(); }
   if (id !== 'none') {
     x.lineJoin = x.lineCap = 'round'; drawLogo(x, id, S);
@@ -457,7 +492,8 @@ export function logoPlate(THREE, logo, logoColor, plateColor) {
   const key = logo + logoColor + plateColor;
   if (!plateCache.has(key)) {
     const t = new THREE.CanvasTexture(logoCanvas(logo, logoColor, plateColor)); t.colorSpace = THREE.SRGBColorSpace;
-    plateCache.set(key, new THREE.MeshStandardMaterial({ map: t, emissiveMap: t, emissive: new THREE.Color(1, 1, 1), emissiveIntensity: .9, roughness: .35, alphaTest: .5, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -2 }));
+    if (isInk(logo)) plateCache.set(key, new THREE.MeshBasicMaterial({ map: t, alphaTest: .5, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -2 }));   // (v298) an unlit LED screen: true black, the drawing at full glow
+    else plateCache.set(key, new THREE.MeshStandardMaterial({ map: t, emissiveMap: t, emissive: new THREE.Color(1, 1, 1), emissiveIntensity: .9, roughness: .35, alphaTest: .5, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -2 }));
   }
   plateGeo = plateGeo || new THREE.PlaneGeometry(1, 1);
   const mesh = new THREE.Mesh(plateGeo, plateCache.get(key)); mesh.name = 'LogoPlate'; return mesh;
