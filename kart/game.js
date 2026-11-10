@@ -4162,7 +4162,7 @@ function updateCrew(dt) {
 function pitStop() {
   const P = race.player, R0 = race;
   race.pitDue = false; race.dialog = 'pitstop'; race.pitBrake = true; race.slowTarget = 1;
-  P.boostT = 0; P.boostMul = 1; P.spinT = 0; P.slideT = 0;   // however you came in, you come in clean
+  P.boostT = 0; P.fireT = 0; P.boostMul = 1; P.spinT = 0; P.slideT = 0;   // however you came in, you come in clean
   race.steerTo = null; race.steerGate = null; race.holdLat = bayLat(); if (P.drift) endDrift(P);
   sfx.pad(); buzz(30); toast('PIT STOP!', '#ffc324', 44); drawPitHud(); pitBoxState('work');
   const brake = () => {
@@ -6342,7 +6342,7 @@ function openQuiz(mode) {
 let race = null;
 const keys = {};
 // speed lines: white streaks round the edge of the screen, drawn once
-const speedEl = $('speed');
+const speedEl = $('speed'), fireEl = $('fireGlow');
 (function drawSpeedLines() {
   const c = speedEl, x = c.getContext('2d'), W = c.width, H = c.height, cx = W / 2, cy = H * .45;
   for (let k = 0; k < 90; k++) {
@@ -6947,7 +6947,8 @@ function land(r) {
   if (r.player && race.jumpCtl && race.jumpCtl.expire) race.jumpCtl.expire();   // landed: the jump question's time is up
   if (kind !== 'ramp') { if (kind === 'drop') burst(r.x, r.y + .3, r.z, '#7af8ff', 10); return; }
   giveBoost(r, r.ringHit ? 1.0 : .3, 1.35);   // (v292: through the flame ring = the big boost the trick used to give)
-  if (r.player) { race.shake = .35; sfx.land(); if (r.ringHit) sfx.turbo(2); }
+  if (r.ringHit) r.fireT = 1.25;   // (v300, the user: "make the boost more visible, not more powerful") the ring boost LOOKS like fire: see FIRE_LOOK
+  if (r.player) { race.shake = r.ringHit ? .6 : .35; sfx.land(); if (r.ringHit) { sfx.turbo(2); burst(r.x, r.y + .5, r.z, '#ff8a1e', 22); burst(r.x, r.y + .5, r.z, '#ffe14a', 14); } }
   burst(r.x, .3, r.z, '#ffffff', 10); r.ring = null; r.ringHit = false;
 }
 // (v292) flew through a flame ring: it flares, and the boost comes on landing
@@ -6958,7 +6959,7 @@ function ringHit(r, g) {
 // fell off a space road: a rescue drone puts you back on the track, a little way back
 function respawn(r) {
   const i = (r.idx - 8 + TRACK.N) % TRACK.N, p = tp(i);
-  Object.assign(r, { x: p.x, z: p.z, idx: i, s: i * STEP, sc: i * STEP, lat: 0, y: p.y + 3.5, vy: 0, air: 'drop', speed: 0, angle: angleOf(p), drift: 0, spinT: 0, slideT: 0, spinA: 0, boostT: 0, ghostT: 1.6, rampY: 0, rescueT: 1.8 });
+  Object.assign(r, { x: p.x, z: p.z, idx: i, s: i * STEP, sc: i * STEP, lat: 0, y: p.y + 3.5, vy: 0, air: 'drop', speed: 0, angle: angleOf(p), drift: 0, spinT: 0, slideT: 0, spinA: 0, boostT: 0, fireT: 0, ghostT: 1.6, rampY: 0, rescueT: 1.8 });
   if (WORLD.rescue) WORLD.rescueFor = r;
   if (r.player) { toast('Rescue drone!', '#7af8ff', 30); sfx.rescue(); race.camA = r.angle; }
 }
@@ -7298,12 +7299,18 @@ function placeAll0(dt) {
     if (m.hover) m.hover.position.y = SHIP_LIFT + Math.sin(t * 3.1 + r.idx * .01) * .035;   // (v184) the starship floats
     r.bubble.visible = !!r.shield; if (r.shield) { r.bubble.scale.setScalar(SHIELD_K * (1 + Math.sin(t * 8) * .02)); sparkShield(r.bubble, t); }
     r.flame.visible = r.boostT > 0; if (r.boostT > 0) r.flame.scale.set(1 + Math.random() * .4, 1 + Math.random() * .4, .8 + Math.random() * .9);
+    // (v300) FIRE_LOOK: after the flame ring, twin exhaust flames three times as long and a fire trail; the speed is the normal ring boost
+    if (r.fireT > 0) { r.fireT -= dt; const k = Math.min(1, r.fireT / .4);
+      if (!r.flame2) { r.flame2 = new THREE.Mesh(FLAME_GEO, WORLD.flameMat); r.flame2.position.set(.25, .42, -1.25); r.flame.parent.add(r.flame2); }
+      for (const fl of [r.flame, r.flame2]) { fl.visible = true; fl.scale.set((1.9 + Math.random() * .6) * (.5 + k * .5), (1.9 + Math.random() * .6) * (.5 + k * .5), (2.6 + Math.random() * 1.6) * (.4 + k * .6)); } }
+    else if (r.flame2) r.flame2.visible = false;
     if (r.beam) { const on = !!(TDEF.magnet && r.air === 'ramp' && r.vy < 0); r.beam.visible = on; if (on) { r.beam.scale.set(1 + Math.sin(t * 30) * .08, Math.max(.5, r.y - trackY(r) + .3), 1 + Math.cos(t * 30) * .08); r.beam.position.y = .3; } }
     if (!dt || !race.started || ro) continue;   // (no puffs inside a corkscrew: they live in the flat frame)
     const f = fwd(r.angle), side = { x: -f.z, z: f.x };
     // exhaust, boost flames
-    if (Math.random() < dt * (r.boostT > 0 ? 40 : 8)) {
+    if (Math.random() < dt * (r.fireT > 0 ? 70 : r.boostT > 0 ? 40 : 8)) {
       if (r.boostT > 0) puff(r.x - f.x * 1.25 - side.x * .25, r.y + .45, r.z - f.z * 1.25 - side.z * .25, pick(['#ff8a1e', '#ffd23a', '#ff5a10']), .55, .35);
+      if (r.fireT > 0) for (const sx of [-.3, .3]) puff(r.x - f.x * (1.4 + Math.random() * .6) + side.x * sx, r.y + .4 + Math.random() * .25, r.z - f.z * (1.4 + Math.random() * .6) + side.z * sx, pick(['#ff7a12', '#ffd23a', '#ff4a0a', '#fff2a0']), rand(.7, 1.05), .5, rand(-.6, .6), rand(.6, 1.8), rand(-.6, .6));
       else puff(r.x - f.x * 1.1 - side.x * .25, r.y + .5, r.z - f.z * 1.1 - side.z * .25, '#c8ccd8', .3, .5);
     }
     // drift sparks from both back wheels: white, then blue, orange and purple as the turbo charges
@@ -7709,7 +7716,7 @@ function updateRace(dt) {
   // the field of view is vertical: sideways screens need less of it (66° on an upright screen, about 50° on a phone turned sideways)
   const cam = WORLD.camera, base = cam.aspect > 1 ? clamp(66 - (cam.aspect - 1) * 15, 46, 66) : (race.formation ? 80 : 74);   // (v206: upright, a wider view — widest on the formation lap)
   if (cam.userData.fov0 === undefined) cam.userData.fov0 = cam.fov; cam.fov = cam.userData.fov0 + (race.act ? race.act.fov : 0);   // (v293) a wider view at speed, in a boost and in the air
-  const fov = Math.min(80, base + clamp((P.speed - 22) * .6, 0, 6) + (P.boostT > 0 ? 8 : 0));   // (capped so follow + boost never goes fish-eye) cam.fov += (fov - cam.fov) * Math.min(1, dt * 4);
+  const fov = Math.min(P.fireT > 0 ? 86 : 80, base + clamp((P.speed - 22) * .6, 0, 6) + (P.boostT > 0 ? 8 : 0) + (P.fireT > 0 ? 6 : 0));   // (capped so follow + boost never goes fish-eye) cam.fov += (fov - cam.fov) * Math.min(1, dt * 4);
   // during a pit-stop question the card sits on the left, so the picture slides right to keep your kart in view
   race.viewX = (race.viewX || 0) + ((inQ() && race.dialog !== 'aim' && cam.aspect > 1 ? .2 : 0) - (race.viewX || 0)) * Math.min(1, dt * 6);
   // (sideways, the picture is also lifted a little, so your kart sits well above the bottom edge)
@@ -7720,7 +7727,9 @@ function updateRace(dt) {
   // a racer right under the camera would block the view: hide it until it moves away
   for (const r of race.racers) if (!r.player) r.model.root.visible = (r.x - WORLD.camera.position.x) ** 2 + (r.z - WORLD.camera.position.z) ** 2 > 3.4 ** 2;
   // speed lines at the edges of the screen when you go really fast
-  const sl = race.ended ? 0 : clamp((P.speed - 25) / 10, 0, .55) + (P.boostT > 0 ? .45 : 0); speedEl.style.opacity = sl.toFixed(2);
+  const fire = race.ended ? 0 : clamp((P.fireT || 0) / .4, 0, 1);   // (v300) FIRE_LOOK on screen
+  const sl = race.ended ? 0 : Math.max(clamp((P.speed - 25) / 10, 0, .55) + (P.boostT > 0 ? .45 : 0), fire); speedEl.style.opacity = sl.toFixed(2);
+  speedEl.classList.toggle('fire', fire > 0); fireEl.style.opacity = (fire * (.75 + Math.random() * .25)).toFixed(2);
   if (sl > 0) speedEl.style.transform = `scale(${1.02 + Math.random() * .05}) rotate(${(Math.random() * 6).toFixed(1)}deg)`;
   for (const c of WORLD.coins) if (c.on) c.m.rotation.y += dt * 4;
   WORLD.padTex.offset.y = (WORLD.padTex.offset.y - dt * 1.6) % 1;
