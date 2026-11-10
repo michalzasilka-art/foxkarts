@@ -2453,14 +2453,31 @@ const THEMES = {
           else if (r < .44) lists.bu.push({ x, y: 0, z, s: rand(.8, 1.3), ry: rand(0, 6) });
           else if (r < .5) lists[r < .47 ? 'b1' : 'b2'].push({ x, y: 0, z, s: rand(.9, 1.2), ry: rand(0, 6) });
         }
+        // (v299, the user: "add more taller trees around the road") a row of tall park trees (about 11-14 m) on both sides of the
+        // road, behind the promenade and the parked cars, every 11 m or so
+        const tallG = (leafC, leafC2) => { const g = new THREE.Group(), bark = M('#6e5038', { roughness: .95 }), leaf = M(leafC, { roughness: .95 }), leaf2 = M(leafC2, { roughness: .95 });
+          g.add(new THREE.Mesh(new THREE.CylinderGeometry(.28, .45, 7, 8).translate(0, 3.5, 0), bark));
+          for (const [x, z, a] of [[.9, .2, .9], [-.8, -.3, -.9]]) { const br = new THREE.Mesh(new THREE.CylinderGeometry(.1, .16, 2.4, 6).translate(0, 1.2, 0), bark); br.position.set(0, 5.2, 0); br.rotation.set(z, 0, -a * .55); g.add(br); }
+          for (const [x, y, z, r, c] of [[0, 9.2, 0, 2.6, 0], [1.7, 8, .5, 1.9, 1], [-1.6, 8.2, -.5, 1.9, 0], [.4, 7.2, -1.5, 1.7, 1], [-.5, 7.4, 1.5, 1.7, 0], [.2, 10.9, .1, 1.7, 1]]) g.add(new THREE.Mesh(new THREE.IcosahedronGeometry(r, 1).translate(x, y, z), c ? leaf2 : leaf));
+          return bakeOne(g); };
+        const tall = [[], []];
+        // (the middle stretch has ten road variants, one a lap: a row along each of them, clear of all of them)
+        const variants = (i) => (TRACK.routes && TRACK.sec && i >= TRACK.sec.i0 && i < TRACK.sec.i1 ? TRACK.routes : [TRACK.pts]), tallAll = [];
+        for (const sd of [-1, 1]) for (let d = rand(0, 8); d < TRACK.L; d += rand(9.5, 12.5)) { const i = Math.round(d / STEP) % TRACK.N; if (pitHere(i, sd)) continue;
+          for (const R of variants(i)) { const p = R[i], o0 = rand(9, 11);
+            for (const off of [o0, o0 + 3, o0 + 6]) { const x = p.x + p.nx * sd * (HALF + off), z = p.z + p.nz * sd * (HALF + off);   // (the nearest spot clear of every road)
+              if (!farFromRoad(x, z, 8, 3) || inHarbour(x, z) || nearStart(x, z, 40) || fountains.some((f) => (f.x - x) ** 2 + (f.z - z) ** 2 < 10 ** 2) || tallAll.some((t) => (t.x - x) ** 2 + (t.z - z) ** 2 < 8 ** 2)) continue;
+              const t = { x, y: 0, z, s: rand(.95, 1.25), ry: rand(0, 6) }; tallAll.push(t); tall[Math.random() < .5 ? 0 : 1].push(t); break; } } }
         const pm = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: .95, fog: !def.clearRoad });
+        if (tall[0].length) instanced(scene, tallG('#2f7d34', '#3f9440'), pm, tall[0], false);
+        if (tall[1].length) instanced(scene, tallG('#4a9a3c', '#62ad48'), pm, tall[1], false);
         if (lists.t1.length) instanced(scene, treeG('#3f8f3a'), pm, lists.t1, false);
         if (lists.t2.length) instanced(scene, treeG('#5aa43e'), pm, lists.t2, false);
         if (lists.cy.length) instanced(scene, cypG, pm, lists.cy, false);
         if (lists.bu.length) instanced(scene, bushG, pm, lists.bu, false);
         if (lists.b1.length) instanced(scene, bedG(['#ff5d7a', '#ffd23a', '#ffffff', '#ff8ab8']), pm, lists.b1, false);
         if (lists.b2.length) instanced(scene, bedG(['#8a5ae8', '#ff8a1e', '#ffe680', '#e8403a']), pm, lists.b2, false);
-        W.park = { fountains, cars: cars.reduce((a, l) => a + l.length, 0), carAt: cars.flat()[0] || null, benches: benches.length, trees: lists.t1.length + lists.t2.length + lists.cy.length };   // (a test hook reads this)
+        W.park = { fountains, cars: cars.reduce((a, l) => a + l.length, 0), carAt: cars.flat()[0] || null, benches: benches.length, trees: lists.t1.length + lists.t2.length + lists.cy.length, tall: tall[0].length + tall[1].length, tallAt: tall.flat() };   // (a test hook reads this)
       }
       // the overpass: a thick road deck with pillars where the road is up in the air
       const deck = new THREE.MeshStandardMaterial({ map: concreteTex(), roughness: .95, side: THREE.DoubleSide });   // (v293: concrete)
@@ -2543,11 +2560,7 @@ const THEMES = {
           const a = t * .05; bl.position.set(MID.x + Math.cos(a) * 140, 55, MID.z + Math.sin(a) * 140); bl.rotation.y = -a - Math.PI;
         });
       }
-      // (v98) sky bridges over the road: a deck with cyan glowing edges, frame struts, two towers
-      { const deckM = M('#d8dce6', { roughness: .4, metalness: .3 }), frameM = M('#3a3f58', { roughness: .4, metalness: .6 }), glowM = new THREE.MeshStandardMaterial({ color: '#5fe8ff', emissive: '#5fe8ff', emissiveIntensity: 1.2 });
-        for (const f0 of [.12, .36, .64, .88]) { let f = null; for (let d = 0; d < .05 && f === null; d += .004) for (const c of [f0 + d, f0 - d]) if (f === null && !BUSY.some((b) => Math.abs(b - c) < .009) && !(PITS && dsOf(c * TRACK.L) > PITS.entry - 8 && dsOf(c * TRACK.L) < PITS.exit + 8)) f = c; if (f === null) continue;   /* (v276: a tower stood in the pit lane) */ const p = at(f * TRACK.L).p, g = new THREE.Group(), span = HALF * 2 + 8; g.position.set(p.x, p.y, p.z); g.rotation.y = Math.atan2(p.nx, p.nz) - Math.PI / 2; scene.add(g);
-          box(g, span, .6, 3.4, deckM, 0, 8.2, 0); for (const z of [-1.7, 1.7]) { box(g, span, .14, .14, glowM, 0, 7.92, z); box(g, span, .1, .1, frameM, 0, 9.4, z); for (let k = 0; k <= 10; k++) box(g, .1, 1.2, .1, frameM, -span / 2 + k * span / 10, 8.85, z); }
-          for (const x of [-span / 2 - 1.2, span / 2 + 1.2]) { box(g, 2.4, 10.5, 4, deckM, x, 5.25, 0); box(g, .16, 10.5, .16, glowM, x - 1.21 * Math.sign(x), 5.25, 2.01); box(g, .16, 10.5, .16, glowM, x - 1.21 * Math.sign(x), 5.25, -2.01); } } }
+      // (v299, the user: "remove this block from the road") the v98 sky bridges are gone: their grey deck sat 8 m over the road, right where the karts fly off the jump ramps
       // flying roadsters: a low wedge body in bright paint, a dark glass canopy, red tail and white head lights, a cyan hover glow
       { const carG = (paint) => { const g = new THREE.Group(), body = M(paint, { roughness: .3, metalness: .5 }), glass = M('#141a2e', { roughness: .1, metalness: .6 }), tail = new THREE.MeshStandardMaterial({ color: '#ff2a3a', emissive: '#ff2a3a', emissiveIntensity: 1.4 }), head = new THREE.MeshStandardMaterial({ color: '#ffffff', emissive: '#ffffff', emissiveIntensity: 1.2 }), hover = new THREE.MeshStandardMaterial({ color: '#5fe8ff', emissive: '#5fe8ff', emissiveIntensity: 1.5 });
           const b = new THREE.Mesh(new THREE.BoxGeometry(1.9, .45, 4.4), body); b.position.y = .4; g.add(b); const nose = new THREE.Mesh(new THREE.BoxGeometry(1.8, .3, 1.2), body); nose.position.set(0, .3, 2.6); nose.rotation.x = .18; g.add(nose);
