@@ -17,7 +17,7 @@ import * as THREE from './lib/three.module.min.js';
 import { RoomEnvironment } from './lib/RoomEnvironment.js?v=2';
 import { buildFoxino, buildKart, buildHelmet, setDetail } from './models.js?v=52';
 import * as L from './learn.js?v=52';
-import { loadDefaultKart, dressKart, loadHelmet, dressHelmet, DEFAULT_SKIN, DEFAULT_HELMET, BODY_COLORS, LIGHT_COLORS, LOGOS, logoIconURL, logoCanvas, WHEEL_SIZE, makeMetal, metalOf, swatchCSS } from './kart-skin.js?v=19';
+import { loadDefaultKart, dressKart, loadHelmet, dressHelmet, DEFAULT_SKIN, DEFAULT_HELMET, BODY_COLORS, LIGHT_COLORS, LOGOS, logoIconURL, logoCanvas, WHEEL_SIZE, makeMetal, metalOf, swatchCSS } from './kart-skin.js?v=20';
 import { buildRearWing, REAR_WINGS } from './rear-wings.js?v=1';   // (v270) the nine rear wings for the garage start
 import { GLTFLoader } from './lib/GLTFLoader.js?v=2';
 import { mergeGeometries } from './lib/BufferGeometryUtils.js?v=2';

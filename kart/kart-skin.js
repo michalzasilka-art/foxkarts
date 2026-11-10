@@ -353,10 +353,10 @@ export async function loadDefaultKart(THREE, GLTFLoader, url = 'kart-default.glb
 }
 // straight neon strips that hug the body (measured on the Meshy kart): rays are cast at the body along straight lines
 // — the front lip, the nose, the tail, the side pods and their top edges — and the longest unbroken run of hits on each
-// line becomes a thin tube 1.4 cm off the surface
+// line becomes a strip of LED tape laid on the surface
 function neonStrips(THREE, body) {
   body.updateMatrixWorld(true); const rc = new THREE.Raycaster(), inv = body.matrixWorld.clone().invert(), lines = [], V = (x, y, z) => new THREE.Vector3(x, y, z);
-  // (v11, the user: "flatter, more to the car") the strips now lie 3 mm off the body as flat LED tape, not round tubes
+  // (v11, the user: "flatter, more to the car") the strips lie on the body as flat LED tape, not round tubes
   const cast = (o, d) => { rc.set(o, d); const h = rc.intersectObject(body, false)[0]; return h ? h.point.clone().addScaledVector(d, -.003) : null; };
   const trace = (n, from, dir) => {
     let run = [], best = [];
@@ -367,25 +367,47 @@ function neonStrips(THREE, body) {
   trace(10, (t) => V(-.18 + .36 * t, .45, 2), V(0, 0, -1));     // the nose
   trace(14, (t) => V(-.28 + .56 * t, .22, -2), V(0, 0, 1));     // the tail
   for (const sd of [-1, 1]) { trace(16, (t) => V(sd * 2, .28, -.26 + .38 * t), V(-sd, 0, 0)); trace(16, (t) => V(sd * .56, 2, -.24 + .36 * t), V(0, -1, 0)); }   // the side pods: the flank and the top edge
-  // each strip: the tape itself, and a wider soft glow round it (index: tape, glow, tape, glow, ...)
-  return lines.flatMap(({ p, n }) => { const c = new THREE.CatmullRomCurve3(p); return [ledTape(THREE, c, n, p.length * 3, .024, inv), ledTape(THREE, c, n, p.length * 3, .075, inv, .0015)]; });
+  // (v296, the user: "more blended with the shape of the kart and thinner") every point of a strip is laid back onto
+  // the body and turned to the body's own surface there, so the tape bends with the panels instead of standing off
+  // them as a flat ribbon; the tape is half as wide and the glow is a soft halo that fades to nothing at its edges
+  // and at both ends. Each strip: the tape, then its glow (index: tape, glow, tape, glow, ...)
+  const nm = new THREE.Matrix3().getNormalMatrix(body.matrixWorld);
+  return lines.flatMap(({ p, n }) => {
+    const c = new THREE.CatmullRomCurve3(p), segs = p.length * 4, d = n.clone().negate(), rows = [];
+    for (let i = 0; i <= segs; i++) {
+      const t = i / segs, P = c.getPointAt(t); rc.set(P.clone().addScaledVector(n, .08), d); const h = rc.intersectObject(body, false)[0];
+      let N = n.clone(); if (h) { N = (h.normal || h.face.normal).clone().applyMatrix3(nm).normalize(); if (N.dot(n) < 0) N.negate(); }
+      rows.push({ P: h ? h.point.clone() : P, N, T: c.getTangentAt(t) });
+    }
+    // smooth the normals along the strip (the body is low-poly: face to face they jump) and keep them facing out
+    const Ns = rows.map((_, i) => { const s = new THREE.Vector3(); for (let k = -2; k <= 2; k++) s.add(rows[Math.min(rows.length - 1, Math.max(0, i + k))].N); s.normalize(); return s.dot(n) < .25 ? s.lerp(n, .5).normalize() : s; });
+    rows.forEach((r, i) => { r.N = Ns[i]; });
+    return [ledTape(THREE, rows, .012, inv, .0018, [-1, -.55, .55, 1], [0, .0012, .0012, 0]), ledTape(THREE, rows, .042, inv, .0008, [-1, -.35, 0, .35, 1], null, [0, .55, 1, .55, 0])];
+  });
 }
-// a flat LED tape along a curve on the body: a thin strip facing out (n), slightly rounded at the edges by a lower
-// outer row, built in world units and moved into the body's own frame
-function ledTape(THREE, curve, n, segs, width, inv, under = 0) {
-  const pos = [], idx = [], N = segs + 1, half = width / 2, across = [-1, -.6, .6, 1], lift = [0, .0025, .0025, 0].map((v) => v - under);
-  for (let i = 0; i < N; i++) {
-    const t = i / segs, P = curve.getPointAt(t), T = curve.getTangentAt(t), A = new THREE.Vector3().crossVectors(T, n).normalize();
-    for (let k = 0; k < 4; k++) { const v = P.clone().addScaledVector(A, across[k] * half).addScaledVector(n, lift[k]).applyMatrix4(inv); pos.push(v.x, v.y, v.z); }
-  }
-  for (let i = 0; i < segs; i++) for (let k = 0; k < 3; k++) { const a = i * 4 + k, b = a + 4; idx.push(a, b, a + 1, a + 1, b, b + 1); }
-  const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setIndex(idx); g.computeVertexNormals(); return g;
+// an LED tape along rows of surface points: each row sits `lift` off the body along the body's own normal there and
+// spreads across the strip in the body's tangent plane; the ends taper over the last 6 % of the strip. `bump` raises
+// the inner rows (a slightly rounded tape), `shade` gives each row a brightness (the glow's soft edges, as vertex colour)
+function ledTape(THREE, rows, width, inv, lift, across, bump, shade) {
+  const pos = [], col = [], idx = [], K = across.length, segs = rows.length - 1, A = new THREE.Vector3();
+  rows.forEach(({ P, N, T }, i) => {
+    const e = Math.min(i, segs - i) / segs, taper = Math.min(1, e / .06), w = width / 2 * (.35 + .65 * taper);
+    A.crossVectors(T, N).normalize();
+    for (let k = 0; k < K; k++) {
+      const v = P.clone().addScaledVector(A, across[k] * w).addScaledVector(N, lift + (bump ? bump[k] : 0)).applyMatrix4(inv); pos.push(v.x, v.y, v.z);
+      const b = (shade ? shade[k] : 1) * (shade ? taper : 1); col.push(b, b, b);
+    }
+  });
+  for (let i = 0; i < segs; i++) for (let k = 0; k < K - 1; k++) { const a = i * K + k, b = a + K; idx.push(a, b, a + 1, a + 1, b, b + 1); }
+  const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3)); g.setIndex(idx); g.computeVertexNormals(); return g;
 }
-// the LED tape glows at full strength: not dulled by the tone mapping, a touch paler at the core like a real LED
+// the LED tape glows at full strength: not dulled by the tone mapping, a touch paler at the core like a real LED; the
+// glow is added on top and fades out through its vertex colours, so it melts into the paint round the tape
 const ledMats = new Map();
 const ledMat = (THREE, c, glow = false) => { const k = c + glow; return ledMats.get(k) || ledMats.set(k, glow
-  ? new THREE.MeshBasicMaterial({ color: c, toneMapped: false, transparent: true, opacity: .32, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -1 })
+  ? new THREE.MeshBasicMaterial({ color: c, vertexColors: true, toneMapped: false, transparent: true, opacity: .45, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -1 })
   : new THREE.MeshBasicMaterial({ color: new THREE.Color(c).lerp(new THREE.Color('#ffffff'), .14), toneMapped: false, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -2 })).get(k); };
+
 
 const kartMats = new Map();
 export function skinMaterial(THREE, skin = DEFAULT_SKIN) {

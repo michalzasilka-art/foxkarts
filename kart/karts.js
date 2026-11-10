@@ -15,7 +15,7 @@
    alphaTest cut-out (the user's phone draws blended "glow" as an opaque slab).
    ===================================================================================================== */
 import * as THREE from './lib/three.module.min.js';
-import { DEFAULT_SKIN, logoPlate } from './kart-skin.js?v=19';
+import { DEFAULT_SKIN, logoPlate } from './kart-skin.js?v=20';
 
 export const KART_MODELS = [
   { id: 'classic', name: 'Gummy Kart', sub: 'Classic old-school kart', cost: 0, stat: 'All-rounder' },
