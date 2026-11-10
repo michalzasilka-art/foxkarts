@@ -652,6 +652,12 @@ body:not(.portrait)[data-scr=menu] .inv:hover{opacity:1;transform:translateY(-3p
 .seg{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;padding:5px;border-radius:16px;background:#141a4a;margin-top:6px}
 .seg button{padding:12px 6px;border-radius:12px;font-size:16px;letter-spacing:.08em;color:#cfd8f2;background:transparent}
 .seg button.on{color:#3a2600;background:linear-gradient(180deg,#ffe07a,var(--gold) 55%,var(--gold2));box-shadow:0 3px 0 #b36b00}
+/* (v281) the joystick sensitivity slider in Settings → CONTROLS */
+.ssens{display:flex;align-items:center;gap:10px;padding:6px 10px;border-radius:16px;background:#141a4a;margin-top:6px}
+.ssens span{flex:none;font-size:13px;letter-spacing:.08em;color:#9fb0e0}
+.srow .ssens input[type=range]{flex:1;min-width:0;width:auto;height:34px;padding:0;margin:0;border:0;border-radius:0;background:none;accent-color:var(--gold);touch-action:pan-y;cursor:pointer}
+.ssens output{flex:none;min-width:52px;text-align:right;font-weight:700;font-size:18px;color:var(--yellow)}
+.ssens .sbtn{padding:6px 10px;font-size:13px}
 .skeys{font-size:13px;line-height:1.6;color:#cfd8f2;padding:10px 14px;border-radius:14px;background:rgba(10,14,46,.4)}.skeys b{color:var(--yellow);margin-right:4px}
 @media (max-height:500px){.spanel{padding:10px 14px 12px}.shead h2{font-size:24px}.shead{margin-bottom:6px}.stabs{width:130px;gap:5px}.stabs button{padding:8px 10px;font-size:14px}.srow{padding:7px 12px}.sl b{font-size:15px}.sl small{font-size:12px}}
 body.portrait .sbody{flex-direction:column}body.portrait .stabs{flex-direction:row;width:auto;overflow-x:auto}body.portrait .stabs button{flex:1;text-align:center;font-size:13px;padding:9px 6px}
@@ -1788,7 +1794,7 @@ addEventListener('unhandledrejection',function(e){if(window.FK&&FK.ready||window
 <script src="packages.js?v=1"></script>
 <script src="/shared/pack-picker.js?v=8"></script>
 <script type="importmap">{"imports":{"three":"./lib/three.module.min.js"}}</script>
-<link rel="modulepreload" href="lib/three.module.min.js"><link rel="modulepreload" href="game.js?v=280"><link rel="modulepreload" href="rear-wings.js?v=1"><link rel="modulepreload" href="models.js?v=52"><link rel="modulepreload" href="learn.js?v=52"><link rel="modulepreload" href="kart-skin.js?v=12"><link rel="modulepreload" href="lib/GLTFLoader.js?v=2"><link rel="modulepreload" href="lib/BufferGeometryUtils.js?v=2"><link rel="modulepreload" href="racers.js?v=2"><link rel="modulepreload" href="lib/RoomEnvironment.js?v=2">
-<script type="module" src="game.js?v=280"></script>
+<link rel="modulepreload" href="lib/three.module.min.js"><link rel="modulepreload" href="game.js?v=281"><link rel="modulepreload" href="rear-wings.js?v=1"><link rel="modulepreload" href="models.js?v=52"><link rel="modulepreload" href="learn.js?v=52"><link rel="modulepreload" href="kart-skin.js?v=15"><link rel="modulepreload" href="lib/GLTFLoader.js?v=2"><link rel="modulepreload" href="lib/BufferGeometryUtils.js?v=2"><link rel="modulepreload" href="racers.js?v=2"><link rel="modulepreload" href="lib/RoomEnvironment.js?v=2">
+<script type="module" src="game.js?v=281"></script>
 </body>
 </html>

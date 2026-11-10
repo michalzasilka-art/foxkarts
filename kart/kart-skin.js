@@ -19,7 +19,7 @@
 export const DEFAULT_SKIN = { body: '#7a28dc', light: '#ffa424', logo: 'fox', logoColor: '#ffa424' };
 export const DEFAULT_HELMET = { main: '#6a2ad0', accent: '#ff9a1e', light: '#ff7a3a', logo: 'fox', logoColor: '#ff7a3a' };
 export const BODY_COLORS = [
-  { name: 'Racing Red', color: '#e8403a' }, { name: 'Coral', color: '#ff6b52' }, { name: 'Sunset Orange', color: '#ff7a1e' }, { name: 'Amber', color: '#ffa32b' }, { name: 'Gold', color: '#f0b428' },
+  { name: 'Racing Red', color: '#ff0000' }, { name: 'Coral', color: '#ff6b52' }, { name: 'Sunset Orange', color: '#ff7a1e' }, { name: 'Amber', color: '#ffa32b' }, { name: 'Gold', color: '#f0b428' },
   { name: 'Sunshine', color: '#ffe14a' }, { name: 'Chartreuse', color: '#b6e02a' }, { name: 'Lime', color: '#5ad04a' }, { name: 'Forest', color: '#2f9e4f' }, { name: 'Mint', color: '#7fe3c0' },
   { name: 'Teal', color: '#16b8a8' }, { name: 'Cyan', color: '#22c9e8' }, { name: 'Sky Blue', color: '#2a8cff' }, { name: 'Royal Blue', color: '#2a4ae8' }, { name: 'Indigo', color: '#4426b8' },
   { name: 'Foxino Purple', color: '#7a28dc' }, { name: 'Violet', color: '#a84ae8' }, { name: 'Lavender', color: '#c9a6f5' }, { name: 'Bubblegum', color: '#ff5db1' }, { name: 'Magenta', color: '#e8238c' },
@@ -160,12 +160,19 @@ function cleanGeometry(THREE, mesh, B, { keepLights = true, minIsland = 30 } = {
   return g;
 }
 const cleanMats = new Map();
+// (v281, the user: the kart's red must be exactly #ff0000) the game's filmic tone mapping turns a pure red paint into a
+// salmon orange on screen (about 249,105,77), so an EXACT paint skips the tone mapping and shows its own colour
+// (lit = #ff0000, in shadow a darker pure red). Every other paint keeps the tuned filmic look.
+const EXACT = new Set(['#ff0000']);
+const exactPaint = (c) => EXACT.has(String(c).toLowerCase());
 // the six materials of a clean model: [paint, carbon, trim, accent, white, light]
 function cleanMaterials(THREE, main, accent, light, { gloss = false } = {}) {
   const k = main + accent + light + gloss; if (cleanMats.has(k)) return cleanMats.get(k);
   const S = (o) => new THREE.MeshStandardMaterial({ side: THREE.DoubleSide, ...o });
   const m = [
-    gloss ? new THREE.MeshPhysicalMaterial({ color: main, roughness: .32, metalness: .1, clearcoat: 1, clearcoatRoughness: .12, side: THREE.DoubleSide }) : new THREE.MeshPhysicalMaterial({ color: main, roughness: .5, metalness: .05, clearcoat: .35, clearcoatRoughness: .45, side: THREE.DoubleSide }),
+    // (an exact paint also drops the clear coat and most of the sheen: their white reflection made the red look pink)
+    exactPaint(main) ? new THREE.MeshPhysicalMaterial({ color: main, roughness: .5, metalness: 0, specularIntensity: .15, side: THREE.DoubleSide, toneMapped: false })
+    : gloss ? new THREE.MeshPhysicalMaterial({ color: main, roughness: .32, metalness: .1, clearcoat: 1, clearcoatRoughness: .12, side: THREE.DoubleSide }) : new THREE.MeshPhysicalMaterial({ color: main, roughness: .5, metalness: .05, clearcoat: .35, clearcoatRoughness: .45, side: THREE.DoubleSide }),
     S({ color: '#16171e', roughness: .62, metalness: .25 }),
     S({ color: '#5a6070', roughness: .3, metalness: .75 }),
     S({ color: accent, roughness: .35, metalness: .45 }),
@@ -216,7 +223,7 @@ function wheelGeos(THREE) {
 }
 const glowMats = new Map(), capMats = new Map();
 const glowMat = (THREE, c) => glowMats.get(c) || glowMats.set(c, new THREE.MeshStandardMaterial({ color: c, emissive: c, emissiveIntensity: 1, roughness: .4 })).get(c);
-const capMat = (THREE, c) => capMats.get(c) || capMats.set(c, new THREE.MeshStandardMaterial({ color: c, roughness: .3, metalness: .3 })).get(c);
+const capMat = (THREE, c) => capMats.get(c) || capMats.set(c, (exactPaint(c) ? new THREE.MeshPhysicalMaterial({ color: c, roughness: .4, metalness: 0, specularIntensity: .15, toneMapped: false }) : new THREE.MeshStandardMaterial({ color: c, roughness: .3, metalness: .3 }))).get(c);
 // (v5) a detailed wheel: a rounded tyre with 24 raised tread blocks and a yellow mark, a sidewall ring, a dark dished
 // rim with six split spokes, five lug nuts and a centre cap in the body colour, a glowing ring in the light colour; the
 // brake disc and the calliper (light colour) sit on the group, so they steer but do not spin

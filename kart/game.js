@@ -17,7 +17,7 @@ import * as THREE from './lib/three.module.min.js';
 import { RoomEnvironment } from './lib/RoomEnvironment.js?v=2';
 import { buildFoxino, buildKart, buildHelmet, setDetail } from './models.js?v=52';
 import * as L from './learn.js?v=52';
-import { loadDefaultKart, dressKart, loadHelmet, dressHelmet, DEFAULT_SKIN, DEFAULT_HELMET, BODY_COLORS, LIGHT_COLORS, LOGOS, logoIconURL, logoCanvas, WHEEL_SIZE } from './kart-skin.js?v=12';
+import { loadDefaultKart, dressKart, loadHelmet, dressHelmet, DEFAULT_SKIN, DEFAULT_HELMET, BODY_COLORS, LIGHT_COLORS, LOGOS, logoIconURL, logoCanvas, WHEEL_SIZE } from './kart-skin.js?v=15';
 import { buildRearWing, REAR_WINGS } from './rear-wings.js?v=1';   // (v270) the nine rear wings for the garage start
 import { GLTFLoader } from './lib/GLTFLoader.js?v=2';
 import { mergeGeometries } from './lib/BufferGeometryUtils.js?v=2';
@@ -36,7 +36,7 @@ const CHARACTERS = [
 
 /* ---------- GARAGE SHOP ---------- */
 const KART_COLORS = [
-  { name: 'Grey',   color: 0x9aa3b0, cost: 0 },  { name: 'Red',    color: 0xe8403a, cost: 50 },
+  { name: 'Grey',   color: 0x9aa3b0, cost: 0 },  { name: 'Red',    color: 0xff0000, cost: 50 },   // (v281: pure red)
   { name: 'Orange', color: 0xff8a1e, cost: 50 }, { name: 'Yellow', color: 0xffd23a, cost: 50 },
   { name: 'Green',  color: 0x4fc84a, cost: 50 }, { name: 'Teal',   color: 0x2ac8c0, cost: 50 },
   { name: 'Blue',   color: 0x3c8cf0, cost: 50 }, { name: 'Purple', color: 0x8a5ae8, cost: 50 },
@@ -98,6 +98,13 @@ function loadSave() {
 }
 let save = loadSave();
 if (save.char !== 'foxino') save.char = 'foxino';   // only Foxino for now
+// (v281, the user: "the red of the kart should be this" — pure #ff0000) the old Racing Red #e8403a is now #ff0000: a save
+// that owns or wears the old red gets the new one (colours are saved by their code)
+{ const K = save.kart || {}, OLD = '#e8403a', NEW = '#ff0000';
+  if (K.skin && K.skin.body === OLD) K.skin.body = NEW;
+  if (Array.isArray(K.bodiesOwned)) K.bodiesOwned = [...new Set(K.bodiesOwned.map((c) => (c === OLD ? NEW : c)))];
+  if (K.color === 0xe8403a) K.color = 0xff0000;
+  if (Array.isArray(K.colorsOwned)) K.colorsOwned = [...new Set(K.colorsOwned.map((c) => (c === 0xe8403a ? 0xff0000 : c)))]; }
 L.attach(save); L.setVoice(false);   // (v225, the user) no voice in the game any more
 // the curriculum packages (shared with the other Fugio games); none chosen = the game's own mix
 const PACKS = window.FugioPacks ? FugioPacks.sort(window.GUMMY_PACKAGES || []) : (window.GUMMY_PACKAGES || []);
@@ -364,6 +371,7 @@ function openSettings(tab = 'game', onClose) {
       const cards = (grp, keys, cur) => `<div class="spick" data-g="${grp}">${keys.map((k) => `<button data-v="${k}" class="${k === cur ? 'on' : ''}">${ART[k]}<span>${NAME[k]}</span></button>`).join('')}</div>`;
       return `<div class="srow col"><div class="sl"><b>Steering · sideways</b><small>With the phone held sideways (16:9)</small></div>${cards('L', ['tilt', 'joy', 'line', 'follow', 'arrows'], save.steerL || 'line')}</div>`
         + `<div class="srow col"><div class="sl"><b>Steering · upright</b><small>With the phone upright (9:16)</small></div>${cards('P', ['joy', 'line', 'follow', 'arrows'], save.steerP || 'line')}</div>`
+        + `<div class="srow col"><div class="sl"><b>Joystick sensitivity</b><small id="sensHelp"></small></div><div class="ssens"><span>LOW</span><input type="range" id="sens" min="50" max="150" step="5" value="${Math.round(joySens() * 100)}" aria-label="Joystick sensitivity"><span>HIGH</span><output id="sensOut"></output><button class="sbtn" id="sensReset">RESET</button></div></div>`   // (v281)
         + `<div class="srow col"><div class="sl"><b>Steering assist</b><small id="asHelp"></small></div><div class="seg" id="asSeg"><button data-v="0">OFF</button><button data-v="1">LOW</button><button data-v="2">MEDIUM</button><button data-v="3">HIGH</button></div></div>`
         + `<div class="srow col"><div class="sl"><b>Controls side</b><small id="sideHelp"></small></div><div class="seg" id="sideSeg"><button data-v="left">LEFT</button><button data-v="right">RIGHT</button></div></div>`
         + (navigator.vibrate ? row('buzz', 'Vibration', 'A short buzz on bumps, hits and turbos') : '')
@@ -389,6 +397,12 @@ function openSettings(tab = 'game', onClose) {
   if (aseg) { const H = ['No help: you steer everything yourself.', 'A little help: the kart lines up with the road when you let go.', 'More help: it follows the road and keeps you off the edges.', 'Most help: for your first races — it nearly drives the bends for you.'];
     const show = () => { const v = save.assistLvl ?? 1; for (const b of aseg.children) b.classList.toggle('on', +b.dataset.v === v); $('asHelp').textContent = H[v]; }; show();
     for (const b of aseg.children) tap(b, () => { sfx.click(); save.assistLvl = +b.dataset.v; store(); show(); }); }
+  // (v281, the user) the joystick sensitivity slider: saved as you drag, used at once (also in the middle of a race)
+  const sens = S.querySelector('#sens');
+  if (sens) { const show = () => { const v = +sens.value; $('sensOut').textContent = `${v}%`; $('sensHelp').textContent = v < 100 ? 'Calmer: a small push turns the kart only a little (joystick, line and controller stick)' : v > 100 ? 'Quicker: a small push already turns the kart (joystick, line and controller stick)' : 'Normal: the tuned feel (joystick, line and controller stick)'; $('sensReset').style.opacity = v === 100 ? .45 : 1; };
+    const set = (v) => { sens.value = v; save.joySens = v / 100; store(); show(); }; show();
+    sens.addEventListener('input', () => set(+sens.value)); for (const ev of ['keydown', 'keyup']) sens.addEventListener(ev, (e) => e.stopPropagation());
+    tap($('sensReset'), () => { sfx.click(); set(100); }); }
   // (v263, the user) which side the steering sits on: the joystick, line or arrows left and the power-up right, or the other way round
   const sseg = S.querySelector('#sideSeg');
   if (sseg) { const show = () => { const v = save.ctlSide === 'right' ? 'right' : 'left'; for (const b of sseg.children) b.classList.toggle('on', b.dataset.v === v); $('sideHelp').textContent = v === 'right' ? 'Steering on the right, the power-up button on the left (for left-handed players)' : 'Steering on the left, the power-up button on the right'; }; show();
@@ -5647,7 +5661,7 @@ tap($('passBtn'), () => { sfx.click(); goLicence(); }); tap($('passPill'), () =>
    5. The test drive (startTutorial): you pick how you steer, then drive the Alps alone; at each new thing the race
       slows down, an arrow marks it and Foxino says what it is; at the end you go into the pit, and you are
       congratulated. Settings > Game > TUTORIAL plays it all again. */
-const INTRO_COL = { blue: ['BLUE', '#2a4ae8'], green: ['GREEN', '#5ad04a'], red: ['RED', '#e8403a'] };   // (the shop's Royal Blue, Lime and Racing Red)
+const INTRO_COL = { blue: ['BLUE', '#2a4ae8'], green: ['GREEN', '#5ad04a'], red: ['RED', '#ff0000'] };   // (the shop's Royal Blue, Lime and Racing Red — pure red since v281)
 const introV = (n) => `video/intro-${n}.mp4?v=1`;
 function introUI() { const S = $('intro'); S.hidden = false; S.className = ''; return S; }
 function playClip(S, name, cap) {
@@ -6080,7 +6094,7 @@ applySide();
   // (v251, steering research: a 6 % dead zone, a gentle middle, and the FULL lock at a full push — before, the
   // joystick could only ever reach 73 % of the lock and half a push on the line gave just 12 %) with the wheel's own
   // soft middle (^1.6) a half push is now about a fifth of the lock on the line, a sixth on the joystick
-  const move = (e) => { const dx = clamp(e.clientX - cx, -R, R), raw0 = dx / R, raw = Math.sign(raw0) * Math.max(0, Math.abs(raw0) - .06) / .94; STICK.x = Math.sign(raw) * Math.abs(raw) ** (CTL === 'joy' ? STEER.joyExp : STEER.lineExp);
+  const move = (e) => { const dx = clamp(e.clientX - cx, -R, R), raw0 = dx / R, raw = Math.sign(raw0) * Math.max(0, Math.abs(raw0) - .06) / .94; STICK.x = Math.sign(raw) * Math.abs(raw) ** sensExp(CTL === 'joy' ? STEER.joyExp : STEER.lineExp);   // (v281: × the joystick sensitivity)
     const dy = CTL === 'joy' ? clamp(e.clientY - cy, -R, R) : 0, k = CTL === 'joy' ? .29 / .42 : 1;   // (the knob stays inside the ring)
     knob.style.transform = `translate(calc(-50% + ${(dx * k).toFixed(1)}px), calc(-50% + ${(dy * k).toFixed(1)}px))`; };
   const radOf = (b) => (steerWant() === 'joy' ? Math.max(40, b.width * .42) : Math.max(40, b.width / 2 - b.height / 2));
@@ -6166,6 +6180,14 @@ let JOYF = null;
 //   tap sides stays as the user tuned it (v226)
 const STEER = { lineExp: 1.25, lineMax: 90, lineRate: 12, joyExp: 1.5, joyMax: 86, joyRate: 8, padExp: 1.25, tiltDead: 3, tiltGain: 3.2, tiltRate: 10, keyRate: 7.5,
   outExp: 1.6, tapMin: 34, tapMax: 50, tapRate: 8 };   // (v269: the wheel → steering "soft middle" curve and TAP SIDES, here so the debug hub can tune them)
+// (v281, the user: the option to change the joystick sensitivity) JOYSTICK SENSITIVITY in Settings → CONTROLS, 50–150 %
+// (save.joySens 0.5…1.5, 1 = the tuned feel above). It works on the joystick, the line and a controller's stick:
+// higher = a small push turns more (a straighter push curve), the full lock a little wider and the wheel follows a little
+// quicker; lower = a calmer middle, a slightly smaller full lock, a little slower. 100 % changes nothing.
+const joySens = () => clamp(+save.joySens || 1, .5, 1.5);
+const sensExp = (e) => e / joySens() ** .75;   // (half a push on the joystick: about 4 % of the lock at 50 %, 15 % at 100 %, 28 % at 150 %)
+const sensMax = (m) => m * (1 + (joySens() - 1) * .2);
+const sensRate = (r) => r * (.7 + .3 * joySens());
 function updateWheel(dt) {
   { const jf = steerWant() === 'joy'; if (jf !== JOYF) { JOYF = jf; document.body.classList.toggle('joyfloat', jf); } }
   const kb = ((kdown('left') || ARR.l) ? -1 : 0) + ((kdown('right') || ARR.r) ? 1 : 0);   // (v263: the ARROWS steer like the keys)
@@ -6186,12 +6208,12 @@ function updateWheel(dt) {
     const tgt = dir * (STEER.tapMin + (STEER.tapMax - STEER.tapMin) * clamp((hT - .4) / .8, 0, 1));
     WHEEL.rot = WHEEL.rot * dir < STEER.tapMin - 4 ? dir * (STEER.tapMin - 4) : WHEEL.rot + (tgt - WHEEL.rot) * Math.min(1, dt * STEER.tapRate);
   }
-  else if (STICK.held != null && !kb) { const joy = CTL === 'joy'; WHEEL.rot += (STICK.x * (joy ? STEER.joyMax : STEER.lineMax) - WHEEL.rot) * Math.min(1, dt * (joy ? STEER.joyRate : STEER.lineRate)); }
+  else if (STICK.held != null && !kb) { const joy = CTL === 'joy'; WHEEL.rot += (STICK.x * sensMax(joy ? STEER.joyMax : STEER.lineMax) - WHEEL.rot) * Math.min(1, dt * sensRate(joy ? STEER.joyRate : STEER.lineRate)); }
   else
   // (gentle since v40: a full turn needs the phone tilted about 40°, and the keys turn the wheel in more slowly)
   if (CTL === 'tilt' && WHEEL.held == null && !kb) { const t = Math.abs(tiltG) < STEER.tiltDead ? 0 : tiltG - Math.sign(tiltG) * STEER.tiltDead; WHEEL.rot += (clamp(t * STEER.tiltGain, -110, 110) - WHEEL.rot) * Math.min(1, dt * STEER.tiltRate); }
   // (v64: the stick is progressive — a half push is about a third of the wheel — and turns the wheel a little slower, so small corrections stay small)
-  else if (GPAD.on && Math.abs(GPAD.steer) > .02 && !kb) WHEEL.rot += (Math.sign(GPAD.steer) * Math.abs(GPAD.steer) ** STEER.padExp * 90 - WHEEL.rot) * Math.min(1, dt * 9);
+  else if (GPAD.on && Math.abs(GPAD.steer) > .02 && !kb) WHEEL.rot += (Math.sign(GPAD.steer) * Math.abs(GPAD.steer) ** sensExp(STEER.padExp) * sensMax(90) - WHEEL.rot) * Math.min(1, dt * sensRate(9));
   else if (kb) WHEEL.rot += (kb * 95 - WHEEL.rot) * Math.min(1, dt * (WHEEL.rot * kb < 0 ? STEER.keyRate * 1.6 : STEER.keyRate));   // (a quicker swing when you switch sides)
   else if (WHEEL.held == null) WHEEL.rot *= Math.exp(-dt * (CTL === 'follow' ? 18 : 9));
   wheelSvg.style.transform = `rotate(${WHEEL.rot.toFixed(1)}deg)`;
