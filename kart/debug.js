@@ -179,7 +179,7 @@ const ACT = {
     const s = G.save(), K = s.kart; K.skin = { ...G.DEFAULT_SKIN }; for (const veh of ['kart', 'ship']) { const U = G.upsOf(veh); for (const [k] of G.UPGRADES) U[k] = 0; U.lv = 0; }
     if (K.ship) K.ship = {}; G.store(); G.setShowRacer(); G.refreshCounters(); if (G.screen() === 'garage') G.goGarage(); G.toast('DEBUG: kart reset (level 1, default look)', '#ffe14a', 26); render();
   },
-  steerReset: () => { for (const k of Object.keys(st.ov)) if (k.startsWith('STEER.') || k === 'TUNE.turn' || k === 'TUNE.handlingPerLevel') { delete st.ov[k]; apply(k); } persist(); badge(); render(); },
+  steerReset: () => { for (const k of Object.keys(st.ov)) if (k.startsWith('STEER.') || k === 'TUNE.turn' || k === 'TUNE.handlingPerLevel' || k === 'TUNE.airSteer') { delete st.ov[k]; apply(k); } persist(); badge(); render(); },
   tuneReset: () => { for (const k of KART_SL.map((x) => x[0])) if (k in st.ov) { delete st.ov[k]; apply(k); } persist(); badge(); render(); },
   lowq: () => { G.save().lowq = 0; G.store(); G.applyGfx(); render(); },
   copy: () => copyText(document.getElementById('dbgTxt').value),
@@ -242,6 +242,7 @@ const STEER_SL = [
   ['STEER.keyRate', 'KEYS / ARROWS · turn-in speed', '', 1, 30, .5],
   ['STEER.tiltDead', 'TURN DEVICE · dead zone', '°', 0, 15, .5], ['STEER.tiltGain', 'TURN DEVICE · gain', '×', .5, 8, .1], ['STEER.tiltRate', 'TURN DEVICE · follow speed', '', 1, 30, .5],
   ['STEER.padExp', 'GAMEPAD · stick curve', '', .5, 3, .05],
+  ['TUNE.airSteer', 'IN THE AIR · turning', '×', 0, 1, .05, 'How much the kart turns in a jump, compared with on the road (v287)'],
   ['TUNE.turn', 'HANDLING · turn rate', '', 1, 6, .05, 'How fast the kart turns at full lock (× the driver and the kart level)'], ['TUNE.handlingPerLevel', 'HANDLING · per upgrade step', '', 0, .5, .01],
 ];
 const KART_SL = [

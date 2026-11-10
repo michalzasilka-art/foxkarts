@@ -81,6 +81,10 @@ const TUNE = {
   // (v269) the question sets, here so the debug hub can change them: garage start 3 sets of garageN, a pit stop 3 sets
   // of pitN (each pitSecs), the finish line finN questions of finSecs (a Starter gets 2 / 3 seconds more)
   garageN: 3, pitN: 3, finN: 3, finSecs: 6,   // (v270, the user: the garage start is 3 × 3 = 9 questions, one per rear wing)
+  // (v287, the user: "make the steering in the air less sensitive") in the air (a jump off a ramp or a fall) the kart
+  // turned as fast as on the road, with no grip and no assist, so it landed crooked or in the wall: now 40 % of it.
+  // The little hop that starts a drift is not affected.
+  airSteer: .4,
 };
 const LAPS0 = TUNE.laps, PIT_EVERY0 = TUNE.pitEvery, PIT_LAPS0 = TUNE.pitLaps;
 const STEP = .6;   // the spacing of the track's centre-line points (the road's half-width HALF is set per track)
@@ -6728,7 +6732,7 @@ function drive(r, dt) {
           r.driftT += dt; const lvl = TUNE.driftAfter.filter((t) => r.driftT >= t).length;
           if (lvl > r.driftLvl) { r.driftLvl = lvl; sfx.spark(lvl); }
         }
-      } else r.angle += steer * base * dt;
+      } else r.angle += steer * base * (r.air && r.air !== 'hop' ? TUNE.airSteer : 1) * dt;   // (v287: calmer in the air)
       // (v206, the user: "in Settings under Controls, an adjustable steering assist") it lines the kart up with the
       // road and keeps it off the edges — only while you are not steering hard yourself, so it never fights you; and
       // never in a drift, in the air or in the pit lane
@@ -7816,7 +7820,7 @@ const DBG_API = {
   leaveRace: () => { if (race) { closeDialog(); cup = null; endRace(); } },
 };
 let dbgMod = null;
-const loadDebug = () => (dbgMod = dbgMod || import('./debug.js?v=4').then((m) => { m.init(DBG_API); return m; }).catch((e) => { dbgMod = null; console.error('debug hub', e); throw e; }));
+const loadDebug = () => (dbgMod = dbgMod || import('./debug.js?v=5').then((m) => { m.init(DBG_API); return m; }).catch((e) => { dbgMod = null; console.error('debug hub', e); throw e; }));
 window.FK.debug = (tab) => loadDebug().then((m) => m.open(tab));
 if (dbgOn()) loadDebug();
 addEventListener('keydown', (e) => { if (e.key === '`' && (dbgOn() || isDevAcct()) && !(e.target && e.target.closest && e.target.closest('input, textarea'))) { e.preventDefault(); loadDebug().then((m) => m.toggle()); } });
