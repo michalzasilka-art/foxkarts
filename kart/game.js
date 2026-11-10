@@ -4997,7 +4997,7 @@ function routeSs(W) {
 function rampsOnRoutes(W) {
   if (!W.routeGroups || !TRACK.sec) return; const { i0, i1 } = TRACK.sec, N = TRACK.routes[0].length;
   const touches = (s, len) => { const a = Math.floor(s / STEP) % N, b = Math.ceil((s + len) / STEP) % N; return b >= i0 - 4 && a <= i1 + 4; };
-  for (const [list, len, mk] of [[W.ramps, RAMP_LEN, (o, r) => W.rampMesh(o.sr[r], W.routeGroups[r])], [W.pads, 2, (o, r) => W.padMesh(o.sr[r], o.lat, W.routeGroups[r])]]) {
+  for (const [list, len, mk] of [[W.ramps, RAMP_LEN, (o, r) => W.rampMesh(o.sr[r], W.routeGroups[r], o.ringLat)], [W.pads, 2, (o, r) => W.padMesh(o.sr[r], o.lat, W.routeGroups[r])]]) {
     for (const o of list) {
       if (!o.ms || !touches(o.s - 2, len + 2)) continue;
       for (const m of o.ms) { m.removeFromParent(); W.routeGroups[0].add(m); }   // the first road's own, shown with its road
@@ -5028,7 +5028,7 @@ function buildArcade(scene, W, def) {
   const rampTex = chevrons('#ffffff', '#ffffff', '#ff7a18'); rampTex.wrapS = rampTex.wrapT = THREE.RepeatWrapping; rampTex.repeat.set(4, 1);
   const rampMat = new THREE.MeshStandardMaterial({ map: rampTex, emissive: '#ffffff', emissiveMap: rampTex, emissiveIntensity: .32, roughness: .45, side: THREE.DoubleSide }), sideMat = M('#1b2a4a', { roughness: .6, side: THREE.DoubleSide });
   // (v292, the user: "instead of tricks add there rings you need to jump through, 1 in each jump, it's a flame ring")
-  // over every jump hangs a burning hoop, in the middle of the road where a kart at full speed reaches the top of its
+  // over every jump hangs a burning hoop (somewhere across the road since v294) where a kart at full speed reaches the top of its
   // flight: line up with it before the ramp and you fly through it (a big boost on landing). A bright hoop, a soft
   // orange glow and a crown of flickering flame tongues (one instanced mesh, animated only near the camera).
   W.rings = [];
@@ -5042,12 +5042,15 @@ function buildArcade(scene, W, def) {
     g.setAttribute('color', new THREE.BufferAttribute(col, 4)); return g;
   })();
   const flameMat = new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, depthWrite: false, side: THREE.DoubleSide, toneMapped: false });
-  const ringAt = (s0, into) => {
+  // (v294, the user: "the flame rings should be randomly on the jump, more left or right") each ring hangs at its own
+  // random spot across the road, .6–4 m to a random side of the middle (the hoop stays inside the road; new every race,
+  // the same on every road variant)
+  const ringAt = (s0, into, lat = 0) => {
     const sR = s0 + RAMP_LEN + RF.d, q = at(sR), y = at(s0 + RAMP_LEN).p.y + RAMP_H + RF.h + .65;   // (the kart's middle at the top of its flight)
-    const ring = new THREE.Group(); ring.position.set(...rolled(q.p, 0, y - q.p.y)); ring.rotation.y = -angleOf(q.p);
+    const ring = new THREE.Group(); ring.position.set(...rolled(q.p, lat, y - q.p.y)); ring.rotation.y = -angleOf(q.p);
     ring.add(new THREE.Mesh(ringCore, coreMat), new THREE.Mesh(ringGlow, glowMat));
     const fl = new THREE.InstancedMesh(flameGeo, flameMat, RING_FLAMES); fl.frustumCulled = false; ring.add(fl);
-    ring.userData = { s: sR, y, fl, ph: Math.random() * 9, flare: 0 }; into.add(ring); W.rings.push(ring); flameRing(ring, 0);
+    ring.userData = { s: sR, y, lat, fl, ph: Math.random() * 9, flare: 0 }; into.add(ring); W.rings.push(ring); flameRing(ring, 0);
     return ring;
   };
   W.anim.push((dt, t) => { const C = W.camera && W.camera.position; for (const g of W.rings) {
@@ -5056,16 +5059,16 @@ function buildArcade(scene, W, def) {
     flameRing(g, t);
   } });
   // (v267) a ramp's meshes on whichever road TRACK.pts is at the moment (rampsOnRoutes draws one on every variant)
-  W.rampMesh = (s0, into) => {
+  W.rampMesh = (s0, into, ringLat = 0) => {
     const top = new THREE.Mesh(trackQuad(s0, s0 + RAMP_LEN, -HALF - .4, HALF + .4, .03, RAMP_H), rampMat); top.castShadow = top.receiveShadow = true; into.add(top);
     const e = at(s0 + RAMP_LEN).p, a = at(s0).p, pos = [];
     const P = (p, l, y) => rolled(p, l, y), L0 = -HALF - .4, L1 = HALF + .4;
     pos.push(...P(e, L0, 0), ...P(e, L1, 0), ...P(e, L0, RAMP_H), ...P(e, L1, 0), ...P(e, L1, RAMP_H), ...P(e, L0, RAMP_H));
     for (const l of [L0, L1]) pos.push(...P(a, l, .03), ...P(e, l, 0), ...P(e, l, RAMP_H));
     const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.computeVertexNormals(); const side = new THREE.Mesh(g, sideMat); into.add(side);
-    return [top, side, ringAt(s0, into)];
+    return [top, side, ringAt(s0, into, ringLat)];
   };
-  W.ramps = RAMP_AT.map((f) => { const s0 = f * TRACK.L; return { s: s0, ms: W.rampMesh(s0, scene) }; });
+  W.ramps = RAMP_AT.map((f) => { const s0 = f * TRACK.L, ringLat = pick([-1, 1]) * rand(.6, 4); return { s: s0, ringLat, ms: W.rampMesh(s0, scene, ringLat) }; });
   // boost pads: glowing arrows that scroll forwards
   W.padTex = chevrons(...def.pad); W.padTex.wrapT = THREE.RepeatWrapping;
   const padMat = new THREE.MeshStandardMaterial({ map: W.padTex, emissive: '#ffffff', emissiveIntensity: .55, emissiveMap: W.padTex, roughness: .35, polygonOffset: true, polygonOffsetFactor: -2 });
@@ -7041,7 +7044,7 @@ function drive(r, dt) {
     const mag = TDEF.magnet && r.air === 'ramp' && r.vy < 0; r.vy -= TDEF.gravity * dt * (mag ? TDEF.magnet : 1); r.y += r.vy * dt;
     if (mag && !r.magOn) { r.magOn = true; if (r.player) { sfx.power(); if (!race.tips.magnet) { race.tips.magnet = 1; toast('MAGNET PULL!', '#5ab0ff', 30); } } }
     // (v292) through the flame ring? judged as the kart passes its plane: near the middle of the road, at its height
-    if (r.ring) { const U = r.ring.userData, d = ((r.sc - U.s) % TRACK.L + TRACK.L) % TRACK.L; if (d < 6) { const g0 = r.ring; r.ring = null; if (Math.abs(r.lat) < RING_R - .45 && Math.abs(r.y + .6 - U.y) < RING_R - .35) ringHit(r, g0); else if (r.player && !race.tips.ring) { race.tips.ring = 1; toast('Line up with the\nFLAME RING before the jump!', '#ffb03a', 28); } } }
+    if (r.ring) { const U = r.ring.userData, d = ((r.sc - U.s) % TRACK.L + TRACK.L) % TRACK.L; if (d < 6) { const g0 = r.ring; r.ring = null; if (Math.abs(r.lat - (U.lat || 0)) < RING_R - .45 && Math.abs(r.y + .6 - U.y) < RING_R - .35) ringHit(r, g0); else if (r.player && !race.tips.ring) { race.tips.ring = 1; toast('Line up with the\nFLAME RING before the jump!', '#ffb03a', 28); } } }
     if (r.y <= g && r.vy < 0) { r.y = g; land(r); }
     else if (r.y < road - 9) respawn(r);
   } else if (offEdge) { r.air = 'fall'; r.vy = 0; if (r.drift) r.drift = 0; if (r.player) sfx.fall(); }
