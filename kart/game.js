@@ -6846,7 +6846,10 @@ function lapDone(r) {
     if (r.player) finishLine(); return;
   }
   if (r.finished || race.ended) return;   // (v108) no lap questions once you are through the finish (the kart drives on behind the podium)
-  if (!r.player && !r.remote && PITS && pitDueLap(r.lap) && !r.pitStood) r.wantPit = true;   // (v152) the rivals pit on the same lap
+  // (v152) the rivals pit on the same lap. (v291, the user: "make the other bots go in the pit too after the 2nd and 4th")
+  // it was keyed on pitStood, which the garage start sets and only a stop clears, so no rival ever pitted: now each
+  // rival remembers the lap it was sent in on, so it stops once on lap 2 and once on lap 4
+  if (!r.player && !r.remote && PITS && pitDueLap(r.lap) && r.pitLap !== r.lap) { r.wantPit = true; r.pitLap = r.lap; }
   if (r.player) {
     lapPill();
     // (v209, the user: "don't say every lap that the map has changed — just do it") the road changes without a word
@@ -7792,7 +7795,7 @@ window.FK.pitInfo = () => {
     slow: +race.slow.toFixed(2), speed: +P.speed.toFixed(1), u: +(P.lat * (PITS ? PITS.side : 1)).toFixed(2), ds: ds == null ? null : +ds.toFixed(1),
     inPit: !!P.inPit, lane: e ? [+e[0].toFixed(1), +e[1].toFixed(1)] : null, bayAhead: B ? +bayAhead(P).toFixed(1) : null,
     fix: P.fix || 0, spd: P.spd || 0, imm: P.imm || 0, jumps: jumpCount(),
-    rivals: race.racers.filter((r) => !r.player).map((r) => ({ p: !!r.pitting, w: !!r.wantPit, u: +(r.lat * (PITS ? PITS.side : 1)).toFixed(1), stood: !!r.pitStood })) };
+    rivals: race.racers.filter((r) => !r.player).map((r) => ({ lap: r.lap, p: !!r.pitting, w: !!r.wantPit, u: +(r.lat * (PITS ? PITS.side : 1)).toFixed(1), stood: !!r.pitStood, sent: r.pitLap || 0, hold: +(r.pitHoldT || 0).toFixed(1) })) };
 };
 window.FK.BASE = BASE;
 // test hook: why the steering mode is what it is
