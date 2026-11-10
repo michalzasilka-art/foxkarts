@@ -17,7 +17,7 @@ import * as THREE from './lib/three.module.min.js';
 import { RoomEnvironment } from './lib/RoomEnvironment.js?v=2';
 import { buildFoxino, buildKart, buildHelmet, setDetail } from './models.js?v=52';
 import * as L from './learn.js?v=52';
-import { loadDefaultKart, dressKart, loadHelmet, dressHelmet, DEFAULT_SKIN, DEFAULT_HELMET, BODY_COLORS, LIGHT_COLORS, LOGOS, logoIconURL, logoCanvas, WHEEL_SIZE, makeMetal, metalOf, swatchCSS } from './kart-skin.js?v=18';
+import { loadDefaultKart, dressKart, loadHelmet, dressHelmet, DEFAULT_SKIN, DEFAULT_HELMET, BODY_COLORS, LIGHT_COLORS, LOGOS, logoIconURL, logoCanvas, WHEEL_SIZE, makeMetal, metalOf, swatchCSS } from './kart-skin.js?v=19';
 import { buildRearWing, REAR_WINGS } from './rear-wings.js?v=1';   // (v270) the nine rear wings for the garage start
 import { GLTFLoader } from './lib/GLTFLoader.js?v=2';
 import { mergeGeometries } from './lib/BufferGeometryUtils.js?v=2';
@@ -5489,7 +5489,7 @@ function openCrate(kind) {
   setTimeout(() => { box.classList.add('shake'); }, 150);
   setTimeout(() => { box.classList.add('burst'); v.classList.add('lit'); sfx.fanfare(); buzz([30, 30, 60]); }, 1500);
   setTimeout(() => {
-    const pic = p.kind === 'paint' ? `<i class="crsw" style="--c:${p.id}"></i>` : p.kind === 'tyre' ? `<img class="crty" src="${tyreIconURL(p, { ...DEFAULT_SKIN, ...(save.kart.skin || {}) })}" alt="">` : ico('coin', 'crcoin');
+    const pic = p.kind === 'paint' ? `<i class="crsw" style="--c:${swatchCSS(p.id)}"></i>` : p.kind === 'tyre' ? `<img class="crty" src="${tyreIconURL(p, { ...DEFAULT_SKIN, ...(save.kart.skin || {}) })}" alt="">` : ico('coin', 'crcoin');
     card.innerHTML = `<span class="crrar">${R[0]}</span>${pic}<b class="crname">${p.name}</b><span class="crkind">${p.kind === 'paint' ? 'BODY PAINT' : p.kind === 'tyre' ? 'TYRE STYLE' : 'COINS'}</span>
       <div class="crbtns">${p.kind !== 'coins' ? '<button class="btn gold" id="crEquip">EQUIP</button>' : ''}<button class="btn" id="crOk" style="--c:#8a94a8">OK</button></div>`;
     card.hidden = false; L.say(p.name);

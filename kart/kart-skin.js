@@ -173,7 +173,24 @@ export const METALS = {
   '#1853a0': { name: 'Metal Blue',  stops: ['#030b1e', '#092963', '#1853a0', '#2873bc'] },
   '#2b8e72': { name: 'Metal Green', stops: ['#052414', '#0f4e36', '#2b8e72', '#55baa0'] },
 };
-export const metalOf = (c) => METALS[String(c || '').toLowerCase()] || null;
+// (v290, the user: "make all kart colors more like these darker metal ones") every other paint (the shop's and the
+// crates') is brushed metal too, its palette made from the colour the way the three above relate to the pictures:
+// a darker main tone (lightness pulled toward .22, so pale paints darken most and the order stays), a little less
+// saturated; the dark stop ~30 % of it, the middle ~58 %, the highlight a quarter of the way to white
+const metalMade = new Map();
+function metalStops(c) {
+  const rgb = hex(c).map((v) => v / 255), [h, s, l] = rgb2hsl(...rgb), L = l > .22 ? .22 + (l - .22) * .5 : l;
+  // (pale paints keep their little colour: near-white is 100 % "saturated" in HSL and would turn bright blue)
+  const S = Math.min(s * .85, (Math.max(...rgb) - Math.min(...rgb)) * 1.3 / Math.max(.05, 1 - Math.abs(2 * L - 1)));
+  const out = (s2, l2) => '#' + hsl2rgb(h, Math.min(1, s2), Math.min(1, l2)).map((v) => Math.round(Math.max(0, Math.min(1, v)) * 255).toString(16).padStart(2, '0')).join('');
+  return [out(S * 1.1, L * .3), out(S, L * .58), out(S, L), out(S * .8, L + (1 - L) * .25)];
+}
+export const metalOf = (c) => {
+  const k = String(c || '').toLowerCase(); if (METALS[k]) return METALS[k];
+  if (!/^#[0-9a-f]{6}$/.test(k)) return null;
+  if (!metalMade.has(k)) metalMade.set(k, { stops: metalStops(k) });
+  return metalMade.get(k);
+};
 // a swatch for the paint pickers: the metal as a brushed gradient, any other paint as its flat colour
 export const swatchCSS = (c) => { const M = metalOf(c); if (!M) return c; const [d, m, b, h] = M.stops;
   return `repeating-linear-gradient(0deg,rgba(255,255,255,.07) 0 1px,rgba(0,0,0,.08) 1px 2px,transparent 2px 4px),linear-gradient(165deg,${d} 0%,${m} 26%,${b} 44%,${h} 50%,${b} 56%,${m} 74%,${d} 100%)`; };
