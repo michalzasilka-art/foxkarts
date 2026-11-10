@@ -17,7 +17,7 @@ import * as THREE from './lib/three.module.min.js';
 import { RoomEnvironment } from './lib/RoomEnvironment.js?v=2';
 import { buildFoxino, buildKart, buildHelmet, setDetail } from './models.js?v=52';
 import * as L from './learn.js?v=52';
-import { loadDefaultKart, dressKart, loadHelmet, dressHelmet, DEFAULT_SKIN, DEFAULT_HELMET, BODY_COLORS, LIGHT_COLORS, LOGOS, logoIconURL, logoCanvas, WHEEL_SIZE } from './kart-skin.js?v=15';
+import { loadDefaultKart, dressKart, loadHelmet, dressHelmet, DEFAULT_SKIN, DEFAULT_HELMET, BODY_COLORS, LIGHT_COLORS, LOGOS, logoIconURL, logoCanvas, WHEEL_SIZE, makeMetal, metalOf, swatchCSS } from './kart-skin.js?v=18';
 import { buildRearWing, REAR_WINGS } from './rear-wings.js?v=1';   // (v270) the nine rear wings for the garage start
 import { GLTFLoader } from './lib/GLTFLoader.js?v=2';
 import { mergeGeometries } from './lib/BufferGeometryUtils.js?v=2';
@@ -98,11 +98,13 @@ function loadSave() {
 }
 let save = loadSave();
 if (save.char !== 'foxino') save.char = 'foxino';   // only Foxino for now
-// (v281, the user: "the red of the kart should be this" — pure #ff0000) the old Racing Red #e8403a is now #ff0000: a save
-// that owns or wears the old red gets the new one (colours are saved by their code)
-{ const K = save.kart || {}, OLD = '#e8403a', NEW = '#ff0000';
-  if (K.skin && K.skin.body === OLD) K.skin.body = NEW;
-  if (Array.isArray(K.bodiesOwned)) K.bodiesOwned = [...new Set(K.bodiesOwned.map((c) => (c === OLD ? NEW : c)))];
+// (v281, the user: "the red of the kart should be this" — pure #ff0000) the old Racing Red #e8403a became #ff0000; (v283,
+// the user: "make the green, red and blue this metal style") the red, Royal Blue and Lime are now the brushed METAL paints
+// (kart-skin.js METALS). A save that owns or wears an old one gets its metal (colours are saved by their code).
+{ const K = save.kart || {}, MAP = { '#e8403a': '#df0707', '#ff0000': '#df0707', '#2a4ae8': '#1853a0', '#5ad04a': '#2b8e72' }, to = (c) => MAP[c] || c;
+  if (K.skin && K.skin.body) K.skin.body = to(K.skin.body);
+  if (K.ship && K.ship.body) K.ship.body = to(K.ship.body);
+  if (Array.isArray(K.bodiesOwned)) K.bodiesOwned = [...new Set(K.bodiesOwned.map(to))];
   if (K.color === 0xe8403a) K.color = 0xff0000;
   if (Array.isArray(K.colorsOwned)) K.colorsOwned = [...new Set(K.colorsOwned.map((c) => (c === 0xe8403a ? 0xff0000 : c)))]; }
 L.attach(save); L.setVoice(false);   // (v225, the user) no voice in the game any more
@@ -999,7 +1001,7 @@ function dressShip(g, look) {
     if (n !== 'M_Body_Primary' && n !== 'M_Body_Accent' && !(n in SHIP_LIT)) return;
     if (!M[n]) {
       const c = o.material.clone(); c.name = n;
-      if (n === 'M_Body_Primary') c.color.set(look.body); else if (n === 'M_Body_Accent') c.color.set(look.light);
+      if (n === 'M_Body_Primary') { c.color.set(look.body); if (metalOf(look.body)) makeMetal(THREE, c, look.body); } else if (n === 'M_Body_Accent') c.color.set(look.light);
       else { c.color.set(n === 'M_Thruster_Glow' ? look.light : '#ffffff'); c.emissive.set(look.light); c.emissiveIntensity = SHIP_LIT[n]; }
       M[n] = c;
     }
@@ -5661,7 +5663,7 @@ tap($('passBtn'), () => { sfx.click(); goLicence(); }); tap($('passPill'), () =>
    5. The test drive (startTutorial): you pick how you steer, then drive the Alps alone; at each new thing the race
       slows down, an arrow marks it and Foxino says what it is; at the end you go into the pit, and you are
       congratulated. Settings > Game > TUTORIAL plays it all again. */
-const INTRO_COL = { blue: ['BLUE', '#2a4ae8'], green: ['GREEN', '#5ad04a'], red: ['RED', '#ff0000'] };   // (the shop's Royal Blue, Lime and Racing Red — pure red since v281)
+const INTRO_COL = { blue: ['BLUE', '#1853a0'], green: ['GREEN', '#2b8e72'], red: ['RED', '#df0707'] };   // (the shop's Metal Blue, Metal Green and Metal Red — brushed metal since v283)
 const introV = (n) => `video/intro-${n}.mp4?v=1`;
 function introUI() { const S = $('intro'); S.hidden = false; S.className = ''; return S; }
 function playClip(S, name, cap) {
@@ -5807,7 +5809,7 @@ function drawPicks(sk) {
   const P = $('picks'); P.hidden = false;
   P.innerHTML = (GARAGE_VEH === 'ship' ? ['body', 'light'] : ['body', 'light', 'logo', 'tyre']).map((kind) => {
     const sw = kind === 'tyre' ? `<i class="st" style="background-image:url(${tyreIconURL(TYRE_BY_ID[sk.tyre] || TYRE_BY_ID.classic, sk)})"></i>` : kind === 'logo' ? `<i class="st" style="background-image:url(${logoIconURL(sk.logo, sk.light)})"></i>`
-      : `<i class="sw${kind === 'light' ? ' glow' : ''}" style="--c:${sk[kind]}"></i>`;
+      : `<i class="sw${kind === 'light' ? ' glow' : ''}" style="--c:${kind === 'body' ? swatchCSS(sk[kind]) : sk[kind]}"></i>`;   // (v283: a metal body shows brushed metal)
     return `<button class="pick" data-kind="${kind}">${sw}<span>${{ body: 'BODY', light: 'LIGHTS', logo: 'LED LOGO', tyre: 'TYRES' }[kind]}</span></button>`;
   }).join('');
   for (const b of P.querySelectorAll('.pick')) tap(b, () => openPicker(b.dataset.kind, sk));
@@ -5821,7 +5823,7 @@ function openPicker(kind, sk) {
   const grid = D.querySelector('#pickGrid');
   for (const it of items) {
     const b = el('button', (kind === 'logo' ? 'st' : 'sw' + (kind === 'light' ? ' glow' : '')) + (it.on ? ' on' : '') + (it.crate ? ' crt' : ''), it.own ? '' : it.crate ? '<span class="price crate"><img src="ui/crate-paint.png?v=2" alt=""></span>' : `<span class="price"><i class="coin"></i>${it.cost}</span>`);
-    if (kind === 'logo') b.style.backgroundImage = `url(${logoIconURL(it.id, sk.light)})`; else b.style.setProperty('--c', it.color);
+    if (kind === 'logo') b.style.backgroundImage = `url(${logoIconURL(it.id, sk.light)})`; else b.style.setProperty('--c', kind === 'body' ? swatchCSS(it.color) : it.color);   // (v283: metal paints show brushed metal)
     b.title = it.name; tap(b, () => { closeDialog(); buy(kind, it); }); grid.appendChild(b);
   }
   tap(D.querySelector('#pickClose'), () => { sfx.click(); closeDialog(); });
@@ -5862,7 +5864,7 @@ function goGarage() {
   if (BASE.dk) {
     const sk = GARAGE_VEH === 'ship' ? shipSkin() : { ...DEFAULT_SKIN, ...(K2.skin || {}) };
     drawPicks(sk);
-    BODY_COLORS.forEach((c) => { const cost = c.color === DEFAULT_SKIN.body ? 0 : 100, own = K2.bodiesOwned.includes(c.color), b = el('button', 'sw' + (sk.body === c.color ? ' on' : ''), own ? '' : `<span class="price"><i class="coin"></i>${cost}</span>`); b.style.setProperty('--c', c.color); b.title = c.name; tap(b, () => buy('body', { ...c, cost })); sw.appendChild(b); });
+    BODY_COLORS.forEach((c) => { const cost = c.color === DEFAULT_SKIN.body ? 0 : 100, own = K2.bodiesOwned.includes(c.color), b = el('button', 'sw' + (sk.body === c.color ? ' on' : ''), own ? '' : `<span class="price"><i class="coin"></i>${cost}</span>`); b.style.setProperty('--c', swatchCSS(c.color)); b.title = c.name; tap(b, () => buy('body', { ...c, cost })); sw.appendChild(b); });
     LIGHT_COLORS.forEach((c, i) => { const cost = i ? 60 : 0, own = K2.lightsOwned.includes(c.color), b = el('button', 'sw glow' + (sk.light === c.color ? ' on' : ''), own ? '' : `<span class="price"><i class="coin"></i>${cost}</span>`); b.style.setProperty('--c', c.color); b.title = c.name; tap(b, () => buy('light', { ...c, cost })); $('lightRow').appendChild(b); });
     LOGOS.forEach((lg) => { const cost = lg.id === 'fox' || lg.id === 'none' ? 0 : 60, own = K2.logosOwned.includes(lg.id), b = el('button', 'st' + (sk.logo === lg.id ? ' on' : ''), own ? '' : `<span class="price"><i class="coin"></i>${cost}</span>`); b.style.backgroundImage = `url(${logoIconURL(lg.id, sk.light)})`; b.title = lg.name; tap(b, () => buy('logo', { ...lg, cost })); $('logos').appendChild(b); });
   }

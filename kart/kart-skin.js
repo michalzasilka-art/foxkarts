@@ -19,9 +19,9 @@
 export const DEFAULT_SKIN = { body: '#7a28dc', light: '#ffa424', logo: 'fox', logoColor: '#ffa424' };
 export const DEFAULT_HELMET = { main: '#6a2ad0', accent: '#ff9a1e', light: '#ff7a3a', logo: 'fox', logoColor: '#ff7a3a' };
 export const BODY_COLORS = [
-  { name: 'Racing Red', color: '#ff0000' }, { name: 'Coral', color: '#ff6b52' }, { name: 'Sunset Orange', color: '#ff7a1e' }, { name: 'Amber', color: '#ffa32b' }, { name: 'Gold', color: '#f0b428' },
-  { name: 'Sunshine', color: '#ffe14a' }, { name: 'Chartreuse', color: '#b6e02a' }, { name: 'Lime', color: '#5ad04a' }, { name: 'Forest', color: '#2f9e4f' }, { name: 'Mint', color: '#7fe3c0' },
-  { name: 'Teal', color: '#16b8a8' }, { name: 'Cyan', color: '#22c9e8' }, { name: 'Sky Blue', color: '#2a8cff' }, { name: 'Royal Blue', color: '#2a4ae8' }, { name: 'Indigo', color: '#4426b8' },
+  { name: 'Metal Red', color: '#df0707' }, { name: 'Coral', color: '#ff6b52' }, { name: 'Sunset Orange', color: '#ff7a1e' }, { name: 'Amber', color: '#ffa32b' }, { name: 'Gold', color: '#f0b428' },
+  { name: 'Sunshine', color: '#ffe14a' }, { name: 'Chartreuse', color: '#b6e02a' }, { name: 'Metal Green', color: '#2b8e72' }, { name: 'Forest', color: '#2f9e4f' }, { name: 'Mint', color: '#7fe3c0' },
+  { name: 'Teal', color: '#16b8a8' }, { name: 'Cyan', color: '#22c9e8' }, { name: 'Sky Blue', color: '#2a8cff' }, { name: 'Metal Blue', color: '#1853a0' }, { name: 'Indigo', color: '#4426b8' },
   { name: 'Foxino Purple', color: '#7a28dc' }, { name: 'Violet', color: '#a84ae8' }, { name: 'Lavender', color: '#c9a6f5' }, { name: 'Bubblegum', color: '#ff5db1' }, { name: 'Magenta', color: '#e8238c' },
   { name: 'Snow White', color: '#e8ecf4' }, { name: 'Stone Grey', color: '#9aa0aa' }, { name: 'Gunmetal', color: '#5a6372' }, { name: 'Midnight', color: '#2a2e5a' }, { name: 'Chocolate', color: '#8a5a32' },
 ];
@@ -160,18 +160,73 @@ function cleanGeometry(THREE, mesh, B, { keepLights = true, minIsland = 30 } = {
   return g;
 }
 const cleanMats = new Map();
-// (v281, the user: the kart's red must be exactly #ff0000) the game's filmic tone mapping turns a pure red paint into a
-// salmon orange on screen (about 249,105,77), so an EXACT paint skips the tone mapping and shows its own colour
-// (lit = #ff0000, in shadow a darker pure red). Every other paint keeps the tuned filmic look.
-const EXACT = new Set(['#ff0000']);
-const exactPaint = (c) => EXACT.has(String(c).toLowerCase());
+// ---- (v283, the user: "make the green, red and blue this metal style, exact colour, so it has contrast") ----
+// BRUSHED METAL PAINTS. Each takes its colours straight from the user's brushed-metal picture (sampled: the darkest 1 %,
+// the middle, the brightest 10 % and the top 0.5 % highlight). The shader keeps the game's lighting only as a hint
+// and paints every pixel from that palette: dark where the panel faces the floor or sits in shadow, the middle tone,
+// and bright bands + highlights where it "reflects" a studio of long light strips (a horizon strip, a softer upper
+// strip and two tall soft boxes, so the bands slide over the bodywork as the kart turns). Fine brushed lines run front
+// to back (they depend on the model's x and y only), fading out when they would be smaller than a pixel. No tone
+// mapping, so the colours on screen are the picture's. (v281's flat #ff0000 red became Metal Red.)
+export const METALS = {
+  '#df0707': { name: 'Metal Red',   stops: ['#640101', '#900302', '#df0707', '#e85959'] },
+  '#1853a0': { name: 'Metal Blue',  stops: ['#030b1e', '#092963', '#1853a0', '#2873bc'] },
+  '#2b8e72': { name: 'Metal Green', stops: ['#052414', '#0f4e36', '#2b8e72', '#55baa0'] },
+};
+export const metalOf = (c) => METALS[String(c || '').toLowerCase()] || null;
+// a swatch for the paint pickers: the metal as a brushed gradient, any other paint as its flat colour
+export const swatchCSS = (c) => { const M = metalOf(c); if (!M) return c; const [d, m, b, h] = M.stops;
+  return `repeating-linear-gradient(0deg,rgba(255,255,255,.07) 0 1px,rgba(0,0,0,.08) 1px 2px,transparent 2px 4px),linear-gradient(165deg,${d} 0%,${m} 26%,${b} 44%,${h} 50%,${b} 56%,${m} 74%,${d} 100%)`; };
+const METAL_VERT = '#include <begin_vertex>\nvMtlPos = transformed * vec3(length(modelMatrix[0].xyz), length(modelMatrix[1].xyz), length(modelMatrix[2].xyz));';
+const METAL_FRAG = `
+  {
+    // the studio: what this pixel would reflect (world space)
+    vec3 mV = normalize(vViewPosition), mR = inverseTransformDirection(reflect(-mV, normal), viewMatrix);
+    float my = mR.y, maz = atan(mR.x, mR.z);
+    float band = .16 + .08 * my
+      + 1.05 * exp(-pow((my - .06) / .085, 2.))
+      + .42 * exp(-pow((my - .52) / .15, 2.))
+      + .6 * pow(max(0., cos(2. * maz + .7)), 14.) * smoothstep(-.15, .3, my);
+    band *= mix(.4, 1., smoothstep(-.3, .02, my));
+    // the game's own light on a white surface: shadows and the sun's side still count
+    float mLum = dot(outgoingLight, vec3(.2126, .7152, .0722)), shade = 1. - exp(-mLum * .9);
+    float t = clamp(band * .78 + shade * .42 - .2, 0., 1.);
+    vec3 mc = t < .45 ? mix(uMtl0, uMtl1, t / .45) : t < .82 ? mix(uMtl1, uMtl2, (t - .45) / .37) : mix(uMtl2, uMtl3, (t - .82) / .18);
+    // brushed lines along the kart (front to back), fading out below a pixel
+    vec2 mp = vMtlPos.xy;
+    float f1 = 150., fw = max(length(fwidth(mp)) * f1, 1e-4), fade = clamp(1.7 - fw, 0., 1.);
+    float s = 1. + .34 * fade * (mtlNoise(mp * f1) - .5) + .18 * (mtlNoise(vec2(mp.x * 30., mp.y * 30.) + 7.3) - .5);
+    outgoingLight = mc * s;
+  }
+  #include <opaque_fragment>`;
+const METAL_HEAD = `varying vec3 vMtlPos; uniform vec3 uMtl0; uniform vec3 uMtl1; uniform vec3 uMtl2; uniform vec3 uMtl3;
+float mtlHash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+float mtlNoise(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3. - 2. * f);
+  return mix(mix(mtlHash(i), mtlHash(i + vec2(1., 0.)), f.x), mix(mtlHash(i + vec2(0., 1.)), mtlHash(i + vec2(1., 1.)), f.x), f.y); }
+`;
+// turn a material into a brushed-metal paint (in place): white, matte, no tone mapping, the palette in the shader
+export function makeMetal(THREE, mat, c) {
+  const M = metalOf(c); if (!M) return mat;
+  const U = M.stops.map((h) => ({ value: new THREE.Color(h) }));   // (sRGB in, linear for the shader; the output turns it back)
+  mat.color = new THREE.Color('#ffffff'); mat.map = null; mat.roughness = 1; mat.metalness = 0; mat.toneMapped = false;
+  if ('clearcoat' in mat) mat.clearcoat = 0; if ('specularIntensity' in mat) mat.specularIntensity = 0;
+  mat.envMapIntensity = .6;
+  mat.onBeforeCompile = (sh) => {
+    U.forEach((u, i) => { sh.uniforms['uMtl' + i] = u; });
+    sh.vertexShader = 'varying vec3 vMtlPos;\n' + sh.vertexShader.replace('#include <begin_vertex>', METAL_VERT);
+    sh.fragmentShader = METAL_HEAD + sh.fragmentShader.replace('#include <opaque_fragment>', METAL_FRAG);
+  };
+  mat.customProgramCacheKey = () => 'fk-metal-1';
+  // a copy stays metal (three.js copies drop onBeforeCompile; the lobby clones the driver's helmet to clip the feet)
+  mat.userData.metal = c; mat.clone = function () { return makeMetal(THREE, THREE.Material.prototype.clone.call(this), c); };
+  mat.needsUpdate = true; return mat;
+}
 // the six materials of a clean model: [paint, carbon, trim, accent, white, light]
 function cleanMaterials(THREE, main, accent, light, { gloss = false } = {}) {
   const k = main + accent + light + gloss; if (cleanMats.has(k)) return cleanMats.get(k);
   const S = (o) => new THREE.MeshStandardMaterial({ side: THREE.DoubleSide, ...o });
   const m = [
-    // (an exact paint also drops the clear coat and most of the sheen: their white reflection made the red look pink)
-    exactPaint(main) ? new THREE.MeshPhysicalMaterial({ color: main, roughness: .5, metalness: 0, specularIntensity: .15, side: THREE.DoubleSide, toneMapped: false })
+    metalOf(main) ? makeMetal(THREE, new THREE.MeshStandardMaterial({ side: THREE.DoubleSide }), main)
     : gloss ? new THREE.MeshPhysicalMaterial({ color: main, roughness: .32, metalness: .1, clearcoat: 1, clearcoatRoughness: .12, side: THREE.DoubleSide }) : new THREE.MeshPhysicalMaterial({ color: main, roughness: .5, metalness: .05, clearcoat: .35, clearcoatRoughness: .45, side: THREE.DoubleSide }),
     S({ color: '#16171e', roughness: .62, metalness: .25 }),
     S({ color: '#5a6070', roughness: .3, metalness: .75 }),
@@ -223,7 +278,7 @@ function wheelGeos(THREE) {
 }
 const glowMats = new Map(), capMats = new Map();
 const glowMat = (THREE, c) => glowMats.get(c) || glowMats.set(c, new THREE.MeshStandardMaterial({ color: c, emissive: c, emissiveIntensity: 1, roughness: .4 })).get(c);
-const capMat = (THREE, c) => capMats.get(c) || capMats.set(c, (exactPaint(c) ? new THREE.MeshPhysicalMaterial({ color: c, roughness: .4, metalness: 0, specularIntensity: .15, toneMapped: false }) : new THREE.MeshStandardMaterial({ color: c, roughness: .3, metalness: .3 }))).get(c);
+const capMat = (THREE, c) => capMats.get(c) || capMats.set(c, (metalOf(c) ? makeMetal(THREE, new THREE.MeshStandardMaterial(), c) : new THREE.MeshStandardMaterial({ color: c, roughness: .3, metalness: .3 }))).get(c);   // (v283: a metal paint's hub caps are brushed metal too)
 // (v5) a detailed wheel: a rounded tyre with 24 raised tread blocks and a yellow mark, a sidewall ring, a dark dished
 // rim with six split spokes, five lug nuts and a centre cap in the body colour, a glowing ring in the light colour; the
 // brake disc and the calliper (light colour) sit on the group, so they steer but do not spin
