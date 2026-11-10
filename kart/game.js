@@ -1029,119 +1029,65 @@ function wheelInKart() {
   if (!disc.geometry.boundingBox) disc.geometry.computeBoundingBox();
   const bb = disc.geometry.boundingBox, c = bb.getCenter(new THREE.Vector3()).applyMatrix4(disc.matrixWorld), q = disc.getWorldQuaternion(new THREE.Quaternion());
   const a = BASE.steerAxis.clone().applyQuaternion(q).normalize(), sz = bb.getSize(new THREE.Vector3()).multiply(disc.getWorldScale(new THREE.Vector3()));
-  // (v281) the rim itself: its outer radius and the thickness of the tube, so the fingers can wrap round it
+  // (v281) the rim itself: its outer radius and the thickness of the tube, so the fingers can bend round it
   const P = disc.geometry.attributes.position, v = new THREE.Vector3(), rh = [];
   for (let i = 0; i < P.count; i++) { v.fromBufferAttribute(P, i).applyMatrix4(disc.matrixWorld).sub(c); const h = v.dot(a); rh.push([v.addScaledVector(a, -h).length(), h]); }
   const Rmax = Math.max(...rh.map((x) => x[0])), rim = rh.filter((x) => x[0] > Rmax - .05);
-  const tr = clamp(Math.max(...rim.map((x) => Math.abs(x[1]))), .012, .04);
+  const tr = clamp(Math.max(...rim.map((x) => Math.abs(x[1]))), .012, .06);
   return (BASE.wheelK = { c, a, R: Math.max(sz.x, sz.y, sz.z) / 2 - .03, Rc: Rmax - tr, tr });
 }
-/* (v281, the user: "make his palms and fingers around the steering wheel so it looks better") the baked paws only rested
-   beside the rim with the fingers spread. Now each paw is tucked away into a fist that really holds the rim: a palm on
-   the driver's side, four curled fingers wrapped over the front and round the inside, a thumb along the top — in the
-   colour of the character's own paw (its texture), part of the same mesh, so it turns with the wheel like the arm. */
-function gripFist(W, G, u, n, up, fr) {
-  const t = new THREE.Vector3().crossVectors(u, n), top = Math.sign(t.dot(up)) || 1, rho = W.tr + fr * .95;
-  const B = new THREE.Matrix4().makeBasis(u, n, t), parts = [], at = (phi, r, dt) => G.clone().addScaledVector(u, Math.cos(phi) * r).addScaledVector(n, Math.sin(phi) * r).addScaledVector(t, dt);
-  const place = (geo, dt = 0) => { geo.applyMatrix4(B); geo.translate(G.x + t.x * dt, G.y + t.y * dt, G.z + t.z * dt); parts.push(geo.index ? geo.toNonIndexed() : geo); };
-  const D = Math.PI / 180, fw = fr * 1.32, f0 = -205 * D, f1 = 62 * D;
-  // the fingers: the outer two a little thinner and shorter
-  [[-1.5, .86, 22], [-.5, 1, 0], [.5, 1, 0], [1.5, .9, 14]].forEach(([k, s, short]) => {
-    const r = fr * s, a0 = f0 + short * D, geo = new THREE.TorusGeometry(rho, r, 7, 16, f1 - a0); geo.rotateZ(a0); place(geo, k * fw);
-    const tip = new THREE.SphereGeometry(r, 8, 6); tip.translate(Math.cos(a0) * rho, Math.sin(a0) * rho, 0); place(tip, k * fw);
-    const kn = new THREE.SphereGeometry(r * 1.12, 8, 6); kn.translate(Math.cos(-28 * D) * rho, Math.sin(-28 * D) * rho, 0); place(kn, k * fw);
-  });
-  // the palm / back of the paw on the driver's side of the rim, where the wrist comes in
-  const pa = 58 * D, palm = new THREE.SphereGeometry(1, 12, 9); palm.scale(fr * 1.55, fr * 2.4, fw * 2.75); palm.rotateZ(pa - Math.PI / 2);
-  palm.translate(Math.cos(pa) * (rho + fr * .25), Math.sin(pa) * (rho + fr * .25), 0); place(palm, 0);
-  // the thumb: round the driver's side of the rim, above the fingers
-  const th0 = 70 * D, th1 = 165 * D, thumb = new THREE.TorusGeometry(rho, fr * 1.08, 7, 10, th1 - th0); thumb.rotateZ(th0); place(thumb, top * fw * 2.35);
-  const tt = new THREE.SphereGeometry(fr * 1.08, 8, 6); tt.translate(Math.cos(th1) * rho, Math.sin(th1) * rho, 0); place(tt, top * fw * 2.35);
-  const tb = new THREE.SphereGeometry(fr * 1.35, 8, 6); tb.translate(Math.cos(th0) * rho, Math.sin(th0) * rho, 0); place(tb, top * fw * 1.9);
-  return parts;
-}
-// the colour the paws are painted with: under the paw triangles, the colour that covers the most area
-function pawUV(map, geo, idx) {
-  const img = map && map.image, uvA = geo.attributes.uv, P = geo.attributes.position; if (!img || !uvA || !idx.length) return null;
-  let px = null; try { const w = img.width, h = img.height, cv = document.createElement("canvas"); cv.width = w; cv.height = h; const x = cv.getContext("2d"); x.drawImage(img, 0, 0); px = { d: x.getImageData(0, 0, w, h).data, w, h }; } catch (e) { return null; }
-  const bins = new Map(), tris = new Set(idx.map((i) => i - (i % 3))), A = new THREE.Vector3(), B = new THREE.Vector3(), C = new THREE.Vector3();
-  for (const t of tris) {
-    A.fromBufferAttribute(P, t); B.fromBufferAttribute(P, t + 1); C.fromBufferAttribute(P, t + 2); const area = B.sub(A).cross(C.sub(A)).length();
-    let u = (uvA.getX(t) + uvA.getX(t + 1) + uvA.getX(t + 2)) / 3 % 1, v = (uvA.getY(t) + uvA.getY(t + 1) + uvA.getY(t + 2)) / 3 % 1; if (u < 0) u++; if (v < 0) v++;
-    const X = Math.min(px.w - 1, Math.floor(u * px.w)), Y = Math.min(px.h - 1, Math.floor((map.flipY ? 1 - v : v) * px.h)), o = (Y * px.w + X) * 4;
-    const k = (px.d[o] >> 5) + "," + (px.d[o + 1] >> 5) + "," + (px.d[o + 2] >> 5), Bn = bins.get(k) || { a: 0, uv: [u, v] }; Bn.a += area; bins.set(k, Bn);
-  }
-  let best = null; for (const Bn of bins.values()) if (!best || Bn.a > best.a) best = Bn; return best ? best.uv : null;
-}
-function gripWheel(geo, fit, mt, S, map) {
-  const W = wheelInKart(); if (!W || !BASE.seatShift || (window.FK && window.FK.gripOff)) return geo;   // (FK.gripOff: test hook, the paws as they were)
-  const P = geo.attributes.position, n = P.count, seat = new THREE.Vector3(...fit.seat).add(BASE.seatShift), hips = new THREE.Vector3(...mt.hips);
+/* (v297, the user: "his hands — don't make up a new model of fingers, make it as similar to the real model; don't do the
+   others for now") Foxino's own paw holds the rim: his fingers, which stuck straight out past the rim, are bent round it
+   (a bend about the rim's tube: each point past the top of the rim turns by the distance it has gone over the radius),
+   sitting on the rim's surface. Same mesh, same texture. Only Foxino for now; the others keep their pose as it was. */
+const GRIP_BEND = { foxino: { lift: .016, maxPhi: 2.4 } };
+function gripWheel(geo, fit, mt, S, id) {
+  const B = GRIP_BEND[id], W = wheelInKart(); if (!B || !W || !BASE.seatShift || (window.FK && window.FK.gripOff) || /[?&]grip=0/.test(location.search)) return geo;   // (FK.gripOff / ?grip=0: test switches, the paws as they were)
+  const P = geo.attributes.position, NA = geo.attributes.normal, n = P.count, seat = new THREE.Vector3(...fit.seat).add(BASE.seatShift), hips = new THREE.Vector3(...mt.hips);
   const toK = (v) => v.clone().sub(hips).multiplyScalar(S).add(seat), toM = (k) => k.sub(seat).multiplyScalar(1 / S).add(hips);
   const up = new THREE.Vector3(0, 1, 0), nd = W.a.clone().multiplyScalar(Math.sign(W.a.dot(seat.clone().sub(W.c))) || 1);   // (nd: from the wheel towards the driver)
   const e2 = up.clone().addScaledVector(W.a, -up.dot(W.a)).normalize(), e1 = new THREE.Vector3().crossVectors(e2, W.a).normalize();
-  const K = [], rel = new THREE.Vector3(), v = new THREE.Vector3();
+  const K = [], rel = new THREE.Vector3(), v = new THREE.Vector3(), Q = new THREE.Quaternion();
   for (let i = 0; i < n; i++) K.push(toK(v.fromBufferAttribute(P, i)));
   const rimD = (k) => { rel.copy(k).sub(W.c); const h = rel.dot(W.a), r = rel.addScaledVector(W.a, -h).length(); return Math.hypot(r - W.Rc, h); };
-  // the two paws: the points close to the rim, left and right of the wheel's middle
-  const fists = [], uvA = geo.attributes.uv;
+  let bent = 0;
   for (const s of [-1, 1]) {
-    const core = []; for (let i = 0; i < n; i++) { const k = K[i]; if (k.y > W.c.y - .07 && rimD(k) < .06 && Math.sign(rel.copy(k).sub(W.c).dot(e1)) === s) core.push(i); }
+    // the paw: the points close to the rim on this side; G = the rim under it
+    const core = []; for (let i = 0; i < n; i++) { const k = K[i]; if (k.y > W.c.y - .07 && rimD(k) < .07 && Math.sign(rel.copy(k).sub(W.c).dot(e1)) === s) core.push(i); }
     if (core.length < 20) continue;
-    const m = new THREE.Vector3(); for (const i of core) m.add(rel.copy(K[i]).sub(W.c)); m.addScaledVector(W.a, -m.dot(W.a)).normalize();
-    const u = m, G = W.c.clone().addScaledVector(u, W.Rc), nn = nd.clone().addScaledVector(u, -nd.dot(u)).normalize();
-    // which way the forearm leaves the paw (towards the elbow)
-    const fa = new THREE.Vector3(); let fc = 0; for (let i = 0; i < n; i++) { const d = rel.copy(K[i]).sub(G), dd = d.length(); if (dd > .16 && dd < .26 && d.dot(nn) > .06 && K[i].y > G.y - .05) { fa.add(d.normalize()); fc++; } }
-    if (fc) fa.normalize(); else fa.copy(nn);   // (towards the elbow: the side of the driver, above the grip)
-    // the paw's own colour: the texture spot most of the paw is painted with
-    let uv = null; if (uvA) { const bins = new Map(); for (const i of core) { const kk = Math.round(uvA.getX(i) * 40) + ',' + Math.round(uvA.getY(i) * 40); const b = bins.get(kk) || { c: 0, u: 0, v: 0 }; b.c++; b.u += uvA.getX(i); b.v += uvA.getY(i); bins.set(kk, b); } let best = null; for (const b of bins.values()) if (!best || b.c > best.c) best = b; uv = [best.u / best.c, best.v / best.c]; }
-    let ar = 0, ac = 0; for (let i = 0; i < n; i++) { const d = rel.copy(K[i]).sub(G), al = d.dot(fa); if (al > .09 && al < .14 && d.length() < .2) { ar += d.addScaledVector(fa, -al).length(); ac++; } }
-    const arm = ac ? ar / ac : .03;
-    fists.push({ G, u, nn, fa, uv, core, arm });
-  }
-  if (!fists.length) return geo;
-  { const tex = pawUV(map, geo, fists.flatMap((F) => F.core.filter((i) => rel.copy(K[i]).sub(F.G).dot(F.fa) < 0))); if (tex) for (const F of fists) F.uv = tex; }   // (one colour for both: what the fingers past the wrist are painted with)
-  // tuck the old paws into the fists: everything near the grip that is not up the forearm folds in towards it
-  for (let i = 0; i < n; i++) for (const F of fists) {
-    const d = rel.copy(K[i]).sub(F.G), dist = d.length(); if (dist > .36) continue;
-    // (beyond the wrist: on the far side of a plane across the forearm; a big robot hand reaches further, so up to 0.36)
-    const along = d.dot(F.fa), f = (1 - smoothstep(.02, .075, along)) * (1 - smoothstep(.29, .36, dist)) * smoothstep(F.G.y - .22, F.G.y - .14, K[i].y);
-    if (f > 0) K[i].copy(F.G).addScaledVector(d, 1 - .86 * f);
-  }
-  // the new fists, in model space, with the paw's colour
-  const extra = []; for (const F of fists) { F.fr = clamp(fists.reduce((s, X) => s + X.arm, 0) / fists.length * .45, .0135, .02); for (const p of gripFist(W, F.G, F.u, F.nn, up, F.fr)) extra.push([p, F.uv]); }   // (the fingers as thick as about half the forearm)
-  let m2 = 0; for (const [p] of extra) m2 += p.attributes.position.count;
-  const out = new THREE.BufferGeometry(), N = n + m2;
-  for (const name of Object.keys(geo.attributes)) {
-    const A = geo.attributes[name], sz = A.itemSize, arr = new Float32Array(N * sz); arr.set(A.array.subarray(0, n * sz));
-    let o = n;
-    for (const [p, uv] of extra) {
-      const c = p.attributes.position.count;
-      for (let j = 0; j < c; j++, o++) {
-        if (name === 'position') { v.fromBufferAttribute(p.attributes.position, j); toM(v); arr[o * 3] = v.x; arr[o * 3 + 1] = v.y; arr[o * 3 + 2] = v.z; }
-        else if (name === 'normal') { arr[o * 3] = p.attributes.normal.getX(j); arr[o * 3 + 1] = p.attributes.normal.getY(j); arr[o * 3 + 2] = p.attributes.normal.getZ(j); }
-        else if (name === 'uv' && uv) { arr[o * 2] = uv[0]; arr[o * 2 + 1] = uv[1]; }
-        else for (let k = 0; k < sz; k++) arr[o * sz + k] = A.array[k] ?? 1;   // (any other attribute: the first value, e.g. a vertex colour)
-      }
+    const u = new THREE.Vector3(); for (const i of core) u.add(rel.copy(K[i]).sub(W.c)); u.addScaledVector(W.a, -u.dot(W.a)).normalize();
+    const G = W.c.clone().addScaledVector(u, W.Rc), nn = nd.clone().addScaledVector(u, -nd.dot(u)).normalize(), t = new THREE.Vector3().crossVectors(u, nn);
+    // the forearm comes from the driver's side, above the grip; the fingers point the other way, across the rim
+    const fa = new THREE.Vector3(); for (let i = 0; i < n; i++) { const d = rel.copy(K[i]).sub(G), dd = d.length(); if (dd > .16 && dd < .26 && d.dot(nn) > .06 && K[i].y > G.y - .05) fa.add(d.normalize()); }
+    if (fa.lengthSq() < 1e-6) continue; fa.normalize();
+    const dir = fa.clone().negate().addScaledVector(t, fa.dot(t)).normalize(), perp = new THREE.Vector3().crossVectors(t, dir).normalize(), axis = t.clone().negate();
+    const ys = []; for (let i = 0; i < n; i++) { const d = rel.copy(K[i]).sub(G); if (d.length() > .3) continue; const x = d.dot(dir), y = d.dot(perp); if (x > .02 && y > -.03) ys.push(y); }
+    if (ys.length < 20) continue; ys.sort((p, q) => p - q); const rho = ys[ys.length >> 1];
+    for (let i = 0; i < n; i++) {
+      const d = rel.copy(K[i]).sub(G); if (d.length() > .3) continue;
+      const x = d.dot(dir), y = d.dot(perp), z = d.dot(t); if (x <= 0 || y <= -.03) continue;
+      const a = x / rho, phi = Math.min(B.maxPhi, a); Q.setFromAxisAngle(axis, phi);
+      const k = G.clone().addScaledVector(t, z).add(perp.clone().multiplyScalar(y + B.lift * Math.min(1, x / .03)).applyQuaternion(Q));
+      if (a > B.maxPhi) k.add(dir.clone().applyQuaternion(Q).multiplyScalar((a - B.maxPhi) * rho));   // (beyond the curl: straight on)
+      K[i].copy(k); bent++;
+      if (NA) { v.fromBufferAttribute(NA, i).applyQuaternion(Q); NA.setXYZ(i, v.x, v.y, v.z); }   // (the scale is uniform: model-space normals turn the same way)
     }
-    out.setAttribute(name, new THREE.BufferAttribute(arr, sz));
   }
-  for (let i = 0; i < n; i++) { v.copy(K[i]); toM(v); out.attributes.position.setXYZ(i, v.x, v.y, v.z); }
-  // (v209) the hands turn with the wheel: weight 1 on the fists and the paws at the rim, fading to 0 up the forearm
-  const w = new Float32Array(N).fill(1);
-  for (let i = 0; i < n; i++) w[i] = K[i].y > W.c.y - .07 ? 1 - smoothstep(.06, .15, rimD(K[i])) : 0;
-  const Q = new THREE.Quaternion(), PA = out.attributes.position;
-  out.morphAttributes.position = GRIP_A.map((ang) => {
-    const arr = new Float32Array(N * 3);
-    for (let i = 0; i < N; i++) {
-      v.fromBufferAttribute(PA, i);
+  if (!bent) return geo;
+  for (let i = 0; i < n; i++) { v.copy(K[i]); toM(v); P.setXYZ(i, v.x, v.y, v.z); }
+  // (v209) the paws turn with the wheel: weight 1 at the rim, fading to 0 up the forearm
+  const w = new Float32Array(n); for (let i = 0; i < n; i++) w[i] = K[i].y > W.c.y - .07 ? 1 - smoothstep(.06, .15, rimD(K[i])) : 0;
+  geo.morphAttributes.position = GRIP_A.map((ang) => {
+    const arr = new Float32Array(n * 3);
+    for (let i = 0; i < n; i++) {
+      v.fromBufferAttribute(P, i);
       if (w[i] > 0) { const k = toK(v).sub(W.c); Q.setFromAxisAngle(W.a, ang * w[i]); k.applyQuaternion(Q).add(W.c); v.copy(toM(k)); }
       arr[i * 3] = v.x; arr[i * 3 + 1] = v.y; arr[i * 3 + 2] = v.z;
     }
     return new THREE.Float32BufferAttribute(arr, 3);
   });
-  out.morphTargetsRelative = false; out.computeBoundingSphere(); out.computeBoundingBox();
-  if (window.FK) (window.FK.gripDbg = window.FK.gripDbg || {})[mt.hips.join()] = { fists: fists.map((F) => ({ G: F.G.toArray().map((x) => +x.toFixed(3)), fa: F.fa.toArray().map((x) => +x.toFixed(2)), arm: +F.arm.toFixed(4), fr: +F.fr.toFixed(4), nn: F.nn.toArray().map((x) => +x.toFixed(2)), uv: F.uv })), Rc: W.Rc, tr: W.tr };
-  return out;
+  geo.morphTargetsRelative = false; P.needsUpdate = true; if (NA) NA.needsUpdate = true; geo.computeBoundingSphere(); geo.computeBoundingBox();
+  return geo;
 }
 // the wheel's turn → the four morph weights (piecewise between the targets)
 function gripTurn(mesh, a) {
@@ -1160,7 +1106,7 @@ function driverBody(ch, skin) {
     const fit = CHAR_FIT[ch.id], mt = OFFICIAL[ch.id], src = BASE.off[ch.id], S = fit.s;
     // the whole head comes off at the neck (the helmet is closed underneath): nothing of the face can show
     const body = new THREE.Mesh(clipAbove(src.geometry, mt.neck[1] - .01, mt.neck[2] - .02), src.material); body.castShadow = true; body.scale.setScalar(S);
-    body.geometry = gripWheel(body.geometry, fit, mt, S, src.material && src.material.map); body.updateMorphTargets();   // (v209) the hands turn with the steering wheel
+    body.geometry = gripWheel(body.geometry, fit, mt, S, ch.id); body.updateMorphTargets();   // (v209) the hands turn with the steering wheel
     body.position.set(fit.seat[0] - mt.hips[0] * S, fit.seat[1] - mt.hips[1] * S, fit.seat[2] - mt.hips[2] * S);
     const H = fit.helm; let hm;
     if (BASE.helmet) { hm = BASE.helmet.clone(); dressHelmet(THREE, hm, look); hm.traverse((o) => { if (o.isMesh) o.castShadow = true; }); }
