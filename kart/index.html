@@ -763,11 +763,16 @@ body.portrait #lap{top:calc(64px + var(--st))!important}
 #stage[data-ctl=joy] #wheel,#stage[data-ctl=joy] #wheelHint{display:none!important}
 body:not(.portrait) #stage[data-ctl=joy] #pad{display:block;position:absolute;inset:0;background:none!important;border:0!important;box-shadow:none!important;pointer-events:none}
 body:not(.portrait) #stage[data-ctl=joy] #pad>i,body:not(.portrait) #stage[data-ctl=joy] #pad>b{display:none}
-#stage[data-ctl=joy] #stick{left:calc(18px + var(--sl))!important;right:auto!important;width:min(164px,33cqh)!important;height:auto!important;aspect-ratio:1!important;bottom:calc(18px + var(--sb))!important;border-radius:50%!important;background:radial-gradient(circle at 50% 38%,rgba(62,68,170,.55),rgba(18,20,64,.6) 72%)!important;border:3px solid rgba(255,255,255,.3)!important;box-shadow:inset 0 6px 14px rgba(0,0,0,.42)!important;pointer-events:auto}
+/* (v282, the user: "make the joystick radius bigger so the turning is more precise") the ring is about 1.5x bigger
+   (sideways 33cqh → 50cqh, upright 40vw → 56vw): the thumb travels further for the same turn; the knob stays about as big */
+#stage[data-ctl=joy] #stick{left:calc(18px + var(--sl))!important;right:auto!important;width:min(240px,50cqh)!important;height:auto!important;aspect-ratio:1!important;bottom:calc(18px + var(--sb))!important;border-radius:50%!important;background:radial-gradient(circle at 50% 38%,rgba(62,68,170,.55),rgba(18,20,64,.6) 72%)!important;border:3px solid rgba(255,255,255,.3)!important;box-shadow:inset 0 6px 14px rgba(0,0,0,.42)!important;pointer-events:auto}
 #stage[data-ctl=joy] #stick::before{content:"";position:absolute;top:19%;left:19%;right:19%;bottom:19%;inset:19%;width:auto;height:auto;margin:0;border-radius:50%;border:2px dashed rgba(255,255,255,.22);background:none}
 #stage[data-ctl=joy] #stick::after{display:none}
-#stage[data-ctl=joy] #knob{width:46%!important;height:auto!important;aspect-ratio:1!important}
-body.portrait #stage[data-ctl=joy] #stick{left:calc(16px + var(--sl))!important;right:auto!important;width:min(152px,40vw)!important;bottom:calc(20px + var(--sb))!important}
+#stage[data-ctl=joy] #knob{width:34%!important;height:auto!important;aspect-ratio:1!important}
+body.portrait #stage[data-ctl=joy] #stick{left:calc(16px + var(--sl))!important;right:auto!important;width:min(220px,56vw)!important;bottom:calc(20px + var(--sb))!important}
+/* (v282) the "Drag the joystick to steer" line sits just above the bigger ring, not across it */
+#stage[data-ctl=joy] #ctlHint{bottom:calc(30px + min(240px,50cqh) + var(--sb))!important}
+body.portrait #stage[data-ctl=joy] #ctlHint{bottom:calc(30px + min(220px,56vw) + var(--sb))!important}
 .spick{display:flex;gap:8px;margin-top:9px}
 .spick button{flex:1 1 0;display:flex;flex-direction:column;align-items:center;gap:5px;padding:9px 5px 7px;border-radius:16px;background:rgba(10,14,46,.5);border:3px solid rgba(255,255,255,.14);color:#cfe0ff;font-size:12px;letter-spacing:.03em}
 .spick button svg{width:100%;height:auto;max-width:80px}
@@ -1794,7 +1799,7 @@ addEventListener('unhandledrejection',function(e){if(window.FK&&FK.ready||window
 <script src="packages.js?v=1"></script>
 <script src="/shared/pack-picker.js?v=8"></script>
 <script type="importmap">{"imports":{"three":"./lib/three.module.min.js"}}</script>
-<link rel="modulepreload" href="lib/three.module.min.js"><link rel="modulepreload" href="game.js?v=281"><link rel="modulepreload" href="rear-wings.js?v=1"><link rel="modulepreload" href="models.js?v=52"><link rel="modulepreload" href="learn.js?v=52"><link rel="modulepreload" href="kart-skin.js?v=15"><link rel="modulepreload" href="lib/GLTFLoader.js?v=2"><link rel="modulepreload" href="lib/BufferGeometryUtils.js?v=2"><link rel="modulepreload" href="racers.js?v=2"><link rel="modulepreload" href="lib/RoomEnvironment.js?v=2">
-<script type="module" src="game.js?v=281"></script>
+<link rel="modulepreload" href="lib/three.module.min.js"><link rel="modulepreload" href="game.js?v=282"><link rel="modulepreload" href="rear-wings.js?v=1"><link rel="modulepreload" href="models.js?v=52"><link rel="modulepreload" href="learn.js?v=52"><link rel="modulepreload" href="kart-skin.js?v=15"><link rel="modulepreload" href="lib/GLTFLoader.js?v=2"><link rel="modulepreload" href="lib/BufferGeometryUtils.js?v=2"><link rel="modulepreload" href="racers.js?v=2"><link rel="modulepreload" href="lib/RoomEnvironment.js?v=2">
+<script type="module" src="game.js?v=282"></script>
 </body>
 </html>
