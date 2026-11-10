@@ -1664,6 +1664,38 @@ body.portrait .rtabs button{padding:5px 4px;font-size:15px}
 body.portrait #order .row .face{width:30px;height:30px}
 body.portrait #results .rpage{gap:6px}
 body.portrait #results .btns .btn{height:52px;font-size:20px!important}
+
+/* ---------- (v284, the user: "on some phone there is this bad layout") the race screen on an upright phone, in order
+   from the top: the HUD (place, coins, LAP, minimap) · the answer-gate card · Foxino's coach bubble · tips and the
+   steering hint · your kart · the controls. Before, the gate card sat over the LAP pill, the coach bubble over the gate
+   card and the tips and steering hint over the kart (worst on small screens such as a 305×562 phone with big display
+   zoom, or a phone browser inside Slack). ---------- */
+body.portrait #gq{top:calc(122px + var(--st,0px))}   /* under the LAP pill (it ends at 116px) */
+body.portrait #tutb{top:calc(250px + var(--st,0px))}   /* under the gate card */
+/* a NARROW phone (under 380px across): the HUD readouts are drawn smaller (zoom also scales their top/right), so the gate
+   card fits between the counters on the left and the minimap on the right; the pause and power-up buttons keep their size */
+@media (orientation:portrait) and (max-width:379px) {
+  body.portrait #pos,body.portrait #rcoins,body.portrait #pitb,body.portrait #standings,body.portrait #msgs{zoom:.78}
+  body.portrait #lap{zoom:.78;top:calc(76px + var(--st,0px))!important}   /* (×.78: 59px, under the pause button) */
+  body.portrait #mini{zoom:.78;top:calc(136px + var(--st,0px))}           /* (×.78: 106px, under the LAP pill) */
+  body.portrait #gq{top:calc(104px + var(--st,0px));padding:5px 8px 7px;gap:4px}
+  body.portrait #gq .gqw{font-size:22px}
+  body.portrait #gq .gql{gap:5px}
+  body.portrait #gq .gqt{width:44px;height:44px;font-size:28px;border-radius:11px}
+  body.portrait #tutb{top:calc(212px + var(--st,0px));gap:8px;padding:6px 10px 6px 6px;border-radius:16px;border-width:3px;font-size:15px;box-shadow:0 4px 0 var(--ink),0 10px 20px rgba(0,0,0,.3)}
+  body.portrait #tutb .tface{width:44px;height:44px}
+}
+/* a SHORT phone screen (up to 760px tall): the tips and the steering hint go in the band between the coach bubble and the
+   kart (lower down they lay over the kart); they share it, a tip first */
+@media (orientation:portrait) and (max-height:760px) {
+  body.portrait #tips{bottom:auto;top:calc(336px + var(--st,0px))}
+  body.portrait #stage[data-ctl] #ctlHint{bottom:auto!important;top:calc(336px + var(--st,0px))}
+  body.portrait #stage:has(#tips:not(:empty)) #ctlHint{visibility:hidden}
+}
+@media (orientation:portrait) and (max-height:760px) and (max-width:379px) {
+  body.portrait #tips{top:calc(278px + var(--st,0px))}
+  body.portrait #stage[data-ctl] #ctlHint{top:calc(278px + var(--st,0px))}
+}
 </style>
 </head>
 <body>
@@ -1799,7 +1831,7 @@ addEventListener('unhandledrejection',function(e){if(window.FK&&FK.ready||window
 <script src="packages.js?v=1"></script>
 <script src="/shared/pack-picker.js?v=8"></script>
 <script type="importmap">{"imports":{"three":"./lib/three.module.min.js"}}</script>
-<link rel="modulepreload" href="lib/three.module.min.js"><link rel="modulepreload" href="game.js?v=283"><link rel="modulepreload" href="rear-wings.js?v=1"><link rel="modulepreload" href="models.js?v=52"><link rel="modulepreload" href="learn.js?v=52"><link rel="modulepreload" href="kart-skin.js?v=18"><link rel="modulepreload" href="lib/GLTFLoader.js?v=2"><link rel="modulepreload" href="lib/BufferGeometryUtils.js?v=2"><link rel="modulepreload" href="racers.js?v=2"><link rel="modulepreload" href="lib/RoomEnvironment.js?v=2">
-<script type="module" src="game.js?v=283"></script>
+<link rel="modulepreload" href="lib/three.module.min.js"><link rel="modulepreload" href="game.js?v=284"><link rel="modulepreload" href="rear-wings.js?v=1"><link rel="modulepreload" href="models.js?v=52"><link rel="modulepreload" href="learn.js?v=52"><link rel="modulepreload" href="kart-skin.js?v=18"><link rel="modulepreload" href="lib/GLTFLoader.js?v=2"><link rel="modulepreload" href="lib/BufferGeometryUtils.js?v=2"><link rel="modulepreload" href="racers.js?v=2"><link rel="modulepreload" href="lib/RoomEnvironment.js?v=2">
+<script type="module" src="game.js?v=284"></script>
 </body>
 </html>

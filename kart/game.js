@@ -6451,7 +6451,8 @@ function rocketStart(R0) {
   const P = R0.player, d = performance.now() - startTap;
   if (d < 450 && startTaps <= 2) { giveBoost(P, 1.1, 1.45); sfx.turbo(2); toast('ROCKET START!', '#ff8a1e', 40); }
   else if (startTaps > 2) toast('Too many taps!\nTap once at GO!', '#ffb0b8', 26);   // one well-timed tap, not tapping all the time
-  else if (save.races < 4 && !R0.tips.rocket) { R0.tips.rocket = 1; setTimeout(() => { if (race === R0) toast('Tip: tap the screen\nat GO! for a rocket start', '#fff', 22); }, 3500); }
+  else if (save.races < 4 && !R0.tips.rocket && !R0.tut) { R0.tips.rocket = 1;   // (v284: not in the test drive, where the coach talks — on small phones it covered the kart)
+    setTimeout(() => { if (race === R0) toast('Tip: tap the screen\nat GO! for a rocket start', '#fff', 22); }, 3500); }
 }
 // (v170) the garage stop before the race: the crew comes out and works while you answer four of each
 function garageStop(R0, stayIn = false) {
