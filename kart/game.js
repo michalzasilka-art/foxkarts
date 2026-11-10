@@ -84,7 +84,7 @@ const TUNE = {
   // (v287, the user: "make the steering in the air less sensitive") in the air (a jump off a ramp or a fall) the kart
   // turned as fast as on the road, with no grip and no assist, so it landed crooked or in the wall: now 40 % of it.
   // The little hop that starts a drift is not affected.
-  airSteer: .4,
+  airSteer: 1,   // (v292, the user: "let that you can steer normally during the airtime") back to full
 };
 const LAPS0 = TUNE.laps, PIT_EVERY0 = TUNE.pitEvery, PIT_LAPS0 = TUNE.pitLaps;
 const STEP = .6;   // the spacing of the track's centre-line points (the road's half-width HALF is set per track)
@@ -257,7 +257,7 @@ const ico = (name, cls = 'ico') => `<img class="${cls}" src="ui/${name}.png?v=1"
      GAIN  — something you got (coins, a stamp, a map, a power-up, a boost, a shield…): a reward tab slides in on the left
      EVENT — a moment of the race (final lap, finish, the pit, the formation lap, a secret path, rocks…): a big banner
      TIP   — a hint or news about a rival: a small quiet pill low on the screen, one at a time */
-const GAIN_RX = /^(\+\d|NEW .*STAMP|NEW MAP|PASS LEVEL|GATES:|\+1 ENERGY|ENERGY IS FULL|ROCKET START|SUPER TURBO|TRICK! BOOST|SHIELD SAVED|STRONG |WEAK |RESCUE DRONE|BOOST!|WARM-UP|.*\+\d+ COINS?)/;
+const GAIN_RX = /^(\+\d|NEW .*STAMP|NEW MAP|PASS LEVEL|GATES:|\+1 ENERGY|ENERGY IS FULL|ROCKET START|SUPER TURBO|FLAME RING|SHIELD SAVED|STRONG |WEAK |RESCUE DRONE|BOOST!|WARM-UP|.*\+\d+ COINS?)/;
 const EVENT_RX = /(FINAL LAP|^LAP \d|FINISH|FORMATION LAP|PIT STOP|ROLL OUT|ON THE GRID|IN YOUR BOX|IN THE GARAGE|SECRET PATH|ROCKFALL|LOOK OUT|TO THE PITS|^GO!|NEW MAP!|^[A-Z ]+ PEAKS|^[A-Z ]+ ISLAND|^ROBO CITY|^GOLD MINES|^STAR LOOP)/;
 const plain = (s) => s.replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim();
 function toastKind(s) { const t = plain(s.split('\n')[0]).toUpperCase(); if (GAIN_RX.test(t)) return 'gain'; if (EVENT_RX.test(t)) return 'event'; return 'tip'; }
@@ -381,7 +381,7 @@ function openSettings(tab = 'game', onClose) {
         + `<div class="srow col"><div class="sl"><b>Steering assist</b><small id="asHelp"></small></div><div class="seg" id="asSeg"><button data-v="0">OFF</button><button data-v="1">LOW</button><button data-v="2">MEDIUM</button><button data-v="3">HIGH</button></div></div>`
         + `<div class="srow col"><div class="sl"><b>Controls side</b><small id="sideHelp"></small></div><div class="seg" id="sideSeg"><button data-v="left">LEFT</button><button data-v="right">RIGHT</button></div></div>`
         + (navigator.vibrate ? row('buzz', 'Vibration', 'A short buzz on bumps, hits and turbos') : '')
-        + `<div class="skeys"><b>Keyboard</b> W drive · A D steer · SHIFT drift · SPACE power-up · ESC pause<br><b>Xbox</b> RT or A gas · LT brake · stick or D-pad steer · LB/RB drift · X power-up · Y trick · Menu pause · B back<br><b>PlayStation</b> R2 or ✕ gas · L2 brake · stick or D-pad steer · L1/R1 drift · □ power-up · △ trick · Options pause · ○ back</div>`;
+        + `<div class="skeys"><b>Keyboard</b> W drive · A D steer · SHIFT drift · SPACE power-up · ESC pause<br><b>Xbox</b> RT or A gas · LT brake · stick or D-pad steer · LB/RB drift · X power-up · Menu pause · B back<br><b>PlayStation</b> R2 or ✕ gas · L2 brake · stick or D-pad steer · L1/R1 drift · □ power-up · Options pause · ○ back</div>`;
     })(),
     graphics: `<div class="srow col"><div class="sl"><b>Graphics quality</b><small id="gfxHelp"></small></div><div class="seg" id="gfxSeg"><button data-v="low">LOW</button><button data-v="default">DEFAULT</button><button data-v="high">HIGH</button></div></div>`,
     audio: row('music', 'Music', 'The music in the lobby and in races'),
@@ -1488,11 +1488,20 @@ const BOX_AT = [0.07, 0.22, 0.4, 0.54, 0.69, 0.84], ICE_AT = [0.14, 0.3, 0.47, 0
 const COIN_AT = [.04, .17, .26, .35, .5, .58, .65, .74, .8, .95];
 const RAMP_LEN = 4.6, RAMP_H = 1.15;
 const bendAt = (s) => Math.abs(wrapA(angleOf(at(s + 14).p) - angleOf(at(s - 14).p)));
-function straightest(f0, f1, busy) {
-  let best = (f0 + f1) / 2, bb = 9;
+const flatScore = (s) => bendAt(s) + Math.abs(slopeAt(Math.round(s / STEP))) * 3;   // flat and straight
+// (v292, the user: "make that there won't be jumps before the turn so you don't get into the wall") a jump is judged
+// by the road under the flight and just after the landing. A fast jump lands ~23 m after the ramp, flying straight:
+// the road's middle may drift only a little sideways from that line by then (m); and in the 20 m after the landing
+// there must be no sharp turn (how much the road turns over 28 m, in radians; a gentle curve, < .35, is fine — you
+// steer it). The ramp itself must be flat.
+const rampDrift = (s, to = 25) => { const a = at(s), h = angleOf(a.p), dx = Math.sin(h), dz = -Math.cos(h); let off = 0; for (let k = 5; k <= to; k += 5) { const q = at(s + k); off = Math.max(off, Math.abs((q.x - a.x) * dz - (q.z - a.z) * dx)); } return off; };
+const rampTurn = (s) => Math.max(bendAt(s + 30), bendAt(s + 40), bendAt(s + 50));
+const rampScore = (s) => rampDrift(s) + 8 * Math.max(0, rampTurn(s) - .35) + Math.abs(slopeAt(Math.round(s / STEP))) * 6;
+function straightest(f0, f1, busy, score = flatScore) {
+  let best = (f0 + f1) / 2, bb = 1e9;
   for (let f = f0; f <= f1; f += .004) {
     if (busy.some((a) => Math.min(Math.abs(a - f), 1 - Math.abs(a - f)) < .028)) continue;
-    const s = f * TRACK.L, b = bendAt(s) + Math.abs(slopeAt(Math.round(s / STEP))) * 3;   // flat and straight
+    const b = score(f * TRACK.L);
     if (b < bb) { bb = b; best = f; }
   }
   busy.push(best); return best;
@@ -1502,15 +1511,46 @@ function prepTrack(def) {
   TRACK = buildTrack(def); HALF = def.half;
   const tb = TRACK.pts.reduce((b, p) => ({ x0: Math.min(b.x0, p.x), x1: Math.max(b.x1, p.x), z0: Math.min(b.z0, p.z), z1: Math.max(b.z1, p.z) }), { x0: 1e9, x1: -1e9, z0: 1e9, z1: -1e9 });
   const busy = [0, ...BOX_AT.filter((f) => !inRoll(f)), ...ICE_AT.filter((f) => !inRoll(f))];
-  if (def.routes) for (let f = def.routes.f0 - .02; f <= def.routes.f1 + .021; f += .01) if (inRoutesF(f, def)) busy.push(f);   // (v197) the changing windows stay clear; the shared middle gets the same power-ups for every variant
+  const routeF = new Set();   // (v292: these keep pads and gates off the changing road; a jump may stand there, drawn on every variant)
+  if (def.routes) for (let f = def.routes.f0 - .02; f <= def.routes.f1 + .021; f += .01) if (inRoutesF(f, def)) { busy.push(f); routeF.add(f); }   // (v197) the changing windows stay clear; the shared middle gets the same power-ups for every variant
   if (def.rolls || def.bank) for (let f = 0; f < 1; f += .012) if (inRoll(f, .02)) busy.push(f);   // (nothing is placed where the road tilts)
   // (v151) the pit lane: on the flattest free spot just after the start line, like a real race
   const pit = straightest(.03, .15, busy);
   // (v141) one window per jump, evenly spaced round the lap; straightest() picks the flattest free spot in each
   const nJ = jumpCount(), wJ = 1 / nJ, inJ = wJ * .18;
   // (v199) a jump or a pad never lands on a stretch whose road changes: it moves to the nearest flat spot on shared road
-  const onShared = (a, b) => { for (const d of [0, .04, -.04, .08, -.08, .12, -.12, .16, -.16]) { const f = straightest(a + d, b + d, busy), w = ((f % 1) + 1) % 1; if (!inRoutesF(w, def) || !def.routes) return w; busy.pop(); } return straightest(a, b, busy); };
-  const ramps = Array.from({ length: nJ }, (_, i) => onShared(i * wJ + inJ, (i + 1) * wJ - inJ));
+  const onShared = (a, b, sc) => { for (const d of [0, .04, -.04, .08, -.08, .12, -.12, .16, -.16]) { const f = straightest(a + d, b + d, busy, sc), w = ((f % 1) + 1) % 1; if (!inRoutesF(w, def) || !def.routes) return w; busy.pop(); } return straightest(a, b, busy, sc); };
+  // (v292) the jumps go on the best free spots of the WHOLE lap (the old way took the best spot in each quarter, and
+  // when a quarter was full of boxes, ice or changing road it fell back to its middle — often a jump into a bend):
+  // every free spot is scored by its flight and landing (rampScore), then the best are taken, well apart
+  const ramps = (() => {
+    const PSz = PIT_SPECS[def.id], Lt = TRACK.L, gapF = (a, b) => { const d = Math.abs(a - b) % 1; return Math.min(d, 1 - d); };
+    const wd = (f) => { const w = ((f % 1) + 1) % 1; return w > .5 ? w - 1 : w; };
+    const pz = PSz ? [[PSz.entry - 70, PSz.tIn + 15], [PSz.tOut - 25, PSz.exit + 15]].map(([a, b]) => [a / Lt, b / Lt]) : [];
+    // on the changing road a jump stands in one place and is drawn on every variant (v267), so it is judged on the
+    // worst of them (each variant's distance is its nearest point, as routeSs does it)
+    const RS = TRACK.routes && TRACK.sec ? TRACK.routes : null, base = TRACK.pts;
+    const nearS = (s, R) => { const { i0, i1 } = TRACK.sec, B = RS[0], i = Math.round(s / STEP) % B.length; if (i < i0 || i >= i1) return s; const P = B[i]; let bd = 1e18, bi = i; for (let j = Math.max(i0, i - 60); j <= Math.min(i1, i + 60); j++) { const q = R[j], d = (q.x - P.x) ** 2 + (q.z - P.z) ** 2; if (d < bd) { bd = d; bi = j; } } return bi * STEP; };
+    const score = (s) => { if (!RS) return rampScore(s); let w = 0; RS.forEach((R, r) => { TRACK.pts = R; w = Math.max(w, rampScore(r ? nearS(s, R) : s)); }); TRACK.pts = base; return w; };
+    // what may not be near a jump (metres before the ramp, metres after it): ice, the start line or a tilted bit
+    // from just before the ramp to ~20 m past the landing; a ? box only not ON the ramp (you can fly over one, or land
+    // on it and take it)
+    const boxF = new Set(BOX_AT), free = (f) => busy.every((a) => { if (routeF.has(a)) return true; const d = ((a - f) % 1 + 1) % 1, [bef, aft] = boxF.has(a) ? [6, 8] : [6, 42]; return d * Lt > aft && (1 - d) * Lt > bef; });
+    const cand = [];
+    for (let f = inJ; f < 1 - inJ; f += .004) {
+      if (!free(f) || pz.some(([a, b]) => wd(f) > a && wd(f) < b)) continue;
+      cand.push([f, score(f * Lt)]);
+    }
+    cand.sort((a, b) => a[1] - b[1]);
+    // only good spots (≤ 6: under ~3 m of drift and no sharp turn after the landing), at least ~60 m apart, up to nJ —
+    // a twisty map gets fewer jumps rather than one into a wall; always at least one
+    const out = [];
+    for (const [f, v] of cand) if (out.length < nJ && v <= 6 && out.every((o) => gapF(o, f) > .08)) out.push(f);
+    if (!out.length && cand.length) out.push(cand[0][0]);
+    out.forEach((f) => busy.push(f));
+    if (!out.length) out.push(onShared(inJ, wJ - inJ, rampScore));   // (never on a sensible track)
+    return out.sort((a, b) => a - b);
+  })();
   const pads = [[.02, .12], [.24, .38], [.56, .68], [.86, .98], [.32, .46]].map(([a, b], i) => ({ f: onShared(a, b), lat: [0, -2.6, 2.6, 0, 2.6][i] }));
   // (v258, the user: "there shouldn't be a jump in the way to the pit stop") no ramp on the way INTO the pit lane (from
   // 70 m before its entry to 15 m past where the pit wall begins) or where it merges back (v276: from 25 m before the lane starts to rejoin, a jump's flight, to its exit, +15 m); along the walled part a
@@ -1525,11 +1565,11 @@ function prepTrack(def) {
         if (!inZone(ramps[i])) continue;
         const others = ramps.filter((_, j) => j !== i).concat(pads.map((p) => p.f)), f0 = ramps[i];
         const ok = (f) => !inZone(f) && others.every((o) => gap(o, f) > .05) && gap(f, 0) > .03;
-        let best = null, bd = 9, bb = 9;
+        let best = null, bd = 9, bb = 1e9;
         for (let d = .004; d < .35; d += .004) for (const sg of [1, -1]) {
           const f = wrap(f0 + sg * d); if (!ok(f)) continue;
           if (best != null && d > bd + .04) continue;
-          const s = f * Lt, b = bendAt(s) + Math.abs(slopeAt(Math.round(s / STEP))) * 3;
+          const b = rampScore(f * Lt);   // (v292: the flight and the landing count too)
           if (best == null || b < bb) { best = f; bb = b; if (bd === 9) bd = d; }
         }
         if (best != null) { const k = busy.indexOf(f0); if (k >= 0) busy.splice(k, 1); busy.push(best); ramps[i] = best; }
@@ -4819,10 +4859,55 @@ function rampsOnRoutes(W) {
     }
   }
 }
+// (v292) the flame ring over every jump: its size, how many flame tongues, and one frame of their flicker
+const RING_R = 2.1, RING_FLAMES = 46, _fq = new THREE.Quaternion(), _fz = new THREE.Vector3(0, 0, 1), _fm = new THREE.Matrix4(), _fp = new THREE.Vector3(), _fs = new THREE.Vector3();
+function flameRing(g, t) {
+  const U = g.userData, fl = U.fl, hot = 1 + U.flare * .8;
+  for (let i = 0; i < RING_FLAMES; i++) {
+    // every other tongue is a small one; each has its own length, spot and flicker, and they all rise (the top ones
+    // are the tallest, the bottom ones short), so the hoop reads as fire, not a sun
+    const h1 = (Math.sin((i + 1) * 12.9898 + U.ph) * 43758.5453) % 1, h = Math.abs(h1), small = i % 2 === 1;
+    const a = (i + (h - .5) * .7) / RING_FLAMES * Math.PI * 2, cx = Math.cos(a), cy = Math.sin(a);
+    let dx = cx * .8, dy = cy * .8 + .75; const n = Math.hypot(dx, dy) || 1; dx /= n; dy /= n;
+    const k = .5 + .5 * Math.sin(t * (9 + 5 * h) + i * 2.3 + U.ph) * Math.cos(t * (5.3 + 3 * h) + i * .9);
+    const len = (small ? .5 : .75 + .7 * h) * (.6 + .7 * k) * (.5 + .7 * Math.max(0, dy)) * hot, w = (small ? .6 : .85 + .35 * h) * (.85 + .3 * k);
+    _fq.setFromAxisAngle(_fz, Math.atan2(-dx, dy)); _fp.set(cx * (RING_R + (small ? -.04 : .08)), cy * (RING_R + (small ? -.04 : .08)), small ? .12 : 0); _fs.set(w, len, w);
+    fl.setMatrixAt(i, _fm.compose(_fp, _fq, _fs));
+  }
+  fl.instanceMatrix.needsUpdate = true;
+}
 function buildArcade(scene, W, def) {
   // jump ramps across the whole road: an orange slope with white chevrons (v119, the user — the same on every map)
   const rampTex = chevrons('#ffffff', '#ffffff', '#ff7a18'); rampTex.wrapS = rampTex.wrapT = THREE.RepeatWrapping; rampTex.repeat.set(4, 1);
   const rampMat = new THREE.MeshStandardMaterial({ map: rampTex, emissive: '#ffffff', emissiveMap: rampTex, emissiveIntensity: .32, roughness: .45, side: THREE.DoubleSide }), sideMat = M('#1b2a4a', { roughness: .6, side: THREE.DoubleSide });
+  // (v292, the user: "instead of tricks add there rings you need to jump through, 1 in each jump, it's a flame ring")
+  // over every jump hangs a burning hoop, in the middle of the road where a kart at full speed reaches the top of its
+  // flight: line up with it before the ramp and you fly through it (a big boost on landing). A bright hoop, a soft
+  // orange glow and a crown of flickering flame tongues (one instanced mesh, animated only near the camera).
+  W.rings = [];
+  const RF = (() => { const v = TUNE.baseSpeed * 1.05, vy = 2.5 + v * .22, g = def.gravity || 30; return { d: v * vy / g, h: vy * vy / (2 * g) }; })();
+  const ringCore = new THREE.TorusGeometry(RING_R, .17, 10, 64), ringGlow = new THREE.TorusGeometry(RING_R, .44, 10, 64);
+  const coreMat = new THREE.MeshBasicMaterial({ color: '#ffd23e', toneMapped: false }), glowMat = new THREE.MeshBasicMaterial({ color: '#ff6a12', transparent: true, opacity: .32, depthWrite: false, toneMapped: false });
+  const flameGeo = (() => {   // a tongue of flame: an open cone, white-yellow at its foot, orange, then red and see-through at the tip
+    const g = new THREE.ConeGeometry(.34, 1, 10, 6, true).translate(0, .5, 0), P = g.attributes.position, col = new Float32Array(P.count * 4);
+    const c0 = new THREE.Color('#fff2a8'), c1 = new THREE.Color('#ff9a14'), c2 = new THREE.Color('#ff3300'), c = new THREE.Color();
+    for (let i = 0; i < P.count; i++) { const t = P.getY(i); if (t < .45) c.lerpColors(c0, c1, t / .45); else c.lerpColors(c1, c2, (t - .45) / .55); col.set([c.r, c.g, c.b, t < .45 ? .95 : .95 * (1 - (t - .45) / .55)], i * 4); }
+    g.setAttribute('color', new THREE.BufferAttribute(col, 4)); return g;
+  })();
+  const flameMat = new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, depthWrite: false, side: THREE.DoubleSide, toneMapped: false });
+  const ringAt = (s0, into) => {
+    const sR = s0 + RAMP_LEN + RF.d, q = at(sR), y = at(s0 + RAMP_LEN).p.y + RAMP_H + RF.h + .65;   // (the kart's middle at the top of its flight)
+    const ring = new THREE.Group(); ring.position.set(...rolled(q.p, 0, y - q.p.y)); ring.rotation.y = -angleOf(q.p);
+    ring.add(new THREE.Mesh(ringCore, coreMat), new THREE.Mesh(ringGlow, glowMat));
+    const fl = new THREE.InstancedMesh(flameGeo, flameMat, RING_FLAMES); fl.frustumCulled = false; ring.add(fl);
+    ring.userData = { s: sR, y, fl, ph: Math.random() * 9, flare: 0 }; into.add(ring); W.rings.push(ring); flameRing(ring, 0);
+    return ring;
+  };
+  W.anim.push((dt, t) => { const C = W.camera && W.camera.position; for (const g of W.rings) {
+    if (g.userData.flare > 0) { g.userData.flare = Math.max(0, g.userData.flare - dt * 1.6); g.scale.setScalar(1 + .35 * Math.sin(g.userData.flare * Math.PI)); }
+    if (!C || !g.parent || !g.parent.visible || (g.position.x - C.x) ** 2 + (g.position.z - C.z) ** 2 > 170 ** 2) continue;
+    flameRing(g, t);
+  } });
   // (v267) a ramp's meshes on whichever road TRACK.pts is at the moment (rampsOnRoutes draws one on every variant)
   W.rampMesh = (s0, into) => {
     const top = new THREE.Mesh(trackQuad(s0, s0 + RAMP_LEN, -HALF - .4, HALF + .4, .03, RAMP_H), rampMat); top.castShadow = top.receiveShadow = true; into.add(top);
@@ -4831,7 +4916,7 @@ function buildArcade(scene, W, def) {
     pos.push(...P(e, L0, 0), ...P(e, L1, 0), ...P(e, L0, RAMP_H), ...P(e, L1, 0), ...P(e, L1, RAMP_H), ...P(e, L0, RAMP_H));
     for (const l of [L0, L1]) pos.push(...P(a, l, .03), ...P(e, l, 0), ...P(e, l, RAMP_H));
     const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.computeVertexNormals(); const side = new THREE.Mesh(g, sideMat); into.add(side);
-    return [top, side];
+    return [top, side, ringAt(s0, into)];
   };
   W.ramps = RAMP_AT.map((f) => { const s0 = f * TRACK.L; return { s: s0, ms: W.rampMesh(s0, scene) }; });
   // boost pads: glowing arrows that scroll forwards
@@ -6031,7 +6116,7 @@ const speedEl = $('speed');
   }
 })();
 // a tap on the screen while flying off a ramp = a trick (and a bigger boost when you land)
-canvas.addEventListener('pointerdown', () => { const P = race && race.player; if (P && P.air === 'ramp' && !P.trick) { P.trick = true; P.trickT = 0; sfx.trick(); } });
+// (v292: the tap trick is gone — the jumps have flame rings to fly through instead)
 // the keyboard (computers): W A S D or the arrows (by key position, so any keyboard layout works), SPACE = power-up,
 // 1 2 3 = answer a question, ESC or P = pause
 const KEYS = { up: ['KeyW', 'ArrowUp'], down: ['KeyS', 'ArrowDown'], left: ['KeyA', 'ArrowLeft'], right: ['KeyD', 'ArrowRight'], drift: ['ShiftLeft', 'ShiftRight'] };
@@ -6241,7 +6326,7 @@ tap($('pauseB'), () => pauseMenu());
 
 /* ---------- a gamepad (PS5 DualSense, Xbox, any "standard" pad) ----------
    Left stick or D-pad = steer, R2 (or X) = gas, L2 = brake, L1 / R1 (or Circle) = drift, Square = power-up,
-   X or Triangle in the air = trick, X at the lights = rocket start, Options = pause.
+   X at the lights = rocket start, Options = pause.
    In the menus and on question cards the D-pad (or the stick) moves a yellow highlight from button to button and
    X presses it; Circle presses Back / OK / Resume. The pad is polled every frame (there are no button events). */
 const GPAD = { on: false, steer: 0, gas: false, brake: false, drift: false, prev: [], focus: null, moveT: 0, kind: 'pad', gp: null };
@@ -6303,7 +6388,6 @@ function pollPad(dt) {
   const racing = screen === 'race' && race && race.started && !race.ended && !race.dialog;
   if (racing) {
     if (pressed(2)) useItem();
-    if (pressed(0) || pressed(3)) { const P = race.player; if (P.air === 'ramp' && !P.trick) { P.trick = true; P.trickT = 0; sfx.trick(); } }
     if (pressed(9) || pressed(8)) pauseMenu();   // (Menu / Options, or View / Share)
     setPadFocus(null);
   } else {
@@ -6625,9 +6709,14 @@ function land(r) {
   const kind = r.air; r.air = null; r.vy = 0; r.magOn = false; r.squash = 1;
   if (r.player && race.jumpCtl && race.jumpCtl.expire) race.jumpCtl.expire();   // landed: the jump question's time is up
   if (kind !== 'ramp') { if (kind === 'drop') burst(r.x, r.y + .3, r.z, '#7af8ff', 10); return; }
-  giveBoost(r, r.trick ? 1.0 : .3, 1.35);
-  if (r.player) { race.shake = .35; sfx.land(); if (r.trick) { toast('TRICK! BOOST!', '#ffe14a', 36); sfx.turbo(2); } }
-  burst(r.x, .3, r.z, '#ffffff', 10); r.trick = false;
+  giveBoost(r, r.ringHit ? 1.0 : .3, 1.35);   // (v292: through the flame ring = the big boost the trick used to give)
+  if (r.player) { race.shake = .35; sfx.land(); if (r.ringHit) sfx.turbo(2); }
+  burst(r.x, .3, r.z, '#ffffff', 10); r.ring = null; r.ringHit = false;
+}
+// (v292) flew through a flame ring: it flares, and the boost comes on landing
+function ringHit(r, g) {
+  r.ringHit = true; g.userData.flare = 1; g.userData.hits = (g.userData.hits || 0) + 1; if (r.player) g.userData.mine = (g.userData.mine || 0) + 1;   // (the counts: a test hook reads them)
+  if (r.player) { toast('FLAME RING!\nBOOST!', '#ff9a1e', 40); sfx.trick(); buzz(30); burst(g.position.x, g.position.y, g.position.z, '#ffa21a', 16); burst(g.position.x, g.position.y, g.position.z, '#ffe14a', 8); }
 }
 // fell off a space road: a rescue drone puts you back on the track, a little way back
 function respawn(r) {
@@ -6797,20 +6886,22 @@ function drive(r, dt) {
   // the ground: the road (plus a ramp's slope); nothing at all off the open edges of a space road
   const offEdge = TDEF.edge === 'void' && !WORLD.walls[r.idx] && Math.abs(r.lat) > HALF + 1.3;
   let h = 0;
-  if (!offEdge) for (const rp of WORLD.ramps) { const d = ((r.sc - (rp.sr ? rp.sr[r.route || 0] : rp.s)) % TRACK.L + TRACK.L) % TRACK.L; if (d < RAMP_LEN && Math.abs(r.lat) < HALF + .3) h = RAMP_H * d / RAMP_LEN; }   // (v262: the ramp's distance on this kart's variant)
+  if (!offEdge) for (const rp of WORLD.ramps) { const d = ((r.sc - (rp.sr ? rp.sr[r.route || 0] : rp.s)) % TRACK.L + TRACK.L) % TRACK.L; if (d < RAMP_LEN && Math.abs(r.lat) < HALF + .3) { h = RAMP_H * d / RAMP_LEN; r.rampOn = rp; } }   // (v262: the ramp's distance on this kart's variant)
   const road = offEdge ? trackY(r) : rideY(r, trackY(r)), g = offEdge ? -1e9 : road + h;
   if (r.air) {
     // (in space, past the top of a jump, the magnets in the road pull the kart back down hard)
     const mag = TDEF.magnet && r.air === 'ramp' && r.vy < 0; r.vy -= TDEF.gravity * dt * (mag ? TDEF.magnet : 1); r.y += r.vy * dt;
     if (mag && !r.magOn) { r.magOn = true; if (r.player) { sfx.power(); if (!race.tips.magnet) { race.tips.magnet = 1; toast('MAGNET PULL!', '#5ab0ff', 30); } } }
+    // (v292) through the flame ring? judged as the kart passes its plane: near the middle of the road, at its height
+    if (r.ring) { const U = r.ring.userData, d = ((r.sc - U.s) % TRACK.L + TRACK.L) % TRACK.L; if (d < 6) { const g0 = r.ring; r.ring = null; if (Math.abs(r.lat) < RING_R - .45 && Math.abs(r.y + .6 - U.y) < RING_R - .35) ringHit(r, g0); else if (r.player && !race.tips.ring) { race.tips.ring = 1; toast('Line up with the\nFLAME RING before the jump!', '#ffb03a', 28); } } }
     if (r.y <= g && r.vy < 0) { r.y = g; land(r); }
     else if (r.y < road - 9) respawn(r);
   } else if (offEdge) { r.air = 'fall'; r.vy = 0; if (r.drift) r.drift = 0; if (r.player) sfx.fall(); }
   else if (h === 0 && r.rampY > RAMP_H * .6) {
     // off the top of a ramp: fly!
     r.air = 'ramp'; r.vy = 2.5 + r.speed * .22; r.rampY = 0; if (r.drift) endDrift(r);
+    { const rp = r.rampOn, ms = rp && (rp.msr ? rp.msr[r.route || 0] : rp.ms); r.ring = ms && ms[2] && ms[2].userData.fl ? ms[2] : null; r.ringHit = false; }   // (v292) this jump's flame ring
     if (r.player) jumpQuestion(r);
-    if (r.player && !race.tips.trick) { race.tips.trick = 1; toast('TAP the screen\nfor a TRICK!', '#ffe14a', 30); }
   } else { r.y = g; r.rampY = h; }   // the wheels stay on the road over every hill (since v59 only a ramp makes a kart fly)
   // boost pads
   if (!r.air) for (const pd of WORLD.pads) { const d = ((r.sc - (pd.sr ? pd.sr[r.route || 0] : pd.s) + 2) % TRACK.L + TRACK.L) % TRACK.L; if (d < 4 && Math.abs(r.lat - pd.lat) < 1.8) { if (r.boostT < TUNE.padTime * .8 && r.player) sfx.pad(); giveBoost(r, TUNE.padTime, TUNE.padMul); } }
@@ -7797,6 +7888,13 @@ window.FK.pitInfo = () => {
     fix: P.fix || 0, spd: P.spd || 0, imm: P.imm || 0, jumps: jumpCount(),
     rivals: race.racers.filter((r) => !r.player).map((r) => ({ lap: r.lap, p: !!r.pitting, w: !!r.wantPit, u: +(r.lat * (PITS ? PITS.side : 1)).toFixed(1), stood: !!r.pitStood, sent: r.pitLap || 0, hold: +(r.pitHoldT || 0).toFixed(1) })) };
 };
+// (v292) test hook: for every map, how much the road turns at each jump and in the 70 m after it (the flight + landing)
+window.FK.rampCheck = (old) => TRACK_ORDER.map((id) => {
+  const d = TRACK_DEFS[id], keep = { TRACK, TB, BOUNDS, MID, BUSY, RAMP_AT, PAD_AT, GATE_AT, PIT_AT, HALF }; d.prep = null; const pr = prepTrack(d);
+  const RS = TRACK.routes || [TRACK.pts], b0 = TRACK.pts;
+  const res = (old && old[id] || pr.RAMP_AT).map((f) => { const s = f * TRACK.L; return { f: +f.toFixed(3), drift: RS.map((R) => { TRACK.pts = R; const w = +rampDrift(s).toFixed(1); TRACK.pts = b0; return w; }), turn: RS.map((R) => { TRACK.pts = R; const w = +rampTurn(s).toFixed(2); TRACK.pts = b0; return w; }) }; });
+  ({ TRACK, TB, BOUNDS, MID, BUSY, RAMP_AT, PAD_AT, GATE_AT, PIT_AT, HALF } = keep); return { id, L: Math.round(pr.TRACK.L), ramps: res };
+});
 window.FK.BASE = BASE;
 // test hook: why the steering mode is what it is
 // test hook: hold an imaginary finger across the race picture (-1 left … +1 right), null to let go
