@@ -6176,18 +6176,24 @@ let JOYF = null;
 // for the feel of each control. Final steer = (wheel angle / 90°)^1.6, so the middle is soft and the ends are full:
 //   line     push^1.25 → half a push ≈ 22 % of the lock, a full push = 100 %   (was ^1.7 × 86°: 12 % … 93 %)
 //   joystick push^1.5 × 86° → half ≈ 15 %, full ≈ 93 %                        (was ^2 × 74°: 6 % … 73 %, too weak for hairpins)
+//   (v285, the user: "at 30 % it almost doesn't turn and when you go over it, it puts you into the wall") the joystick
+//   and the line are now STRAIGHT: push^.72 on the wheel × the ^1.6 soft middle = steering ≈ push^1.15, so
+//   30 % of a push ≈ 21 % of the lock, half ≈ 42 %, three quarters ≈ 70 %, full = 100 % (before 3 / 15 / 44 / 93 % on
+//   the joystick: nothing, nothing, then all at once), and the wheel follows the thumb quicker (rate 14 / 16, was 8 / 12)
 //   gamepad  stick^1.25 → half ≈ 19 %, full 100 %                             (was ^1.5: 13 %)
 //   tilt     3° dead zone, the full lock at about 31° of turn                 (was about 40°)
 //   keys     90 % of the lock in about 0.3 s, quicker still when you swap sides (was 0.46 s)
 //   tap sides stays as the user tuned it (v226)
-const STEER = { lineExp: 1.25, lineMax: 90, lineRate: 12, joyExp: 1.5, joyMax: 86, joyRate: 8, padExp: 1.25, tiltDead: 3, tiltGain: 3.2, tiltRate: 10, keyRate: 7.5,
+const STEER = { lineExp: .72, lineMax: 90, lineRate: 16, joyExp: .72, joyMax: 90, joyRate: 14, padExp: 1.25, tiltDead: 3, tiltGain: 3.2, tiltRate: 10, keyRate: 7.5,
   outExp: 1.6, tapMin: 34, tapMax: 50, tapRate: 8 };   // (v269: the wheel → steering "soft middle" curve and TAP SIDES, here so the debug hub can tune them)
 // (v281, the user: the option to change the joystick sensitivity) JOYSTICK SENSITIVITY in Settings → CONTROLS, 50–150 %
 // (save.joySens 0.5…1.5, 1 = the tuned feel above). It works on the joystick, the line and a controller's stick:
 // higher = a small push turns more (a straighter push curve), the full lock a little wider and the wheel follows a little
 // quicker; lower = a calmer middle, a slightly smaller full lock, a little slower. 100 % changes nothing.
+// (v285) on the joystick and the line a full push is ALWAYS the full lock, at every sensitivity; the sensitivity bends the
+// curve: half a push ≈ 23 % of the lock at 50 %, 42 % at 100 %, 52 % at 150 %
 const joySens = () => clamp(+save.joySens || 1, .5, 1.5);
-const sensExp = (e) => e / joySens() ** .75;   // (half a push on the joystick: about 4 % of the lock at 50 %, 15 % at 100 %, 28 % at 150 %)
+const sensExp = (e) => e / joySens() ** .75;
 const sensMax = (m) => m * (1 + (joySens() - 1) * .2);
 const sensRate = (r) => r * (.7 + .3 * joySens());
 function updateWheel(dt) {
@@ -6210,7 +6216,7 @@ function updateWheel(dt) {
     const tgt = dir * (STEER.tapMin + (STEER.tapMax - STEER.tapMin) * clamp((hT - .4) / .8, 0, 1));
     WHEEL.rot = WHEEL.rot * dir < STEER.tapMin - 4 ? dir * (STEER.tapMin - 4) : WHEEL.rot + (tgt - WHEEL.rot) * Math.min(1, dt * STEER.tapRate);
   }
-  else if (STICK.held != null && !kb) { const joy = CTL === 'joy'; WHEEL.rot += (STICK.x * sensMax(joy ? STEER.joyMax : STEER.lineMax) - WHEEL.rot) * Math.min(1, dt * sensRate(joy ? STEER.joyRate : STEER.lineRate)); }
+  else if (STICK.held != null && !kb) { const joy = CTL === 'joy'; WHEEL.rot += (STICK.x * (joy ? STEER.joyMax : STEER.lineMax) - WHEEL.rot) * Math.min(1, dt * sensRate(joy ? STEER.joyRate : STEER.lineRate)); }
   else
   // (gentle since v40: a full turn needs the phone tilted about 40°, and the keys turn the wheel in more slowly)
   if (CTL === 'tilt' && WHEEL.held == null && !kb) { const t = Math.abs(tiltG) < STEER.tiltDead ? 0 : tiltG - Math.sign(tiltG) * STEER.tiltDead; WHEEL.rot += (clamp(t * STEER.tiltGain, -110, 110) - WHEEL.rot) * Math.min(1, dt * STEER.tiltRate); }
@@ -6731,7 +6737,7 @@ function drive(r, dt) {
       { const A = [0, .35, .65, 1][save.assistLvl ?? 1] || 0;
         if (A && !r.drift && !r.air && !r.inPit && r.speed > 6) {
           const lim = (WORLD.openSide && WORLD.openSide[r.idx] === Math.sign(r.lat) ? Math.min(WORLD.openLim[r.idx], HALF + 7.5) : HALF);
-          const want = angleOf(tp(r.idx + 10)) - clamp(r.lat / (lim + 1), -1, 1) * .22, d = wrapA(want - r.angle), free = CTL === 'follow' && (FOLLOW.x != null || performance.now() < FOLLOW.until) ? 0 : 1 - Math.min(1, Math.abs(steer) / .55);   // (v226) never against a tap
+          const want = angleOf(tp(r.idx + 10)) - clamp(r.lat / (lim + 1), -1, 1) * .22, d = wrapA(want - r.angle), free = CTL === 'follow' && (FOLLOW.x != null || performance.now() < FOLLOW.until) ? 0 : 1 - Math.min(1, Math.abs(steer) / .12);   // (v226) never against a tap; (v285) it lets go as soon as you steer (12 %, was 55 %: below that it pulled small turns back to the road, so a 30 % push hardly turned and a bigger one suddenly did)
           r.angle += clamp(d, -.6, .6) * A * 2.1 * free * dt;
           const edge = Math.abs(r.lat) - (lim - 1.5);
           if (edge > 0 && Math.sign(d) === -Math.sign(r.lat)) r.angle += clamp(d, -1, 1) * Math.min(1, edge / 2) * 2.6 * A * dt;
