@@ -139,7 +139,6 @@ const JUMPS = {
   pass: () => lobbyThen(() => G.goPass()),
   licence: () => lobbyThen(() => G.goLicence()),
   intro: () => { close(); leaveAll(); G.runIntro(); },
-  tutorial: () => lobbyThen(() => G.startTutorial()),
   crate: async (k) => { await until(() => !document.querySelector('#crate .crcard[hidden]'), 3000); return lobbyThen(() => { const N = G.crates(); if (!(N[k] > 0)) { N[k] = 1; G.store(); } G.openCrate(k); }); },   // (after an earlier crate's reveal is through: its timers look its buttons up by id)
   garageStart: () => { forceQ(); return startOn(st.jmap, { noSkip: true, route: st.jroute >= 0 ? st.jroute : null }); },
   race: () => startOn(st.jmap, { route: st.jroute >= 0 ? st.jroute : null }),
@@ -263,7 +262,7 @@ function page(t) {
   const s = G.save(), R = G.race(), maps = G.TRACK_ORDER, T = G.TRACK_DEFS;
   if (t === 'jump') {
     const vs = (T[st.jmap].routes && T[st.jmap].routes.set === 'ground' ? G.GROUND_VARIANTS : G.ROUTE_VARIANTS).map((x, i) => [i, x.name]);
-    return row('Screens', 'Each one works from anywhere (a race is left first)', btns([btn('j', 'LOBBY', 'lobby'), btn('j', 'GARAGE', 'garage'), btn('j', 'TRACK PICKER', 'tracks'), btn('j', 'GAME PASS', 'pass'), btn('j', 'LICENCE', 'licence'), btn('j', 'PAINT CRATE', 'crate:paint'), btn('j', 'TYRE CRATE', 'crate:tyre'), btn('j', 'INTRO STORY', 'intro'), btn('j', 'TUTORIAL', 'tutorial')]), true)
+    return row('Screens', 'Each one works from anywhere (a race is left first)', btns([btn('j', 'LOBBY', 'lobby'), btn('j', 'GARAGE', 'garage'), btn('j', 'TRACK PICKER', 'tracks'), btn('j', 'GAME PASS', 'pass'), btn('j', 'LICENCE', 'licence'), btn('j', 'PAINT CRATE', 'crate:paint'), btn('j', 'TYRE CRATE', 'crate:tyre'), btn('j', 'INTRO STORY', 'intro')]), true)
       + row('Map for the race jumps', '', `<div class="seg dpick" data-pk="jmap" style="grid-template-columns:repeat(${maps.length},1fr)">${maps.map((id) => `<button data-v="${id}" class="${st.jmap === id ? 'on' : ''}">${T[id].name.split(' ')[0].toUpperCase()}</button>`).join('')}</div>`, true)
       + row('Road variant', 'Changes every lap normally; pick one to race it on every lap', `<div class="seg dpick dsmall" data-pk="jroute" style="grid-template-columns:repeat(4,1fr)">${[[-1, 'RANDOM'], ...vs].map(([i, n]) => `<button data-v="${i}" class="${st.jroute === i ? 'on' : ''}">${esc(n)}</button>`).join('')}</div>`, true)
       + row('Race', 'On the map above', btns([btn('j', 'GARAGE START (SET-UP QUESTIONS)', 'garageStart', 'gold'), btn('j', 'RACE (NORMAL START)', 'race'), btn('j', 'RACE, SKIP THE GARAGE', 'raceSkip')]), true)

@@ -364,7 +364,7 @@ function openSettings(tab = 'game', onClose) {
       + row('dev', 'Dev mode', 'No questions anywhere and unlimited coins (for testing)')
       + (dbgOn() || isDevAcct() ? `<div class="srow"><div class="sl"><b>Debug hub</b><small>Jump anywhere, questions, race, steering, kart, graphics (developers and testers)</small></div><button class="sbtn" id="sDbg">DEBUG HUB</button></div>` : '')
       + `<div class="srow"><div class="sl"><b>How to play</b><small>The controls and the rules, with pictures</small></div><button class="sbtn" id="sHelp">OPEN</button></div>`
-      + `<div class="srow"><div class="sl"><b>Tutorial</b><small>Foxino's story and the test drive again</small></div><button class="sbtn" id="sTut">PLAY</button></div>`,
+      + `<div class="srow"><div class="sl"><b>Intro story</b><small>Foxino finds the kart: the story and the colour again</small></div><button class="sbtn" id="sTut">PLAY</button></div>`,
     controls: (() => {
       // (v138, the user) pick how you steer, with a picture of each: sideways you can tilt the phone, use the round
       // joystick or the line; upright it is the joystick or the line.
@@ -5662,7 +5662,9 @@ tap($('passBtn'), () => { sfx.click(); goLicence(); }); tap($('passPill'), () =>
       (the clip for your colour). 4. The kart in your colour in the 3D lobby, and "Let's go for a test drive!" → GO.
    5. The test drive (startTutorial): you pick how you steer, then drive the Alps alone; at each new thing the race
       slows down, an arrow marks it and Foxino says what it is; at the end you go into the pit, and you are
-      congratulated. Settings > Game > TUTORIAL plays it all again. */
+      congratulated. Settings > Game > TUTORIAL plays it all again.
+   (v286, the user: "remove the tutorial level") step 5 is gone: after the reveal you pick how you steer and go to the
+   lobby. startTutorial / tutPrep / updateTut / tutDone are left in but nothing starts them (race.tut stays unset). */
 const INTRO_COL = { blue: ['BLUE', '#1853a0'], green: ['GREEN', '#2b8e72'], red: ['RED', '#df0707'] };   // (the shop's Metal Blue, Metal Green and Metal Red — brushed metal since v283)
 const introV = (n) => `video/intro-${n}.mp4?v=1`;
 function introUI() { const S = $('intro'); S.hidden = false; S.className = ''; return S; }
@@ -5693,15 +5695,11 @@ async function runIntro() {
   S.className = 'reveal'; S.innerHTML = `<div class="irev"><h2 class="out">YOUR KART!</h2></div>`; sfx.fanfare(); L.say('Your new kart!');
   for (let i = 0; i < 50; i++) { const cf = el('div', 'confetti'); cf.style.left = rand(0, 100) + '%'; cf.style.background = pick(['#ffe14a', c, '#ffffff', '#ff8a1e']); cf.style.animationDuration = rand(1.8, 3.4) + 's'; cf.style.animationDelay = rand(0, 1) + 's'; S.appendChild(cf); }
   await wait(2200);
-  const go = await new Promise((res) => {
-    S.insertAdjacentHTML('beforeend', `<div class="ipop card"><div class="tag">TEST DRIVE</div><p>Let's go for a test drive!</p><button class="btn gold" id="iGo">GO ▶</button><button class="iskip2" id="iNo">Later</button></div>`);
-    L.say("Let's go for a test drive!"); tap($('iGo'), () => { sfx.power(); res(true); }); tap($('iNo'), () => { sfx.click(); res(false); });
-  });
-  if (!go) { introEnd(); return; }
-  startTutorial();
+  // (v286, the user: "remove the tutorial level") no test drive any more: you choose how you steer and go to the lobby
+  await chooseSteer(); sfx.click(); introEnd();
 }
 function introEnd() { const S = $('intro'); S.hidden = true; S.innerHTML = ''; S.className = ''; document.body.classList.remove('intro'); save.introDone = true; store(); if (screen !== 'race') goMenu(); }
-// the steering picker before the test drive (the same choices as in Settings > Controls)
+// the steering picker at the end of the story (the same choices as in Settings > Controls); before v286 it opened the test drive
 function chooseSteer() {
   return new Promise((res) => {
     const S = introUI(); S.className = 'reveal';
@@ -7753,7 +7751,7 @@ window.FK.goLicence = () => goLicence();
 window.FK.g3p = G3P; window.FK.g3 = G3; window.FK.goGarage = () => goGarage();   // (v228) the garage camera, to tune
 window.FK.routes = (seq) => { if (seq && race) { race.routeSeq = seq; if (WORLD) WORLD.routeShown = -1; } return TRACK && TRACK.routes ? { seq: race && race.routeSeq, mine: race && race.player && race.player.route, now: routeFor(), sec: { i0: TRACK.sec.i0, i1: TRACK.sec.i1, lens: TRACK.sec.lens, names: TRACK.sec.spec.map((x) => x.name), stats: TRACK.sec.stats } } : null; };   // (v194) test hook   // test hooks: the licence, and set the wins on maps
 window.FK.wins = (o) => { if (o) { save.winsBy = { ...(save.winsBy || {}), ...o }; store(); } return save.winsBy; };
-window.FK.intro = () => runIntro(); window.FK.tutorial = () => startTutorial();   // test hooks
+window.FK.intro = () => runIntro();   // test hook   (v286: the test drive is gone, so no FK.tutorial)
 window.FK.crates = (c) => { if (c) { save.crates = { ...crates(), ...c }; store(); } return { crates: crates(), paints: save.kart.bodiesOwned.length, tyres: tyreOwned() }; };   // test hook
 window.FK.openCrate = (k) => openCrate(k);
 window.FK.equipTyre = (id) => { if (!tyreOwned().includes(id)) tyreOwned().push(id); equipPrize({ kind: "tyre", id }); };   // test hook   // test hook: the track picker
@@ -7810,7 +7808,7 @@ const DBG_API = {
   STEER_NAME, UPGRADES, KART_MAX, TYRE_STYLES, MAP_NEED, ITEMS, BODY_COLORS, LIGHT_COLORS, LOGOS, DEFAULT_SKIN, WHEEL, STICK, FOLLOW, GPAD, renderer, TOUCH,
   save: () => save, store, race: () => race, screen: () => screen, TDEF: () => TDEF, TRACK: () => TRACK, CTL: () => CTL, steerWant, tilt: () => tiltG,
   DEV, isDevAcct, toast, refreshCounters, applyGfx, applySide, gfxOf, resize, upsOf, vehLv, paintPool, tyreOwned, crates, setShowRacer, passOf, enableTilt,
-  goMenu, goGarage, goTracks, goPass, goLicence, runIntro, startTutorial, startRace, openCrate, showResults, pauseMenu, hidePodium, closeDialog,
+  goMenu, goGarage, goTracks, goPass, goLicence, runIntro, startRace, openCrate, showResults, pauseMenu, hidePodium, closeDialog,
   pitStop, drawPitHud, drawSlot, lapDone, lapPill, ranking, askOne, ico, at, angleOf, project, placeAll, snapCamera, giveBoost,
   REAR_WINGS, wingLv: () => (race && race.player && race.player.model && race.player.model.wingLv) || 0, setWing: (lv) => (race ? setWing(race.player, lv, false) : false),   // (v270)
   TYRE_LEVELS: TYRE_LEVELS.map((id) => TYRE_BY_ID[id].name), tyreLv: () => (race && race.player && race.player.model && race.player.model.tyreLv) || 0, setTyre: (lv) => (race ? setTyre(race.player, lv, false) : false),   // (v274)
@@ -7818,7 +7816,7 @@ const DBG_API = {
   leaveRace: () => { if (race) { closeDialog(); cup = null; endRace(); } },
 };
 let dbgMod = null;
-const loadDebug = () => (dbgMod = dbgMod || import('./debug.js?v=3').then((m) => { m.init(DBG_API); return m; }).catch((e) => { dbgMod = null; console.error('debug hub', e); throw e; }));
+const loadDebug = () => (dbgMod = dbgMod || import('./debug.js?v=4').then((m) => { m.init(DBG_API); return m; }).catch((e) => { dbgMod = null; console.error('debug hub', e); throw e; }));
 window.FK.debug = (tab) => loadDebug().then((m) => m.open(tab));
 if (dbgOn()) loadDebug();
 addEventListener('keydown', (e) => { if (e.key === '`' && (dbgOn() || isDevAcct()) && !(e.target && e.target.closest && e.target.closest('input, textarea'))) { e.preventDefault(); loadDebug().then((m) => m.toggle()); } });
