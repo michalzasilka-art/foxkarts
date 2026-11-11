@@ -101,6 +101,9 @@ function loadSave() {
   } catch (e) { return JSON.parse(JSON.stringify(DEFAULT_SAVE)); }
 }
 let save = loadSave();
+// (v301, the user: "make the default way to steer tapping the sides") TAP SIDES is the default steering, and every
+// player is moved to it once (Settings > Controls still offers the joystick, the line, the arrows and tilt)
+if (!save.tapSides301) { save.tapSides301 = 1; save.steerL = 'follow'; save.steerP = 'follow'; }
 if (save.char !== 'foxino') save.char = 'foxino';   // only Foxino for now
 // (v281, the user: "the red of the kart should be this" — pure #ff0000) the old Racing Red #e8403a became #ff0000; (v283,
 // the user: "make the green, red and blue this metal style") the red, Royal Blue and Lime are now the brushed METAL paints
@@ -375,8 +378,8 @@ function openSettings(tab = 'game', onClose) {
       const ART = STEER_ART;
       const NAME = STEER_NAME;
       const cards = (grp, keys, cur) => `<div class="spick" data-g="${grp}">${keys.map((k) => `<button data-v="${k}" class="${k === cur ? 'on' : ''}">${ART[k]}<span>${NAME[k]}</span></button>`).join('')}</div>`;
-      return `<div class="srow col"><div class="sl"><b>Steering · sideways</b><small>With the phone held sideways (16:9)</small></div>${cards('L', ['tilt', 'joy', 'line', 'follow', 'arrows'], save.steerL || 'line')}</div>`
-        + `<div class="srow col"><div class="sl"><b>Steering · upright</b><small>With the phone upright (9:16)</small></div>${cards('P', ['joy', 'line', 'follow', 'arrows'], save.steerP || 'line')}</div>`
+      return `<div class="srow col"><div class="sl"><b>Steering · sideways</b><small>With the phone held sideways (16:9)</small></div>${cards('L', ['tilt', 'joy', 'line', 'follow', 'arrows'], save.steerL || 'follow')}</div>`
+        + `<div class="srow col"><div class="sl"><b>Steering · upright</b><small>With the phone upright (9:16)</small></div>${cards('P', ['joy', 'line', 'follow', 'arrows'], save.steerP || 'follow')}</div>`
         + `<div class="srow col"><div class="sl"><b>Joystick sensitivity</b><small id="sensHelp"></small></div><div class="ssens"><span>LOW</span><input type="range" id="sens" min="50" max="150" step="5" value="${Math.round(joySens() * 100)}" aria-label="Joystick sensitivity"><span>HIGH</span><output id="sensOut"></output><button class="sbtn" id="sensReset">RESET</button></div></div>`   // (v281)
         + `<div class="srow col"><div class="sl"><b>Steering assist</b><small id="asHelp"></small></div><div class="seg" id="asSeg"><button data-v="0">OFF</button><button data-v="1">LOW</button><button data-v="2">MEDIUM</button><button data-v="3">HIGH</button></div></div>`
         + `<div class="srow col"><div class="sl"><b>Controls side</b><small id="sideHelp"></small></div><div class="seg" id="sideSeg"><button data-v="left">LEFT</button><button data-v="right">RIGHT</button></div></div>`
@@ -1200,7 +1203,7 @@ const TRACK_DEFS = {
     pitStart: true, pitOnly: true,   // (v170, the user) start in your garage (a 4+4+4 pit stop), a formation lap, then the lights; questions only in the pit
   },
   city: {   // (scale 1.3 since v62: a third longer; clearRoad: the fog leaves the road alone)
-    id: 'city', name: 'Robo City', sub: "Rob's park circuit by the harbour", level: 'A1–A2', tag: 'MEDIUM', color: '#8a4ae8',
+    id: 'city', name: 'Robo City', sub: "Rob's park circuit by the sea", level: 'A1–A2', tag: 'MEDIUM', color: '#8a4ae8',
     scale: 1.3, half: 6.5, edge: 'walls', gravity: 30, clearRoad: true, hazard: 'oil', banner: 'ROBO CITY GRAND PRIX',
     // (v98) the start straight is broken by an S-bend chicane
     points: [[0, 0], [0, -36], [-14, -62], [-12, -88], [2, -112], [8, -136], [25, -148], [70, -148], [90, -140], [96, -120], [96, -95], [88, -80], [70, -74], [55, -66],
@@ -2310,7 +2313,7 @@ const THEMES = {
       const g = new THREE.Mesh(new THREE.PlaneGeometry(1800, 1800).rotateX(-Math.PI / 2), new THREE.MeshStandardMaterial({ map: tex, roughness: .95 })); g.position.set(MID.x, -.02, MID.z); g.receiveShadow = true; scene.add(g);
     },
     scenery(scene, W, def) {
-      /* ---------- (v135) Monaco street dressing: white lines, tyre stacks, palms and the harbour ---------- */
+      /* ---------- (v135) Monaco street dressing: white lines, tyre stacks and palms (v301: no harbour) ---------- */
       const vcm2 = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: .85, fog: !def.clearRoad });
       { const wl = M('#eef1f5', { roughness: .8, fog: !def.clearRoad });
         for (const sd of [-1, 1]) scene.add(new THREE.Mesh(strip(sd * (HALF - .46), sd * (HALF - .16), .035, .035), wl)); }
@@ -2336,30 +2339,11 @@ const THEMES = {
           const sd = Math.random() < .5 ? -1 : 1, off = HALF + rand(5.2, 7.5);   // (v293: fewer, behind the promenade)
           pl.push({ x: p.x + p.nx * sd * off, y: 0, z: p.z + p.nz * sd * off, s: rand(.8, 1.3), ry: rand(0, 6) }); }
         pl.length && instanced(scene, palmG, vcm2, pl, false); }
-      { // the harbour, with yachts moored in it, dropped on the largest clear patch inside the circuit
-        let hx = null, hz = 0;
-        for (const need of [44, 40, 36]) for (let k = 0; k < 900 && hx === null; k++) { const x = rand(BOUNDS.x0 + 40, BOUNDS.x1 - 40), z = rand(BOUNDS.z0 + 40, BOUNDS.z1 - 40); if (farFromRoad(x, z, need)) { hx = x; hz = z; } }   // (v199: a little closer if the road variants leave less room)
-        if (hx !== null) {
-          const wT = canvasTex(128, 128, (x) => { x.fillStyle = '#1c7fa8'; x.fillRect(0, 0, 128, 128);
-            x.fillStyle = '#2496bd'; for (let k = 0; k < 5; k++) x.fillRect(0, k * 26, 128, 12);
-            x.fillStyle = 'rgba(210,245,255,.4)'; for (let k = 0; k < 10; k++) x.fillRect(rand(0, 110), rand(0, 128), rand(14, 40), 3); }, [5, 5]);
-          const hw = 78, hl = 50; W.harbour = { x: hx, z: hz, w: hw / 2 + 7, l: hl / 2 + 7 };
-          const sea = new THREE.Mesh(new THREE.PlaneGeometry(hw, hl).rotateX(-Math.PI / 2), new THREE.MeshStandardMaterial({ map: wT, roughness: .25, metalness: .3 }));
-          sea.position.set(hx, .06, hz); scene.add(sea);
-          W.anim.push((dt, t) => { wT.offset.set(Math.sin(t * .05) * .04, -t * .012); });
-          const quay = M('#b8bcc4', { roughness: .9, fog: !def.clearRoad });
-          for (const [dx, dz, sx, sz] of [[0, -hl / 2 - 1.6, hw + 6, 3.2], [0, hl / 2 + 1.6, hw + 6, 3.2], [-hw / 2 - 1.6, 0, 3.2, hl + 6], [hw / 2 + 1.6, 0, 3.2, hl + 6]]) {
-            const q = new THREE.Mesh(new THREE.BoxGeometry(sx, 1.1, sz), quay); q.position.set(hx + dx, .5, hz + dz); q.receiveShadow = true; scene.add(q); }
-          const boatG = (() => { const g = new THREE.Group(), hull = M('#f2f4f8', { roughness: .4 }), deck = M('#dfe3ea', { roughness: .5 }), dark = M('#2b3550', { roughness: .4 }), mast = M('#c8ccd4', { roughness: .3, metalness: .5 });
-            const h = new THREE.Mesh(new THREE.CylinderGeometry(1.5, 1.1, 9, 6, 1).rotateX(Math.PI / 2), hull); h.scale.set(1, .55, 1); h.position.y = .7; g.add(h);
-            box(g, 2.3, .9, 3.6, deck, 0, 1.5, -.6); box(g, 1.7, .7, 2.2, dark, 0, 2.3, -.9);
-            const m = new THREE.Mesh(new THREE.CylinderGeometry(.08, .11, 7, 6), mast); m.position.set(0, 5, -.4); g.add(m);
-            return bakeOne(g); })();
-          const boats = [];
-          for (let k = 0; k < 9; k++) { const row = k % 2 ? 1 : -1;
-            boats.push({ x: hx + (k - 4) * 8.2 + rand(-1, 1), y: .1, z: hz + row * (hl / 2 - 7) + rand(-2, 2), s: rand(.8, 1.35), ry: row > 0 ? 0 : Math.PI }); }
-          instanced(scene, boatG, vcm2, boats, false);
-        } }
+      // (v301, the user: "this pool that is in the track — I don't want it there") the harbour basin with the yachts in the
+      // middle of the circuit is gone; the park (lawn, trees, beds, fountains) fills the space. W.harbour stays unset.
+      // Inside the loop of the circuit it is all park now: no houses there (inField: inside the road's outline)
+      const fieldPoly = TRACK.pts.filter((_, i) => i % 3 === 0);
+      const inField = (x, z) => { let c = false; for (let i = 0, j = fieldPoly.length - 1; i < fieldPoly.length; j = i++) { const a = fieldPoly[i], b = fieldPoly[j]; if ((a.z > z) !== (b.z > z) && x < (b.x - a.x) * (z - a.z) / (b.z - a.z) + a.x) c = !c; } return c; };
       /* ---------- (v293, the user: "redesign Robo City … make the environment more park-like … benches, luxury cars")
          The circuit runs through a seaside park: a pale stone promenade behind the hedges with benches facing the
          track, luxury cars parked on painted bays along the straights, and a belt of lawn with round trees, cypresses,
@@ -2446,7 +2430,7 @@ const THEMES = {
         for (let gx = BOUNDS.x0 - 80; gx < BOUNDS.x1 + 80; gx += 8.5) for (let gz = BOUNDS.z0 - 80; gz < BOUNDS.z1 + 80; gz += 8.5) {
           const x = gx + rand(-3, 3), z = gz + rand(-3, 3);
           if (!farFromRoad(x, z, 9, 3) || inHarbour(x, z) || nearStart(x, z, 60) || fountains.some((f) => (f.x - x) ** 2 + (f.z - z) ** 2 < 11 ** 2)) continue;
-          const belt = !farFromRoad(x, z, 34, 3), r = Math.random();
+          const belt = !farFromRoad(x, z, 34, 3) || inField(x, z), r = Math.random();   // (v301: the whole infield is park)
           if (!belt) { if (r < .08) lists.t1.push({ x, y: 0, z, s: rand(.9, 1.4), ry: rand(0, 6) }); continue; }   // (among the houses: a tree here and there)
           if (r < .24) lists[r < .12 ? 't1' : 't2'].push({ x, y: 0, z, s: rand(.85, 1.35), ry: rand(0, 6) });
           else if (r < .34) lists.cy.push({ x, y: 0, z, s: rand(.85, 1.2), ry: rand(0, 6) });
@@ -2506,7 +2490,7 @@ const THEMES = {
       const put = (geo, colOf, plain) => { const u = geo.attributes.uv, n = geo.attributes.normal; pos.push(...geo.attributes.position.array); nor.push(...n.array);
         for (let i = 0; i < u.count; i++) { if (plain) uv.push(.05, .02); else uv.push(u.getX(i), u.getY(i)); const c = colOf(n.getY(i)); col.push(c.r, c.g, c.b); } };
       for (let gx = BOUNDS.x0 - 70; gx < BOUNDS.x1 + 70; gx += 24) for (let gz = BOUNDS.z0 - 70; gz < BOUNDS.z1 + 70; gz += 24) {
-        const x = gx + rand(-4, 4), z = gz + rand(-4, 4); if (!farFromRoad(x, z, 34, 3)) continue;
+        const x = gx + rand(-4, 4), z = gz + rand(-4, 4); if (!farFromRoad(x, z, 34, 3) || inField(x, z)) continue;   // (v301: none inside the circuit)
         if (W.harbour && Math.abs(x - W.harbour.x) < W.harbour.w + 9 && Math.abs(z - W.harbour.z) < W.harbour.l + 9) continue;
         const w = rand(10, 17), d = rand(10, 17), h = Math.round(rand(3, 9) * (farFromRoad(x, z, 60, 6) ? 1.35 : 1)) * 4; blds.push({ x, z, w, d, h });
         const bg = new THREE.BoxGeometry(w, h, d).toNonIndexed().translate(x, h / 2, z), c = new THREE.Color(pick(pal)), u = bg.attributes.uv, n = bg.attributes.normal;
@@ -5544,6 +5528,7 @@ let party = null;
 /* ---------- 6. Screens ---------- */
 let screen = 'loading';
 function goMenu() {
+  tapTip(false);   // (v301)
   hidePodium(); screen = 'menu'; showOnly('menu'); refreshCounters(); Snd.engineOff(); $('tracks').hidden = true;
   { const st = L.stats(), all = L.ITEMS.filter((x) => x.kind === 'word').length || 1, pc = Math.min(100, Math.round((st.learning + st.mastered) / all * 100)); $('eng').innerHTML = `<img class="ico" src="ui/icon-book.png" alt=""><span class="t">English ${L.LEVEL_NAMES[L.level()]}<small>${st.learning + st.mastered} learned${save.cups ? `<span class="cups"> · cups ${save.cups}</span>` : ''}</small><i class="engbar"><b style="width:${pc}%"></b></i></span>`; }
   const sum = save.packs.length && window.FugioPacks ? FugioPacks.summary(PACKS, save.packs) : null;
@@ -5994,7 +5979,7 @@ function chooseSteer() {
       S.innerHTML = `<div class="ipop card wide"><div class="tag">CONTROLS</div><p>Drive with the keyboard</p><div class="ikeys"><span><kbd>W</kbd> drive</span><span><kbd>A</kbd> <kbd>D</kbd> steer</span><span><kbd>SHIFT</kbd> drift</span><span><kbd>SPACE</kbd> power-up</span></div><button class="btn gold" id="iOk">OK ▶</button></div>`;
       tap($('iOk'), () => { sfx.click(); res(); }); return;
     }
-    const up = isPortrait(), keys = up ? ['joy', 'line', 'follow', 'arrows'] : ['tilt', 'joy', 'line', 'follow', 'arrows'], cur = up ? save.steerP || 'line' : save.steerL || 'line';
+    const up = isPortrait(), keys = up ? ['joy', 'line', 'follow', 'arrows'] : ['tilt', 'joy', 'line', 'follow', 'arrows'], cur = up ? save.steerP || 'follow' : save.steerL || 'follow';
     S.innerHTML = `<div class="ipop card wide"><div class="tag">CONTROLS</div><p>How do you want to steer?</p><div class="spick">${keys.map((k) => `<button data-v="${k}" class="${k === cur ? 'on' : ''}">${STEER_ART[k]}<span>${STEER_NAME[k]}</span></button>`).join('')}</div><button class="btn gold" id="iOk">OK ▶</button></div>`;
     for (const b of S.querySelectorAll('.spick button')) tap(b, async () => { sfx.click(); const v = b.dataset.v;
       if (v === 'tilt') { const ok = await enableTilt(); if (!ok) { toast('Tilt is not available here', '#ffb0b8', 24); return; } save.tilt = true; }
@@ -6440,7 +6425,7 @@ const TOUCH = matchMedia('(pointer: coarse)').matches || navigator.maxTouchPoint
 // (v138) the player picks their steering per orientation in Settings > Controls: turn the device, the round
 // joystick, or the line. Tilt is only offered sideways; upright it falls back to the line.
 const steerWant = () => { if (!TOUCH) return 'keys';
-  const m = isPortrait() ? (save.steerP || 'line') : (save.steerL || 'line');
+  const m = isPortrait() ? (save.steerP || 'follow') : (save.steerL || 'follow');
   if (m === 'tilt') return (!isPortrait() && save.tilt && tiltG !== null) ? 'tilt' : 'stick';
   return m === 'joy' ? 'joy' : m === 'follow' ? 'follow' : m === 'arrows' ? 'arrows' : 'stick'; };
 let CTL = TOUCH ? 'stick' : 'keys';   // how the player steers: 'wheel' (on screen), 'tilt' (turn the phone) or 'keys'
@@ -6488,6 +6473,8 @@ addEventListener('deviceorientation', (e) => {
 async function enableTilt() {
   try { if (window.DeviceOrientationEvent && DeviceOrientationEvent.requestPermission) { const r = await DeviceOrientationEvent.requestPermission(); if (r !== 'granted') return false; } return !!window.DeviceOrientationEvent; } catch (e) { return false; }
 }
+// (v301) the TAP SIDES tip: both halves of the race light up with a pulsing arrow (index.html #tapTip)
+function tapTip(on) { const t = $('tapTip'); if (t) t.classList.toggle('on', !!on); }
 function ctlHint(on) {
   const h = $('ctlHint'); if (!on) { h.style.opacity = 0; return; }
   const k = (t) => `<kbd>${t}</kbd>`; if (TOUCH && !GPAD.on) setCtl(steerWant());
@@ -6659,7 +6646,7 @@ function startRaceNow(trackId = save.track || 'alps', opts = {}) {
   loadPitCrew(trackId);   // (v177) this map's crew outfit, while the race sets up
   if (race) { freeRacers(race.racers); for (const p of race.projectiles) WORLD.scene.remove(p.m); for (const t of race.traps) WORLD.scene.remove(t.m); race = null; }
   useTrack(trackId); save.track = trackId; store(); TUNE_NOW = TUNES[TDEF.music];
-  Snd.init(); screen = 'race'; showOnly('hud'); $('tracks').hidden = true; $('toasts').innerHTML = ''; WHEEL.rot = 0; WHEEL.held = null; $('wheelHint').style.opacity = 1; ctlHint(true);
+  Snd.init(); screen = 'race'; showOnly('hud'); $('tracks').hidden = true; $('toasts').innerHTML = ''; WHEEL.rot = 0; WHEEL.held = null; $('wheelHint').style.opacity = 1; ctlHint(true); tapTip(false);
   const me = charById(save.char), others = CHARACTERS.filter((c) => c !== me);
   const inParty = !!(party && party.members.length > 1);
   let order = opts.tut ? [me] : inParty ? party.members.map((m) => (m.me ? me : { remote: m.id, name: m.name, ch: charById(m.char) || me, skin: m.skin })) : [others[0], others[1], me, others[2], others[3]];
@@ -7696,6 +7683,11 @@ function updateRace(dt) {
   const P = race.player;
   // while racing the camera is locked behind your kart (since v40): it turns with the kart almost at once and only a
   // touch of smoothing is left, so bumps and shakes don't jolt the picture; the fly-round and the finish stay smooth
+  // (v301, the user: "at the start of each race a quick tip how to steer by clicking the sides") once you can steer in a
+  // race (after the garage questions and the fly-round), the TAP LEFT / TAP RIGHT tip shows for about 4 s, or until
+  // you tap; a question card coming up hides it
+  if (race.tapTipT === undefined) { if (CTL === 'follow' && race.started && !race.ended && !race.dialog && race.introT <= 0 && screen === 'race') { race.tapTipT = performance.now(); tapTip(true); } }
+  else if (race.tapTipT > 0) { const age = performance.now() - race.tapTipT; if (age > 4200 || (age > 900 && FOLLOW.held != null) || race.dialog || race.ended) { race.tapTipT = -1; tapTip(false); } }
   const locked = race.introT <= 0 && !race.ended, rate = locked ? 22 : 7;
   race.camA += wrapA(P.angle + P.driftYaw * .35 - race.camA) * (locked ? Math.min(1, dt * 16) : Math.min(1, gdt * 4.5)); race.shake = Math.max(0, race.shake - dt * 1.4);
   { const A = race.act || (race.act = { side: 0, air: 0, dipY: 0, dipV: 0, fov: 0 }), cd = Math.min(dt, .05), sf = clamp(P.speed / 22, 0, 1);   // (v293) the action camera
