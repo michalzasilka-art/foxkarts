@@ -80,7 +80,9 @@ const TUNE = {
   maxImmune: 3,            // puddle shields a racer can hold (the user: "max 3 per racer")
   // (v269) the question sets, here so the debug hub can change them: garage start 3 sets of garageN, a pit stop 3 sets
   // of pitN (each pitSecs), the finish line finN questions of finSecs (a Starter gets 2 / 3 seconds more)
-  garageN: 3, pitN: 3, finN: 3, finSecs: 6,   // (v270, the user: the garage start is 3 × 3 = 9 questions, one per rear wing)
+  garageN: 3, pitN: 3, finN: 3, finSecs: 6,
+  finQuiz: false,   // (v302, the user: "remove the questions after crossing the finish line, whoever crosses the line first wins"; true brings them back)
+  garageOff: true,   // (v302, the user: no Garage button for now while testing; the garage itself is all still here)   // (v270, the user: the garage start is 3 × 3 = 9 questions, one per rear wing)
   // (v287, the user: "make the steering in the air less sensitive") in the air (a jump off a ramp or a fall) the kart
   // turned as fast as on the road, with no grip and no assist, so it landed crooked or in the wall: now 40 % of it.
   // The little hop that starts a drift is not affected.
@@ -4222,7 +4224,7 @@ function runQuiz(sets, tag, onDone, onAns = null) {
       const g = got[q.k]; g.n++; g.res.push(!!ok); if (ok) g.sum += PIT_RIGHT + PIT_FAST * clamp(fast || 0, 0, 1);
       pitUpFx(P, q.k, q.i, !!ok, !!(onAns && onAns(q.k, q.i, !!ok)));   // (v267) the upgrade goes onto your kart as you answer (v270: the garage's wing takes over the label)
       partGlow(P, null); step(j + 1);
-    }, TUNE.pitSecs + (L.level() === 0 ? 2 : 0), null, tag !== 'GARAGE');   // (v273, the user: the start doesn't wait for the clock after a wrong answer; pit stops still do)
+    }, TUNE.pitSecs + (L.level() === 0 ? 2 : 0), null, tag !== 'GARAGE' && 'oneSec');   // (v302, the user: after a wrong pit answer only a 1 s wait, then the next one)   // (v273, the user: the start doesn't wait for the clock after a wrong answer; pit stops still do)
     // (v160) where you are in the set: three dots in the set's colour; the phone sheet slides up only on the first card
     const card = D.querySelector(".qcard"), top = card && card.querySelector(".qtop");
     if (top) top.insertAdjacentHTML("afterbegin", `<div class="qprog" style="--c:${S.col}">${Array.from({ length: q.n }, (_, k) => `<i class="${k < q.i ? (got[q.k].res[k] ? "done ok" : "done no") : k === q.i ? "now" : ""}"></i>`).join("")}</div>`);
@@ -6048,7 +6050,7 @@ function tutDone() {
   tap($('iRace'), () => { sfx.click(); if (race && race.tut && race.tut.arrow) race.tut.arrow.removeFromParent(); if (WORLD.fgates) { for (const fg of WORLD.fgates) fg.g.visible = false; WORLD.gates = []; } endRace(); $('tutb').hidden = true; introEnd(); goMenu(); });
 }
 
-tap($('garageBtn'), () => { sfx.click(); goGarage(); });
+tap($('garageBtn'), () => { if (TUNE.garageOff) return; sfx.click(); goGarage(); });
 tap($('back'), () => { sfx.click(); goMenu(); });   // (v219, the user: on the phone the garage could only be left by the small tabs at the top)
 // a teacher (or a parent) can choose school topics for the questions
 tap($('topicBtn'), async () => {
@@ -6060,7 +6062,7 @@ tap($('topicBtn'), async () => {
 // the Word Book: every picture word by track, with its Czech meaning and stars for how well it is learned (Leitner box);
 // the Word Book. The English level can be changed here too (it also changes by itself).
 tap($('eng'), () => openWordBook());
-tap($('klvLobby'), () => { sfx.click(); goGarage(); });   // (v233) the kart's level card in the lobby opens the garage
+tap($('klvLobby'), () => { if (TUNE.garageOff) return; sfx.click(); goGarage(); });   // (v233) the kart's level card in the lobby opens the garage
 function openWordBook() {
   sfx.click(); const Qz = $('quiz'), srs = save.learn.srs, words = L.ITEMS.filter((x) => x.kind === 'word'), st = L.stats();
   const groups = [['alps', 'Alpine Peaks'], ['city', 'Robo City'], ['space', 'Star Loop']];
@@ -6248,6 +6250,7 @@ function questionCard(host, title, q, done, limit = 0, ctl = null, waitWrong = f
     const hint = o ? (q.why && q.why[o]) || q.cs || '' : '';
     fb.hidden = false; fb.innerHTML = `${o ? '' : '<div class="late">Time is up!</div>'}<div class="full">${q.fmt === 'word' || q.fmt === 'pic' ? `${q.it.e} <b>${q.it.w}</b>` : `<b>${q.full}</b>`}</div>${hint ? `<div class="cz">CZ: ${hint}</div>` : ''}<button class="btn small" id="qok" style="--c:var(--green);margin:10px auto 0">OK ▶</button>`;
     let gone = false; const go = () => { if (gone) return; gone = true; done(false, 0); };
+    if (waitWrong === 'oneSec') { fb.querySelector('#qok').remove(); setTimeout(go, 1000); return; }   // (v302) the pit: the right answer shows for 1 s, then the next question
     // (v241, the user) a wrong answer at the finish or in the pit: you wait until this question's clock runs out
     if (o && waitWrong && limit) { fb.querySelector('#qok').outerHTML = '<div class="qwait">Wait for the clock…</div>'; waiting = go; const qt = host.querySelector('.qtime'); if (qt) qt.classList.add('wwait'); return; }
     tap(fb.querySelector('#qok'), go); setTimeout(go, limit ? (hint ? 3200 : 2200) : 4200);
@@ -6682,7 +6685,7 @@ function startRaceNow(trackId = save.track || 'alps', opts = {}) {
     r.bubble = makeShield(); r.bubble.position.y = .7; r.bubble.visible = false; model.root.add(r.bubble);
     r.flame = new THREE.Mesh(FLAME_GEO, WORLD.flameMat); r.flame.position.set(-.25, .42, -1.25); r.flame.visible = false; model.body.add(r.flame);
     if (TDEF.magnet) { r.beam = new THREE.Mesh(BEAM_GEO, WORLD.beamMat || (WORLD.beamMat = new THREE.MeshBasicMaterial({ color: '#3a8aff', transparent: true, opacity: .62, depthWrite: false, side: THREE.DoubleSide }))); r.beam.visible = false; model.root.add(r.beam); }
-    r.quizT = player || TDEF.pitOnly ? 0 : rand(7.5, 14) / (r.skill || 1);   // (how long this rival takes over the three finish questions; none on a pit-only track)
+    r.quizT = player || TDEF.pitOnly || !TUNE.finQuiz ? 0 : rand(7.5, 14) / (r.skill || 1);   // (how long this rival takes over the three finish questions; none on a pit-only track)
     if (TDEF.pitStart && PITS && !inParty && !opts.tut) { toBay(r, i); toGarage(r); }   // (v199: the rivals too, each in its own garage)   // (v170) in its own garage bay (v195: yours, inside the garage)
     return r;
   });
@@ -7364,7 +7367,7 @@ function jumpQuestion(P) {
 // rivals' answering times are rolled when the race is set up (quizT).
 function finishLine() {
   const P = race.player;
-  if (QDEV()) { P.quizT = 0; finish(); return; }   // (v183, the user) the 3 finish questions are back on every map, right after the line
+  if (QDEV() || !TUNE.finQuiz) { P.quizT = 0; finish(); return; }   // (v302) no finish questions: the order you cross the line in is the result   // (v183, the user) the 3 finish questions are back on every map, right after the line
   race.slowTarget = .2; race.finQuiz = !race.party; const c0 = resClock(), t0 = performance.now(); let right = 0;
   toast(`${ico('icon-flag')} FINISH!\nGET 3 RIGHT!`, '#ffe14a', 44); sfx.fanfare();
   const next = () => {

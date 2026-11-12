@@ -97,6 +97,9 @@ button{font-family:var(--f);font-weight:700;cursor:pointer;border:0;color:#fff;p
 /* HUD while racing */
 #hud .pos{position:absolute;top:calc(8px + env(safe-area-inset-top));left:12px;font-size:64px;line-height:1;font-style:italic;color:var(--yellow);-webkit-text-stroke:3px var(--ink);text-shadow:0 5px 0 var(--ink);transform:skewX(-8deg)}
 #hud .rcoins{position:absolute;top:calc(84px + env(safe-area-inset-top));left:12px;padding:2px 12px;border-radius:16px;background:rgba(27,42,74,.75);border:3px solid var(--ink);font-size:22px;color:var(--yellow)}
+/* (v302, the user) no Garage button for now while testing (TUNE.garageOff); remove this line to bring it back */
+#tGarage,#garageBtn{display:none!important}
+.ptiles:has(#tGarage){grid-template-columns:repeat(2,1fr)}
 #speed{position:absolute;inset:-4%;width:108%;height:108%;opacity:0;pointer-events:none}
 /* (v300) the flame-ring boost: orange-hot speed lines and a fire glow round the edge of the screen */
 #speed.fire{filter:sepia(1) saturate(7) hue-rotate(-18deg) brightness(1.15)}
@@ -1864,7 +1867,7 @@ addEventListener('unhandledrejection',function(e){if(window.FK&&FK.ready||window
 <script src="packages.js?v=1"></script>
 <script src="/shared/pack-picker.js?v=8"></script>
 <script type="importmap">{"imports":{"three":"./lib/three.module.min.js"}}</script>
-<link rel="modulepreload" href="lib/three.module.min.js"><link rel="modulepreload" href="game.js?v=301"><link rel="modulepreload" href="rear-wings.js?v=1"><link rel="modulepreload" href="models.js?v=52"><link rel="modulepreload" href="learn.js?v=52"><link rel="modulepreload" href="kart-skin.js?v=21"><link rel="modulepreload" href="lib/GLTFLoader.js?v=2"><link rel="modulepreload" href="lib/BufferGeometryUtils.js?v=2"><link rel="modulepreload" href="racers.js?v=2"><link rel="modulepreload" href="lib/RoomEnvironment.js?v=2">
-<script type="module" src="game.js?v=301"></script>
+<link rel="modulepreload" href="lib/three.module.min.js"><link rel="modulepreload" href="game.js?v=302"><link rel="modulepreload" href="rear-wings.js?v=1"><link rel="modulepreload" href="models.js?v=52"><link rel="modulepreload" href="learn.js?v=52"><link rel="modulepreload" href="kart-skin.js?v=21"><link rel="modulepreload" href="lib/GLTFLoader.js?v=2"><link rel="modulepreload" href="lib/BufferGeometryUtils.js?v=2"><link rel="modulepreload" href="racers.js?v=2"><link rel="modulepreload" href="lib/RoomEnvironment.js?v=2">
+<script type="module" src="game.js?v=302"></script>
 </body>
 </html>
