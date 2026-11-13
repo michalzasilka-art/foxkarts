@@ -653,7 +653,8 @@ async function loadOfficial(hi = false) {
     try { const g = await gltf(hi ? `chars/${id}.glb?v=4` : lowGLB(id)); g.scene.traverse((o) => { if (o.isMesh) { BASE.off[id] = o; o.material.envMapIntensity = .8; } }); }
     catch (e) { console.warn('official model missing', id, e); }
   }), BASE.rivalSrc ? null : gltf('models/racing-driver.glb?v=1', 20000).then((g) => { BASE.rivalSrc = g.scene; }).catch((e) => console.warn('racing driver did not load; the rivals stay themselves', e)),
-    BASE.foxDrvSrc ? null : gltf('models/foxino-driver.glb?v=1', 20000).then((g) => { BASE.foxDrvSrc = g.scene; }).catch((e) => console.warn('Foxino driver did not load; the old Foxino drives', e)));
+    BASE.foxDrvSrc ? null : gltf('models/foxino-driver.glb?v=1', 20000).then((g) => { BASE.foxDrvSrc = g.scene; }).catch((e) => console.warn('Foxino driver did not load; the old Foxino drives', e)),
+    BASE.foxSeatSrc ? null : gltf('models/foxino-seated.glb?v=1', 20000).then((g) => { BASE.foxSeatSrc = g.scene; }).catch((e) => console.warn('seated Foxino did not load; the rigged one drives', e)));
 }
 // the default kart: the Meshy model from the user's purple-and-gold sheet (kart-skin.js recolours it per look).
 // Drivers sit at its Seat node, which is higher and further back than the old shape-built kart's seat.
@@ -1179,6 +1180,46 @@ function rivalBaked() {
    rivals, paws on the rim at 10 and 2 turning with the wheel. The helmet's flat blue is repainted to the kart's body
    colour (the colour you choose in the garage). */
 const FOX_FIT = { s: 1.5, seat: [0, .17, .08], pose: { dropFeet: false, hunch: .55, headScale: .5, dropTail: .15, palmGap: -.025, palmBack: 0, curl: [1.3, 1.2, 1], thumb: .9 } };   /* (v312, the user: helmet twice smaller, no tail, Foxino smaller, hands round the wheel) */
+/* (v313, the user: "generate him in the sitting position through ChatGPT and Tripo: no tail, the helmet in normal racing
+   proportion, sitting in the seat, his back tilted backwards, his arms straight; then attach it so it matches")
+   models/foxino-seated.glb is already sitting. It is fitted here, once: the two fists (the forward-most clusters at
+   arm height) are put on the rim at FOX_SEAT.grip (rad from the top, 1.0 = 10 and 2), the scale set by how far apart the
+   fists are, then he is tipped about the fists so his seat sits on the kart's seat. The geometry is baked into kart
+   space and gets the same wheel-turn morphs (the fists turn with the rim). */
+const FOX_SEAT = { grip: 1.0, sink: .0, lift: 0, pitchMax: .5 };
+function foxSeated() {
+  if (BASE.foxSeat) return BASE.foxSeat;
+  const W = wheelInKart(); if (!BASE.foxSeatSrc || !W || !BASE.seatShift) return null;
+  let src = null; BASE.foxSeatSrc.updateMatrixWorld(true); BASE.foxSeatSrc.traverse((o) => { if (o.isMesh && !src) src = o; });
+  const geo = src.geometry.clone().applyMatrix4(src.matrixWorld); geo.computeBoundingBox();
+  const P = geo.attributes.position, bb = geo.boundingBox, H = bb.max.y - bb.min.y, v = new THREE.Vector3();
+  // the fists: vertices in the front 18 % (+Z) between 35 % and 80 % of his height, split left / right
+  // (the feet reach further forward, so the cut is measured from the front-most point at arm height, on each side)
+  const cx = (bb.min.x + bb.max.x) / 2, L = new THREE.Vector3(), R = new THREE.Vector3(); let nL = 0, nR = 0, zL = -1e9, zR = -1e9;
+  for (let i = 0; i < P.count; i++) { v.fromBufferAttribute(P, i); const h = (v.y - bb.min.y) / H; if (h < .35 || h > .8) continue; if (v.x > cx) zL = Math.max(zL, v.z); else zR = Math.max(zR, v.z); }
+  const band = (bb.max.z - bb.min.z) * .09;
+  for (let i = 0; i < P.count; i++) { v.fromBufferAttribute(P, i); const h = (v.y - bb.min.y) / H; if (h < .35 || h > .8) continue; if (v.x > cx) { if (v.z > zL - band) { L.add(v); nL++; } } else if (v.z > zR - band) { R.add(v); nR++; } }
+  if (!nL || !nR) return null; L.divideScalar(nL); R.divideScalar(nR);
+  // his seat: the lowest points of the back half
+  let seatM = new THREE.Vector3(), nS = 0; const zMid = (bb.min.z + bb.max.z) / 2;
+  for (let i = 0; i < P.count; i++) { v.fromBufferAttribute(P, i); if (v.z < zMid && v.y < bb.min.y + H * .12) { seatM.add(v); nS++; } }
+  seatM.divideScalar(nS || 1);
+  // the rim points (kart space): e1 to the driver's left, e2 up the wheel's face
+  const up = new THREE.Vector3(0, 1, 0), e2 = up.clone().addScaledVector(W.a, -up.dot(W.a)).normalize(); let e1 = new THREE.Vector3().crossVectors(e2, W.a).normalize(); if (e1.x < 0) e1.negate();
+  const toDriver = W.a.clone().multiplyScalar(Math.sign(W.a.dot(new THREE.Vector3(...FOX_FIT.seat).add(BASE.seatShift).sub(W.c))) || 1);
+  const g = FOX_SEAT.grip, GL = W.c.clone().addScaledVector(e2, Math.cos(g) * W.Rc).addScaledVector(e1, Math.sin(g) * W.Rc).addScaledVector(toDriver, .02);
+  const GR = W.c.clone().addScaledVector(e2, Math.cos(g) * W.Rc).addScaledVector(e1, -Math.sin(g) * W.Rc).addScaledVector(toDriver, .02);
+  const k = GL.distanceTo(GR) / L.distanceTo(R), fm = L.clone().add(R).multiplyScalar(.5), gm = GL.clone().add(GR).multiplyScalar(.5);
+  // tip him about the fists' axis so his seat lands at the kart's seat height (within pitchMax)
+  const seatK = new THREE.Vector3(0, .17, -.24).add(BASE.seatShift).add(new THREE.Vector3(0, FOX_SEAT.lift, 0));
+  const rel = seatM.clone().sub(fm).multiplyScalar(k), want = seatK.clone().sub(gm);
+  let pitch = Math.atan2(want.y, -want.z) - Math.atan2(rel.y, -rel.z); pitch = clamp(pitch, -FOX_SEAT.pitchMax, FOX_SEAT.pitchMax);
+  const M = new THREE.Matrix4().makeTranslation(gm.x, gm.y - FOX_SEAT.sink, gm.z).multiply(new THREE.Matrix4().makeRotationX(-pitch)).multiply(new THREE.Matrix4().makeScale(k, k, k)).multiply(new THREE.Matrix4().makeTranslation(-fm.x, -fm.y, -fm.z));
+  geo.applyMatrix4(M); geo.computeBoundingBox(); geo.computeBoundingSphere();
+  const I = (x) => x.clone();
+  addTurnMorphs(geo, I, I, W);
+  return (BASE.foxSeat = { geo, map: src.material.map, k, pitch });
+}
 function foxBaked() {
   if (BASE.foxBaked) return BASE.foxBaked;
   const W = wheelInKart(); if (!BASE.foxDrvSrc || !W || !BASE.seatShift) return null;
@@ -1188,13 +1229,18 @@ function foxBaked() {
   return (BASE.foxBaked = r);
 }
 function driverBody(ch, skin, rival = false) {
-  const R = rival && BASE.rivalSrc ? rivalBaked() : null, F = !rival && ch.id === 'foxino' && BASE.foxDrvSrc ? foxBaked() : null;
-  const look = helmetLook(skin), key = ch.id + '|' + look.main + look.light + look.logo + (R ? '|R' : '') + (F ? '|F' : '');
+  const R = rival && BASE.rivalSrc ? rivalBaked() : null, FS = !rival && ch.id === 'foxino' && BASE.foxSeatSrc ? foxSeated() : null, F = !FS && !rival && ch.id === 'foxino' && BASE.foxDrvSrc ? foxBaked() : null;
+  const look = helmetLook(skin), key = ch.id + '|' + look.main + look.light + look.logo + (R ? '|R' : '') + (F ? '|F' : '') + (FS ? '|S' : '');
   if (driverCache.has(key)) return driverCache.get(key);
   let g;
   // every driver is a group that sits at HF_PIVOT in the kart (so they all lean round the same point)
   g = new THREE.Group();
-  if (F) {
+  if (FS) {
+    // (v313) the seated Foxino, already in kart space
+    const mat = new THREE.MeshStandardMaterial({ map: FS.map ? helmetPaint(FS.map, look.main) : null, roughness: .7, metalness: 0, envMapIntensity: .8 });
+    const body = new THREE.Mesh(FS.geo, mat); body.castShadow = true; body.frustumCulled = false; body.updateMorphTargets();
+    const b = new THREE.Group(); b.add(body); b.position.sub(HF_PIVOT).sub(BASE.seatShift); g.add(b);   // (the racer adds foxPos + seatShift back)
+  } else if (F) {
     // (v309) the player's Foxino: the Tripo driver, seated, his helmet in the chosen colour
     const mat = new THREE.MeshStandardMaterial({ map: F.map ? helmetPaint(F.map, look.main) : null, roughness: .7, metalness: 0, envMapIntensity: .8 });
     const body = new THREE.Mesh(F.geo, mat); body.castShadow = true; body.scale.setScalar(F.S); body.frustumCulled = false;
@@ -8210,6 +8256,7 @@ window.FK.ask = (secs = 30) => race && !race.dialog && askOne('jump', `${ico('ic
 // test hook: nudge how an official character sits (FK.fit('rob', { s: 1.2, helm: { r: .42 } }))
 window.FK.fit = (id, patch) => { const f = CHAR_FIT[id]; if (patch.helm) { Object.assign(f.helm, patch.helm); delete patch.helm; } Object.assign(f, patch); driverCache.clear(); kartCache.clear(); setShowRacer(); return f; };
 window.FK.CHAR_FIT = CHAR_FIT;
+window.FK.foxSeat = (patch) => { if (patch) { Object.assign(FOX_SEAT, patch); BASE.foxSeat = null; driverCache.clear(); try { setShowRacer(); } catch (e) {} } const r = foxSeated(); return r && { k: r.k, pitch: r.pitch, ...FOX_SEAT }; };
 window.FK.foxFit = (patch) => { if (patch) { if (patch.pose) FOX_FIT.pose = { ...FOX_FIT.pose, ...patch.pose }; if (patch.s) FOX_FIT.s = patch.s; if (patch.seat) FOX_FIT.seat = patch.seat; BASE.foxBaked = null; driverCache.clear(); try { setShowRacer(); } catch (e) {} } const r = foxBaked(); return r && { reach: r.reach, S: r.S, seat: FOX_FIT.seat, pose: FOX_FIT.pose }; };   // (test hook: tune the player's Foxino live)
 window.FK.racerModel = (id, player = false, ship = false) => { const ch = charById(id); return makeRacerModel(ch, ch.color, ch.sticker || 'none', player, null, ship); };   // (test hook: one racer, for close-ups)
 window.FK.ENV = () => ENV;
