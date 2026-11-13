@@ -941,11 +941,29 @@ function tyreWheel(r, w, side, skin, lod) {
   g.scale.set(side * w / .172, r / .141, r / .141);
   return g;
 }
+/* (2026-11-13, the user: "try replacing the chalets … blend it into the environment and place it so it can be seen
+   partly on the menu") the Alps chalets are the Tripo snowy chalet (green shutters, its own snowy yard, fences and
+   bushes), cut from 1.86 M triangles to 12k (models/chalet-alps.glb: the menu) and 6k (chalet-alps-lp.glb: the ~24 on the
+   track) in Blender. The source is in Foxino/3D Models/Tripo Library/Snowy Chalet. If it can't load, the shape-built
+   chalets stay. CHALET_S: model units -> metres (the house about as tall as the old one, the yard round it). */
+const CHALET_S = 20;
+async function loadChalet() {
+  const one = async (url) => { const g = await gltf(url, 20000); g.scene.updateMatrixWorld(true); let m = null; g.scene.traverse((o) => { if (o.isMesh && !m) m = o; });
+    const geo = m.geometry.clone().applyMatrix4(m.matrixWorld).scale(CHALET_S, CHALET_S, CHALET_S); const mat = m.material; mat.envMapIntensity = .8; if (mat.map) mat.map.anisotropy = 4; return { geo, mat }; };
+  try { [BASE.chalet, BASE.chaletLP] = await Promise.all([one('models/chalet-alps.glb?v=1'), one('models/chalet-alps-lp.glb?v=1')]); dressLobbyChalet(); }
+  catch (e) { console.warn('chalet model did not load; the shape-built chalets stay', e); }
+}
+// the menu's chalet: the Tripo one in place of the shape-built one (SHOW.chalet is the group the menu moves for portrait / landscape)
+function dressLobbyChalet() {
+  const g = SHOW.chalet; if (!g || !BASE.chalet || g.userData.tripo) return;
+  g.clear(); const m = new THREE.Mesh(BASE.chalet.geo, BASE.chalet.mat); m.rotation.y = CHALET_FACE; m.castShadow = true; m.receiveShadow = true; g.add(m); g.userData.tripo = true;
+}
+const CHALET_FACE = 0;   // (the model's front, turned to face the same way as the old chalet's)
 const LDP = { on: null };   // (v266) the loading screen's progress inside the model loading
 async function loadFoxino() {
   const P = (f) => { if (LDP.on) LDP.on(f); };
   let done = 0; const tick = () => P(++done / 4 * .95);   // (v277: all at once, not one after another, so one slow file costs only its own time)
-  await Promise.all([loadKart().then(tick), loadOfficial().then(tick), giveUp(loadPitGarage('alps')).catch((e) => console.warn(e)).then(tick), loadTyre().then(tick)]);   // (the garage screen uses the Alps one)
+  await Promise.all([loadKart().then(tick), loadOfficial().then(tick), giveUp(loadPitGarage('alps')).catch((e) => console.warn(e)).then(tick), loadTyre().then(tick), loadChalet()]);   // (the garage screen uses the Alps one)
   { const t = TYRE_BY_ID[(save.kart && save.kart.skin || {}).tyre]; if (t && t.model) await giveUp(loadTyreModel(t.model), 8000).catch((e) => console.warn(e)); }   // (v186) your design tyre, before the first race
   // (v266, the user: slow devices sat on the loading screen) what only the races need — the cave's crystals and
   // stalagmites, the other four maps' pit garages (about 6 MB) — now downloads behind the menu; a race waits for it
@@ -2284,15 +2302,16 @@ const THEMES = {
       for (let k = 0; k < 2200 && trees.length < 480; k++) { const x = rand(BOUNDS.x0 - 25, BOUNDS.x1 + 25), z = rand(BOUNDS.z0 - 25, BOUNDS.z1 + 25); if (farFromRoad(x, z, 8)) trees.push({ x, z, s: rand(.75, 1.5), ry: rand(0, 6) }); }
       // (v94) villages: three clusters of houses in three colourways, away from the road
       { const centres = []; for (let k = 0; k < 600 && centres.length < 3; k++) { const x = rand(BOUNDS.x0 + 30, BOUNDS.x1 - 30), z = rand(BOUNDS.z0 + 30, BOUNDS.z1 - 30); if (farFromRoad(x, z, 22) && !farFromRoad(x, z, 48) && centres.every((c) => (c.x - x) ** 2 + (c.z - z) ** 2 > 90 ** 2)) centres.push({ x, z }); }
-        for (const c of centres) for (let k = 0; k < 60 && chalets.filter((h) => h.v === c).length < 6; k++) { const x = c.x + rand(-26, 26), z = c.z + rand(-26, 26); if (farFromRoad(x, z, 12) && chalets.every((h) => (h.x - x) ** 2 + (h.z - z) ** 2 > 150)) chalets.push({ x, z, s: rand(.85, 1.1), ry: Math.atan2(MID.x - x, MID.z - z) + rand(-.4, .4), v: c }); } }
-      for (let k = 0; k < 400 && chalets.length < 24; k++) { const x = rand(BOUNDS.x0 + 20, BOUNDS.x1 - 20), z = rand(BOUNDS.z0 + 30, BOUNDS.z1 - 20); if (farFromRoad(x, z, 12) && chalets.every((c) => (c.x - x) ** 2 + (c.z - z) ** 2 > 400)) chalets.push({ x, z, s: rand(.9, 1.15), ry: rand(0, 6) }); }
+        for (const c of centres) for (let k = 0; k < 60 && chalets.filter((h) => h.v === c).length < 6; k++) { const x = c.x + rand(-26, 26), z = c.z + rand(-26, 26); if (farFromRoad(x, z, BASE.chaletLP ? 16 : 12) && chalets.every((h) => (h.x - x) ** 2 + (h.z - z) ** 2 > (BASE.chaletLP ? 320 : 150))) chalets.push({ x, z, s: rand(.85, 1.1), ry: Math.atan2(MID.x - x, MID.z - z) + rand(-.4, .4), v: c }); } }
+      for (let k = 0; k < 400 && chalets.length < 24; k++) { const x = rand(BOUNDS.x0 + 20, BOUNDS.x1 - 20), z = rand(BOUNDS.z0 + 30, BOUNDS.z1 - 20); if (farFromRoad(x, z, BASE.chaletLP ? 16 : 12) && chalets.every((c) => (c.x - x) ** 2 + (c.z - z) ** 2 > (BASE.chaletLP ? 520 : 400))) chalets.push({ x, z, s: rand(.9, 1.15), ry: rand(0, 6) }); }
       for (let k = 0; k < 400 && snowmen.length < 9; k++) { const x = rand(BOUNDS.x0 + 30, BOUNDS.x1 - 30), z = rand(BOUNDS.z0 + 30, BOUNDS.z1 - 30); if (farFromRoad(x, z, 4.5) && !farFromRoad(x, z, 9)) snowmen.push({ x, z, s: 1, ry: rand(0, 6) }); }
       if (W.onRoads) for (let k = chalets.length - 1; k >= 0; k--) if (W.onRoads(chalets[k].x, chalets[k].z, 40)) chalets.splice(k, 1);   // (v272, the user) no houses round the changing stretch
-      const clear = trees.filter((t) => chalets.every((c) => (c.x - t.x) ** 2 + (c.z - t.z) ** 2 > 64));
+      const clear = trees.filter((t) => chalets.every((c) => (c.x - t.x) ** 2 + (c.z - t.z) ** 2 > (BASE.chaletLP ? 120 : 64)));   // (the Tripo chalets have a yard: no firs in it)
       for (const l of [clear, chalets, snowmen]) for (const d of l) d.y = W.groundAt(d.x, d.z) - .1;
       const vcm = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: .85, flatShading: true });
       { const firs = [firGeo(1), firGeo(2), firGeo(3)]; firs.forEach((fg, i) => instanced(scene, fg, vcm, clear.filter((_, k) => k % 3 === i), false)); }   // the detailed firs (three shapes)
-      { const ways = [['#f4efe4', '#2f7a3a'], ['#f6e0a0', '#b8302a'], ['#f2c4bc', '#2a5a9a']]; ways.forEach(([p, sh], i) => instanced(scene, chaletGeo(p, sh), vcm, chalets.filter((_, k) => k % 3 === i))); }   // (480 trees casting shadows cost ~70k triangles a frame on phones) instanced(scene, snowmanGeo(), new THREE.MeshStandardMaterial({ vertexColors: true, roughness: .8 }), snowmen);
+      if (BASE.chaletLP) instanced(scene, BASE.chaletLP.geo, BASE.chaletLP.mat, chalets.map((c) => ({ ...c, y: c.y - .25, ry: (c.ry || 0) + CHALET_FACE })));   // (2026-11-13) the Tripo snowy chalet, its yard sunk a little into the snow
+      else { const ways = [['#f4efe4', '#2f7a3a'], ['#f6e0a0', '#b8302a'], ['#f2c4bc', '#2a5a9a']]; ways.forEach(([p, sh], i) => instanced(scene, chaletGeo(p, sh), vcm, chalets.filter((_, k) => k % 3 === i))); }   // (480 trees casting shadows cost ~70k triangles a frame on phones) instanced(scene, snowmanGeo(), new THREE.MeshStandardMaterial({ vertexColors: true, roughness: .8 }), snowmen);
       addMountains(scene, MID.x, MID.z, 340, 430, 32);
       // (v94) a stretch of the road under fresh snow (34–48 % of the lap): a snow layer over the asphalt with two dark tyre
       // tracks through it, and deep white banks on both sides
@@ -5269,7 +5288,7 @@ function buildShowroom() {
       for (let i = 0; i < 26; i++) { const t = i / 26, y = (1.6 + t * 4.9) * sz + LOB_H(x, z) - .1, rr = (2.25 - t * 1.75) * sz * .92, a = t * Math.PI * 7; bulbs.push({ x: x + Math.cos(a) * rr, y, z: z + Math.sin(a) * rr, s: .09, c: cols[i % 5] }); }
     instanced(scene, new THREE.SphereGeometry(1, 8, 6), new THREE.MeshBasicMaterial({ color: '#ffffff', fog: false }), bulbs, false);
   }
-  const ch = new THREE.Mesh(chaletGeo(), vcm); ch.position.set(-11, LOB_H(-11, -16) - .15, -16); ch.rotation.y = .5; ch.name = 'LobbyChalet'; scene.add(ch); SHOW.chalet = ch;
+  const ch = new THREE.Group(); ch.add(new THREE.Mesh(chaletGeo(), vcm)); ch.position.set(-10, LOB_H(-10, -18) - .15, -18); ch.rotation.y = .9; ch.name = 'LobbyChalet'; scene.add(ch); SHOW.chalet = ch; dressLobbyChalet();
   // purple banners on poles, as in the mockup
   {
     const bTex = canvasTex(64, 128, (g) => {
@@ -8064,7 +8083,7 @@ function updateShowroom(dt) {
   else { const d = clamp(Math.max(4.4, 2.4 / (.42 * (w / h) * .65)), 4, 12); goal[0] = .95 + d * .1; goal[1] = d; goal[4] = .95; }   // looking a little higher: more of the sky and the aurora   // a little above the racer, so the rings on the dais show
   // (v169, the user) on a phone held upright the camera sees only ~7 m either side, so the chalet (11 m to the left)
   // was out of the picture: there it stands smaller and further back on the right, roof and all beside the logo
-  { const ch = SHOW.chalet, up = isPortrait(); if (ch && ch.userData.up !== up) { ch.userData.up = up; const [x, z, ry, s] = up ? [4.2, -24, -.45, .6] : [-11, -16, .5, 1]; ch.position.set(x, SHOW.groundAt(x, z) - .15, z); ch.rotation.y = ry; ch.scale.setScalar(s); } }
+  { const ch = SHOW.chalet, up = isPortrait(); if (ch && ch.userData.up !== up) { ch.userData.up = up; const [x, z, ry, s] = up ? [4.2, -24, -.45, .6] : [-10, -18, .9, 1];   /* (2026-11-13: turned so the Tripo chalet shows its balcony and door, half behind the logo) */ ch.position.set(x, SHOW.groundAt(x, z) - .15, z); ch.rotation.y = ry; ch.scale.setScalar(s); } }
   if (!SHOW.cam || SHOW.cam.length < 5) SHOW.cam = goal.slice();
   for (let i = 0; i < 5; i++) SHOW.cam[i] += (goal[i] - SHOW.cam[i]) * Math.min(1, dt * 4);
   cam.position.set(0, SHOW.cam[0], SHOW.cam[1]); cam.lookAt(0, SHOW.cam[4], 0);
