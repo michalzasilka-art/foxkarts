@@ -109,6 +109,8 @@ export function bakeSeatedDriver(scene, o) {
     }
   }
   apply();
+  // (v312, the user: "make the helmet twice smaller") the head bone scaled: the helmet shrinks round the neck
+  if (P.headScale && P.headScale !== 1) { B.Head.scale.setScalar(P.headScale); B.Head.updateMatrixWorld(true); }
 
   // ---- 3. bake the skinning (positions and normals) into a plain geometry, in model space ----
   mesh.updateMatrixWorld(true); mesh.skeleton.update();
@@ -126,12 +128,17 @@ export function bakeSeatedDriver(scene, o) {
   geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
   if (Na) geo.setAttribute('normal', new THREE.BufferAttribute(nor, 3)); else geo.computeVertexNormals();
   if (g.attributes.uv) geo.setAttribute('uv', g.attributes.uv.clone());
+  // (v312, the user: "remove his tail") the tail hangs off the hips: hip / spine vertices further than dropTail (model
+  // units) from the hips' vertical axis are tail (the torso ends at ~0.14, the tail starts at ~0.16)
+  const domJ = (i) => { let best = 0, bw = -1; for (let k = 0; k < 4; k++) { const w = SW.getComponent(i, k); if (w > bw) { bw = w; best = SI.getComponent(i, k); } } return best; };
+  const trunk = new Set(['Hips', 'Spine', 'Spine1'].map((nm) => B[nm] && mesh.skeleton.bones.indexOf(B[nm])).filter((x) => x >= 0));
+  const isTail = (i) => P.dropTail && trunk.has(domJ(i)) && Math.hypot(Pa.getX(i) - hips.x, Pa.getZ(i) - hips.z) > P.dropTail;
   if (g.index) {
     // the boots stay down in the footwell where nobody sees them; dropped, so a toe can never poke through the nose or the floor
     const feet = new Set(['LeftFoot', 'LeftToeBase', 'LeftToe_End', 'RightFoot', 'RightToeBase', 'RightToe_End'].map((nm) => B[nm] && mesh.skeleton.bones.indexOf(B[nm])).filter((x) => x >= 0));
     const footW = (i) => { let w = 0; for (let k = 0; k < 4; k++) if (feet.has(SI.getComponent(i, k))) w += SW.getComponent(i, k); return w; };
     const idx = g.index.array, keep = [];
-    for (let t = 0; t < idx.length; t += 3) if (!P.dropFeet || footW(idx[t]) + footW(idx[t + 1]) + footW(idx[t + 2]) < 1.5) keep.push(idx[t], idx[t + 1], idx[t + 2]);
+    for (let t = 0; t < idx.length; t += 3) { if (P.dropFeet && footW(idx[t]) + footW(idx[t + 1]) + footW(idx[t + 2]) >= 1.5) continue; if (isTail(idx[t]) || isTail(idx[t + 1]) || isTail(idx[t + 2])) continue; keep.push(idx[t], idx[t + 1], idx[t + 2]); }
     geo.setIndex(keep);
   }
   geo.computeBoundingBox(); geo.computeBoundingSphere();

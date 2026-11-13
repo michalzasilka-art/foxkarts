@@ -22,7 +22,7 @@ import { buildRearWing, REAR_WINGS } from './rear-wings.js?v=1';   // (v270) the
 import { GLTFLoader } from './lib/GLTFLoader.js?v=2';
 import { mergeGeometries } from './lib/BufferGeometryUtils.js?v=2';
 import { BUILDERS } from './racers.js?v=2';
-import { bakeSeatedDriver, rivalSuit, helmetPaint, DRIVER_POSE } from './rival-driver.js?v=3';   // (2026-11-13) the AI rivals drive as the Tripo racing driver
+import { bakeSeatedDriver, rivalSuit, helmetPaint, DRIVER_POSE } from './rival-driver.js?v=4';   // (2026-11-13) the AI rivals drive as the Tripo racing driver
 
 /* ---------- CHARACTERS: the 5 racers. Foxino is the Higgsfield 3D model; the other four are built in racers.js.
    `color` is their kart and name-tag colour; `hue` is only used if a model can't be built (then a recoloured Foxino drives). ---------- */
@@ -1178,7 +1178,7 @@ function rivalBaked() {
    tail as in the picture") models/foxino-driver.glb: the Tripo model (Mixamo rig), seated by rival-driver.js like the
    rivals, paws on the rim at 10 and 2 turning with the wheel. The helmet's flat blue is repainted to the kart's body
    colour (the colour you choose in the garage). */
-const FOX_FIT = { s: 1.8, seat: [0, .17, -.06], pose: { dropFeet: false, hunch: .45 } };
+const FOX_FIT = { s: 1.5, seat: [0, .17, .08], pose: { dropFeet: false, hunch: .55, headScale: .5, dropTail: .15, palmGap: -.025, palmBack: 0, curl: [1.3, 1.2, 1], thumb: .9 } };   /* (v312, the user: helmet twice smaller, no tail, Foxino smaller, hands round the wheel) */
 function foxBaked() {
   if (BASE.foxBaked) return BASE.foxBaked;
   const W = wheelInKart(); if (!BASE.foxDrvSrc || !W || !BASE.seatShift) return null;
