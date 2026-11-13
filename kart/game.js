@@ -978,7 +978,7 @@ function addKartDetails(k) {
   if (!k) return;
   if (!kartDetailsLoad) kartDetailsLoad = gltf('models/kart-details.glb?v=1', 15000).then((g) => {
     const white = new THREE.MeshPhysicalMaterial({ color: '#f2f4f8', roughness: .35, metalness: .05, clearcoat: .6, clearcoatRoughness: .2, side: THREE.DoubleSide });
-    g.scene.traverse((o) => { if (o.isMesh) { o.material = /Carbon/.test(o.name) || (o.material && o.material.name === 'M_Carbon') ? carbonMat(THREE) : white; o.castShadow = true; } });
+    g.scene.traverse((o) => { if (o.isMesh) { o.material = carbonMat(THREE); o.castShadow = true; } });   /* (v310, the user: "make the white carbon fibre black") every detail part is black carbon now, the white ones too */
     g.scene.name = 'KartDetails'; return g.scene;
   }).catch((e) => { console.warn('kart details did not load', e); return null; });
   return kartDetailsLoad.then((d) => { if (d && !k.getObjectByName('KartDetails')) k.add(d.clone(true)); });
