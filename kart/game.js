@@ -950,7 +950,7 @@ const CHALET_S = 20;
 async function loadChalet() {
   const one = async (url, k = CHALET_S) => { const g = await gltf(url, 20000); g.scene.updateMatrixWorld(true); let m = null; g.scene.traverse((o) => { if (o.isMesh && !m) m = o; });
     const geo = m.geometry.clone().applyMatrix4(m.matrixWorld).scale(k, k, k); const mat = m.material; mat.envMapIntensity = .8; if (mat.map) mat.map.anisotropy = 4; return { geo, mat }; };
-  try { [BASE.chalet, BASE.chaletLP] = await Promise.all([one('models/chalet-alps.glb?v=2'), one('models/chalet-alps-lp.glb?v=2')]); dressLobbyChalet(); }
+  try { [BASE.chalet, BASE.chaletLP] = await Promise.all([one('models/chalet-alps.glb?v=3'), one('models/chalet-alps-lp.glb?v=3')]); dressLobbyChalet(); }
   catch (e) { console.warn('chalet model did not load; the shape-built chalets stay', e); }
   // (2026-11-13, the user: "also back mountains and clouds") the Tripo snowy rock peak (alps-peak.glb, 3k triangles) for the
   // ring of far mountains and the Tripo puffy cloud (alps-cloud.glb, 1.5k) for the Alps sky, both in model units (instances scale them)
