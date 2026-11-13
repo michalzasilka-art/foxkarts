@@ -948,10 +948,15 @@ function tyreWheel(r, w, side, skin, lod) {
    chalets stay. CHALET_S: model units -> metres (the house about as tall as the old one, the yard round it). */
 const CHALET_S = 20;
 async function loadChalet() {
-  const one = async (url) => { const g = await gltf(url, 20000); g.scene.updateMatrixWorld(true); let m = null; g.scene.traverse((o) => { if (o.isMesh && !m) m = o; });
-    const geo = m.geometry.clone().applyMatrix4(m.matrixWorld).scale(CHALET_S, CHALET_S, CHALET_S); const mat = m.material; mat.envMapIntensity = .8; if (mat.map) mat.map.anisotropy = 4; return { geo, mat }; };
-  try { [BASE.chalet, BASE.chaletLP] = await Promise.all([one('models/chalet-alps.glb?v=1'), one('models/chalet-alps-lp.glb?v=1')]); dressLobbyChalet(); }
+  const one = async (url, k = CHALET_S) => { const g = await gltf(url, 20000); g.scene.updateMatrixWorld(true); let m = null; g.scene.traverse((o) => { if (o.isMesh && !m) m = o; });
+    const geo = m.geometry.clone().applyMatrix4(m.matrixWorld).scale(k, k, k); const mat = m.material; mat.envMapIntensity = .8; if (mat.map) mat.map.anisotropy = 4; return { geo, mat }; };
+  try { [BASE.chalet, BASE.chaletLP] = await Promise.all([one('models/chalet-alps.glb?v=2'), one('models/chalet-alps-lp.glb?v=2')]); dressLobbyChalet(); }
   catch (e) { console.warn('chalet model did not load; the shape-built chalets stay', e); }
+  // (2026-11-13, the user: "also back mountains and clouds") the Tripo snowy rock peak (alps-peak.glb, 3k triangles) for the
+  // ring of far mountains and the Tripo puffy cloud (alps-cloud.glb, 1.5k) for the Alps sky, both in model units (instances scale them)
+  try { [BASE.alpsPeak, BASE.alpsCloud] = await Promise.all([one('models/alps-peak.glb?v=1', 1), one('models/alps-cloud.glb?v=1', 1)]);
+    const c = BASE.alpsCloud.mat; c.emissive = new THREE.Color('#ffffff'); c.emissiveIntensity = .22; c.emissiveMap = c.map; BASE.alpsPeak.mat.envMapIntensity = .6; }
+  catch (e) { console.warn('Alps peak / cloud models did not load; the shape-built ones stay', e); }
 }
 // the menu's chalet: the Tripo one in place of the shape-built one (SHOW.chalet is the group the menu moves for portrait / landscape)
 function dressLobbyChalet() {
@@ -2312,7 +2317,10 @@ const THEMES = {
       { const firs = [firGeo(1), firGeo(2), firGeo(3)]; firs.forEach((fg, i) => instanced(scene, fg, vcm, clear.filter((_, k) => k % 3 === i), false)); }   // the detailed firs (three shapes)
       if (BASE.chaletLP) instanced(scene, BASE.chaletLP.geo, BASE.chaletLP.mat, chalets.map((c) => ({ ...c, y: c.y - .25, ry: (c.ry || 0) + CHALET_FACE })));   // (2026-11-13) the Tripo snowy chalet, its yard sunk a little into the snow
       else { const ways = [['#f4efe4', '#2f7a3a'], ['#f6e0a0', '#b8302a'], ['#f2c4bc', '#2a5a9a']]; ways.forEach(([p, sh], i) => instanced(scene, chaletGeo(p, sh), vcm, chalets.filter((_, k) => k % 3 === i))); }   // (480 trees casting shadows cost ~70k triangles a frame on phones) instanced(scene, snowmanGeo(), new THREE.MeshStandardMaterial({ vertexColors: true, roughness: .8 }), snowmen);
-      addMountains(scene, MID.x, MID.z, 340, 430, 32);
+      if (BASE.alpsPeak) {   // (2026-11-13) the Tripo snowy peaks round the valley (the model is 0.98 wide and 0.57 tall)
+        const peaks = []; for (let k = 0; k < 32; k++) { const a = k / 32 * Math.PI * 2 + rand(-.08, .08), r = rand(340, 430), h = rand(80, 165), s = h / .57; peaks.push({ x: MID.x + Math.cos(a) * r, y: -3, z: MID.z + Math.sin(a) * r, sx: s * rand(.8, 1.1), sy: s, sz: s * rand(.8, 1.1), ry: rand(0, 6) }); }
+        instanced(scene, BASE.alpsPeak.geo, BASE.alpsPeak.mat, peaks, false);
+      } else addMountains(scene, MID.x, MID.z, 340, 430, 32);
       // (v94) a stretch of the road under fresh snow (34–48 % of the lap): a snow layer over the asphalt with two dark tyre
       // tracks through it, and deep white banks on both sides
       { const sTex = canvasTex(128, 512, (x) => { x.fillStyle = '#f4f8ff'; x.fillRect(0, 0, 128, 512); for (let k = 0; k < 1800; k++) { x.fillStyle = Math.random() < .5 ? 'rgba(170,190,230,.25)' : 'rgba(255,255,255,.8)'; x.fillRect(rand(0, 128), rand(0, 512), rand(1, 3), rand(1, 3)); } for (const c of [36, 92]) { const g = x.createLinearGradient(c - 14, 0, c + 14, 0); g.addColorStop(0, 'rgba(120,130,160,0)'); g.addColorStop(.5, 'rgba(110,120,150,.75)'); g.addColorStop(1, 'rgba(120,130,160,0)'); x.fillStyle = g; x.fillRect(c - 14, 0, 28, 512); } }); sTex.wrapT = THREE.RepeatWrapping;
@@ -2335,7 +2343,8 @@ const THEMES = {
         const band = new THREE.Mesh(new THREE.CylinderGeometry(780, 780, 230, 64, 1, true), new THREE.MeshBasicMaterial({ map: tex, side: THREE.BackSide, alphaTest: .5, transparent: false, fog: false }));
         band.position.set(MID.x, 70, MID.z); scene.add(band); }
       const clouds = []; for (let k = 0; k < 16; k++) { const a = rand(0, 6.28), r = rand(150, 320); clouds.push({ x: MID.x + Math.cos(a) * r, y: rand(55, 95), z: MID.z + Math.sin(a) * r, s: rand(1.2, 2.4), ry: rand(0, 6) }); }
-      instanced(scene, cloudGeo(), new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1, emissive: '#ffffff', emissiveIntensity: .25 }), clouds, false);
+      if (BASE.alpsCloud) instanced(scene, BASE.alpsCloud.geo, BASE.alpsCloud.mat, clouds.map((c) => ({ ...c, s: c.s * 21 })), false);   // (2026-11-13) the Tripo puffy cloud, the size of the old ones
+      else instanced(scene, cloudGeo(), new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1, emissive: '#ffffff', emissiveIntensity: .25 }), clouds, false);
       flagsAndBoards(scene, W, true); grandstands(scene, W, '#e8403a');
       { const sun = new THREE.Mesh(new THREE.SphereGeometry(28, 20, 14), new THREE.MeshBasicMaterial({ color: '#fff6d0', fog: false })); sun.position.set(MID.x + 430, 240, MID.z - 540); scene.add(sun); }   // the sun, low over the far peaks
       // wooden fences along the outside of the bends
