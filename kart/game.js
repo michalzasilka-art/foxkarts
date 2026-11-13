@@ -22,7 +22,7 @@ import { buildRearWing, REAR_WINGS } from './rear-wings.js?v=1';   // (v270) the
 import { GLTFLoader } from './lib/GLTFLoader.js?v=2';
 import { mergeGeometries } from './lib/BufferGeometryUtils.js?v=2';
 import { BUILDERS } from './racers.js?v=2';
-import { bakeSeatedDriver, rivalSuit, DRIVER_POSE } from './rival-driver.js?v=2';   // (2026-11-13) the AI rivals drive as the Tripo racing driver
+import { bakeSeatedDriver, rivalSuit, helmetPaint, DRIVER_POSE } from './rival-driver.js?v=3';   // (2026-11-13) the AI rivals drive as the Tripo racing driver
 
 /* ---------- CHARACTERS: the 5 racers. Foxino is the Higgsfield 3D model; the other four are built in racers.js.
    `color` is their kart and name-tag colour; `hue` is only used if a model can't be built (then a recoloured Foxino drives). ---------- */
@@ -652,7 +652,8 @@ async function loadOfficial(hi = false) {
   await Promise.all(Object.keys(CHAR_FIT).map(async (id) => {
     try { const g = await gltf(hi ? `chars/${id}.glb?v=4` : lowGLB(id)); g.scene.traverse((o) => { if (o.isMesh) { BASE.off[id] = o; o.material.envMapIntensity = .8; } }); }
     catch (e) { console.warn('official model missing', id, e); }
-  }), BASE.rivalSrc ? null : gltf('models/racing-driver.glb?v=1', 20000).then((g) => { BASE.rivalSrc = g.scene; }).catch((e) => console.warn('racing driver did not load; the rivals stay themselves', e)));
+  }), BASE.rivalSrc ? null : gltf('models/racing-driver.glb?v=1', 20000).then((g) => { BASE.rivalSrc = g.scene; }).catch((e) => console.warn('racing driver did not load; the rivals stay themselves', e)),
+    BASE.foxDrvSrc ? null : gltf('models/foxino-driver.glb?v=1', 20000).then((g) => { BASE.foxDrvSrc = g.scene; }).catch((e) => console.warn('Foxino driver did not load; the old Foxino drives', e)));
 }
 // the default kart: the Meshy model from the user's purple-and-gold sheet (kart-skin.js recolours it per look).
 // Drivers sit at its Seat node, which is higher and further back than the old shape-built kart's seat.
@@ -1172,14 +1173,35 @@ function rivalBaked() {
   addTurnMorphs(r.geo, r.toK, r.toM, W);
   return (BASE.rivalBaked = r);
 }
+/* (v309, the user: "create Foxino, the main kart driver, through Tripo AI: one model, normal T-shirt and shorts, just a
+   helmet with carbon fibre white details, a main colour that can be chosen, dark visor"; then "no ears on the helmet, the
+   tail as in the picture") models/foxino-driver.glb: the Tripo model (Mixamo rig), seated by rival-driver.js like the
+   rivals, paws on the rim at 10 and 2 turning with the wheel. The helmet's flat blue is repainted to the kart's body
+   colour (the colour you choose in the garage). */
+const FOX_FIT = { s: 1.8, seat: [0, .17, -.06], pose: { dropFeet: false, hunch: .45 } };
+function foxBaked() {
+  if (BASE.foxBaked) return BASE.foxBaked;
+  const W = wheelInKart(); if (!BASE.foxDrvSrc || !W || !BASE.seatShift) return null;
+  const seat = new THREE.Vector3(...FOX_FIT.seat).add(BASE.seatShift);
+  const r = bakeSeatedDriver(BASE.foxDrvSrc, { S: FOX_FIT.s, seat, W, pose: FOX_FIT.pose });
+  addTurnMorphs(r.geo, r.toK, r.toM, W);
+  return (BASE.foxBaked = r);
+}
 function driverBody(ch, skin, rival = false) {
-  const R = rival && BASE.rivalSrc ? rivalBaked() : null;
-  const look = helmetLook(skin), key = ch.id + '|' + look.main + look.light + look.logo + (R ? '|R' : '');
+  const R = rival && BASE.rivalSrc ? rivalBaked() : null, F = !rival && ch.id === 'foxino' && BASE.foxDrvSrc ? foxBaked() : null;
+  const look = helmetLook(skin), key = ch.id + '|' + look.main + look.light + look.logo + (R ? '|R' : '') + (F ? '|F' : '');
   if (driverCache.has(key)) return driverCache.get(key);
   let g;
   // every driver is a group that sits at HF_PIVOT in the kart (so they all lean round the same point)
   g = new THREE.Group();
-  if (R) {
+  if (F) {
+    // (v309) the player's Foxino: the Tripo driver, seated, his helmet in the chosen colour
+    const mat = new THREE.MeshStandardMaterial({ map: F.map ? helmetPaint(F.map, look.main) : null, roughness: .7, metalness: 0, envMapIntensity: .8 });
+    const body = new THREE.Mesh(F.geo, mat); body.castShadow = true; body.scale.setScalar(F.S); body.frustumCulled = false;
+    body.position.set(FOX_FIT.seat[0] - F.hips.x * F.S, FOX_FIT.seat[1] - F.hips.y * F.S, FOX_FIT.seat[2] - F.hips.z * F.S);
+    body.updateMorphTargets();
+    const b = new THREE.Group(); b.add(body); b.position.sub(HF_PIVOT); g.add(b);
+  } else if (R) {
     // a rival: the racing driver, already sitting with his gloves on the rim, the suit in the rival's colour
     const mat = new THREE.MeshStandardMaterial({ map: R.map ? rivalSuit(R.map, css(ch.color)) : null, roughness: .75, metalness: 0, envMapIntensity: .8 });
     const body = new THREE.Mesh(R.geo, mat); body.castShadow = true; body.scale.setScalar(R.S); body.frustumCulled = false;
@@ -8188,6 +8210,7 @@ window.FK.ask = (secs = 30) => race && !race.dialog && askOne('jump', `${ico('ic
 // test hook: nudge how an official character sits (FK.fit('rob', { s: 1.2, helm: { r: .42 } }))
 window.FK.fit = (id, patch) => { const f = CHAR_FIT[id]; if (patch.helm) { Object.assign(f.helm, patch.helm); delete patch.helm; } Object.assign(f, patch); driverCache.clear(); kartCache.clear(); setShowRacer(); return f; };
 window.FK.CHAR_FIT = CHAR_FIT;
+window.FK.foxFit = (patch) => { if (patch) { if (patch.pose) FOX_FIT.pose = { ...FOX_FIT.pose, ...patch.pose }; if (patch.s) FOX_FIT.s = patch.s; if (patch.seat) FOX_FIT.seat = patch.seat; BASE.foxBaked = null; driverCache.clear(); try { setShowRacer(); } catch (e) {} } const r = foxBaked(); return r && { reach: r.reach, S: r.S, seat: FOX_FIT.seat, pose: FOX_FIT.pose }; };   // (test hook: tune the player's Foxino live)
 window.FK.racerModel = (id, player = false, ship = false) => { const ch = charById(id); return makeRacerModel(ch, ch.color, ch.sticker || 'none', player, null, ship); };   // (test hook: one racer, for close-ups)
 window.FK.ENV = () => ENV;
 window.FK.rival = (patch) => { if (patch) { if (patch.pose) RIVAL_FIT.pose = { ...(RIVAL_FIT.pose || {}), ...patch.pose }; if (patch.s) RIVAL_FIT.s = patch.s; if (patch.seat) RIVAL_FIT.seat = patch.seat; BASE.rivalBaked = null; driverCache.clear(); } const r = rivalBaked(); return r && { reach: r.reach, S: r.S, seat: RIVAL_FIT.seat, pose: { ...DRIVER_POSE, ...(RIVAL_FIT.pose || {}) }, wheel: wheelInKart() && { c: wheelInKart().c.toArray(), a: wheelInKart().a.toArray(), Rc: wheelInKart().Rc } }; };   // (test hook: tune the rivals' driver live)

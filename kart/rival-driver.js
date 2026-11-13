@@ -144,8 +144,11 @@ function clamp01(x, a, b) { return Math.max(a, Math.min(b, x)); }
 const RECOL = new Map();
 /* (2026-11-13) the player's Foxino: his helmet's main colour is a flat bright blue in the texture (#1e7bff, used nowhere
    else on him), repainted to the colour the player picks for the kart, keeping the shading */
-export function helmetPaint(map, color) { return rivalSuit(map, color, (h) => h.s > .45 && h.h > .55 && h.h < .68, 'helm'); }
-export function rivalSuit(map, color, pick = null, tag = 'suit') {
+export function helmetPaint(map, color) { return rivalSuit(map, color, (h) => h.s > .45 && h.h > .55 && h.h < .68, 'helm', FOX_FUR); }
+/* Foxino's fur: Tripo baked it bright magenta-pink (hue ~0.83); his fixed trait is the purple of the original picture
+   (#8f52d9 family), so the fur is pulled to that hue and a little darker */
+const FOX_FUR = (h) => h.s > .35 && h.h > .76 && h.h < .93 ? [.75, Math.min(h.s, .58), h.l * .92] : null;
+export function rivalSuit(map, color, pick = null, tag = 'suit', extra = null) {
   const key = tag + color; if (RECOL.has(key)) return RECOL.get(key);
   const img = map.image, N = 1024, cv = document.createElement('canvas'); cv.width = cv.height = N;
   const x = cv.getContext('2d', { willReadFrequently: true }); x.drawImage(img, 0, 0, N, N);
@@ -153,6 +156,8 @@ export function rivalSuit(map, color, pick = null, tag = 'suit') {
   const c = new THREE.Color(), hsl = {};
   for (let i = 0; i < a.length; i += 4) {
     c.setRGB(a[i] / 255, a[i + 1] / 255, a[i + 2] / 255); c.getHSL(hsl);
+    const ex = extra ? extra(hsl) : null;
+    if (ex) { c.setHSL(ex[0], ex[1], ex[2]); a[i] = c.r * 255; a[i + 1] = c.g * 255; a[i + 2] = c.b * 255; continue; }
     const hit = pick ? pick(hsl) : hsl.s > .35 && (hsl.h < .07 || hsl.h > .93);
     if (!hit) continue;
     // keep the shading (lightness relative to the suit's mid red), take the rival's hue and saturation
