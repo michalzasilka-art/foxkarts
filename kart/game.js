@@ -1186,7 +1186,7 @@ const FOX_FIT = { s: 1.5, seat: [0, .17, .08], pose: { dropFeet: false, hunch: .
    arm height) are put on the rim at FOX_SEAT.grip (rad from the top, 1.0 = 10 and 2), the scale set by how far apart the
    fists are, then he is tipped about the fists so his seat sits on the kart's seat. The geometry is baked into kart
    space and gets the same wheel-turn morphs (the fists turn with the rim). */
-const FOX_SEAT = { grip: 1.35, sink: .0, lift: 0, pitchMax: .5 };   /* (v314, the user: "make him bigger, more to the back so he fits the seat") fists at 9 and 3: he scales up ~16 % and sits further back */
+const FOX_SEAT = { grip: 1.3, grow: 1.12, sink: .0, lift: 0, pitchMax: .5 };   /* (v314/v315, the user: "make him bigger, more to the back so he fits the seat", "a bit more bigger") fists near 9 and 3, grown 12 % more round the fists */
 function foxSeated() {
   if (BASE.foxSeat) return BASE.foxSeat;
   const W = wheelInKart(); if (!BASE.foxSeatSrc || !W || !BASE.seatShift) return null;
@@ -1209,7 +1209,7 @@ function foxSeated() {
   const toDriver = W.a.clone().multiplyScalar(Math.sign(W.a.dot(new THREE.Vector3(...FOX_FIT.seat).add(BASE.seatShift).sub(W.c))) || 1);
   const g = FOX_SEAT.grip, GL = W.c.clone().addScaledVector(e2, Math.cos(g) * W.Rc).addScaledVector(e1, Math.sin(g) * W.Rc).addScaledVector(toDriver, .02);
   const GR = W.c.clone().addScaledVector(e2, Math.cos(g) * W.Rc).addScaledVector(e1, -Math.sin(g) * W.Rc).addScaledVector(toDriver, .02);
-  const k = GL.distanceTo(GR) / L.distanceTo(R), fm = L.clone().add(R).multiplyScalar(.5), gm = GL.clone().add(GR).multiplyScalar(.5);
+  const k = GL.distanceTo(GR) / L.distanceTo(R) * (FOX_SEAT.grow || 1), fm = L.clone().add(R).multiplyScalar(.5), gm = GL.clone().add(GR).multiplyScalar(.5);
   // tip him about the fists' axis so his seat lands at the kart's seat height (within pitchMax)
   const seatK = new THREE.Vector3(0, .17, -.24).add(BASE.seatShift).add(new THREE.Vector3(0, FOX_SEAT.lift, 0));
   const rel = seatM.clone().sub(fm).multiplyScalar(k), want = seatK.clone().sub(gm);
