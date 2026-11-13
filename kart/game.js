@@ -1186,7 +1186,7 @@ const FOX_FIT = { s: 1.5, seat: [0, .17, .08], pose: { dropFeet: false, hunch: .
    arm height) are put on the rim at FOX_SEAT.grip (rad from the top, 1.0 = 10 and 2), the scale set by how far apart the
    fists are, then he is tipped about the fists so his seat sits on the kart's seat. The geometry is baked into kart
    space and gets the same wheel-turn morphs (the fists turn with the rim). */
-const FOX_SEAT = { grip: 1.0, sink: .0, lift: 0, pitchMax: .5 };
+const FOX_SEAT = { grip: 1.35, sink: .0, lift: 0, pitchMax: .5 };   /* (v314, the user: "make him bigger, more to the back so he fits the seat") fists at 9 and 3: he scales up ~16 % and sits further back */
 function foxSeated() {
   if (BASE.foxSeat) return BASE.foxSeat;
   const W = wheelInKart(); if (!BASE.foxSeatSrc || !W || !BASE.seatShift) return null;
