@@ -17,7 +17,7 @@ import * as THREE from './lib/three.module.min.js';
 import { RoomEnvironment } from './lib/RoomEnvironment.js?v=2';
 import { buildFoxino, buildKart, buildHelmet, setDetail } from './models.js?v=52';
 import * as L from './learn.js?v=52';
-import { loadDefaultKart, dressKart, loadHelmet, dressHelmet, DEFAULT_SKIN, DEFAULT_HELMET, BODY_COLORS, LIGHT_COLORS, LOGOS, logoIconURL, logoCanvas, isInk, inkFromCanvas, inkLayer, WHEEL_SIZE, makeMetal, metalOf, swatchCSS } from './kart-skin.js?v=21';
+import { carbonMat, loadDefaultKart, dressKart, loadHelmet, dressHelmet, DEFAULT_SKIN, DEFAULT_HELMET, BODY_COLORS, LIGHT_COLORS, LOGOS, logoIconURL, logoCanvas, isInk, inkFromCanvas, inkLayer, WHEEL_SIZE, makeMetal, metalOf, swatchCSS } from './kart-skin.js?v=22';
 import { buildRearWing, REAR_WINGS } from './rear-wings.js?v=1';   // (v270) the nine rear wings for the garage start
 import { GLTFLoader } from './lib/GLTFLoader.js?v=2';
 import { mergeGeometries } from './lib/BufferGeometryUtils.js?v=2';
@@ -658,7 +658,7 @@ async function loadOfficial(hi = false) {
 // Drivers sit at its Seat node, which is higher and further back than the old shape-built kart's seat.
 const OLD_SEAT = new THREE.Vector3(0, .19, -.2);
 async function loadKart(hi = false) {
-  try { BASE.dk = await giveUp(loadDefaultKart(THREE, GLTFLoader, hi ? 'kart-default.glb?v=3' : lowGLB('kart-default'), hi)); BASE.seatShift = BASE.dk.nodes.Seat.position.clone().sub(OLD_SEAT).add(new THREE.Vector3(0, 0, .12)); /* a little forward of the Seat node, so the hands reach the wheel */ BASE.steerAxis = wheelNormal(BASE.dk.nodes.SteeringWheel.children[0].geometry); }
+  try { BASE.dk = await giveUp(loadDefaultKart(THREE, GLTFLoader, hi ? 'kart-default.glb?v=3' : lowGLB('kart-default'), hi)); BASE.seatShift = BASE.dk.nodes.Seat.position.clone().sub(OLD_SEAT).add(new THREE.Vector3(0, 0, .12)); /* a little forward of the Seat node, so the hands reach the wheel */ BASE.steerAxis = wheelNormal(BASE.dk.nodes.SteeringWheel.children[0].geometry); await giveUp(addKartDetails(BASE.dk), 15000).catch((e) => console.warn(e)); }
   catch (e) { console.warn('default kart did not load; using the shape-built one', e); if (!hi) BASE.dk = null; }
   // the Meshy racing helmet (the user's purple / white / orange sheet); the shape-built helmet stays as a fallback
   try { BASE.helmet = await giveUp(loadHelmet(THREE, GLTFLoader, hi ? 'helmet.glb?v=1' : lowGLB('helmet'), hi)); } catch (e) { console.warn('helmet did not load; using the shape-built one', e); if (!hi) BASE.helmet = null; }
@@ -954,9 +954,14 @@ async function loadChalet() {
   // shape-built chalets are back on the track and the menu (BASE.chalet / BASE.chaletLP stay unset, so every chalet branch falls back)
   // (2026-11-13, the user: "also back mountains and clouds") the Tripo snowy rock peak (alps-peak.glb, 3k triangles) for the
   // ring of far mountains and the Tripo puffy cloud (alps-cloud.glb, 1.5k) for the Alps sky, both in model units (instances scale them)
-  try { [BASE.alpsPeak, BASE.alpsCloud] = await Promise.all([one('models/alps-peak.glb?v=1', 1), one('models/alps-cloud.glb?v=1', 1)]);
-    const c = BASE.alpsCloud.mat; c.emissive = new THREE.Color('#ffffff'); c.emissiveIntensity = .22; c.emissiveMap = c.map; BASE.alpsPeak.mat.envMapIntensity = .6; }
-  catch (e) { console.warn('Alps peak / cloud models did not load; the shape-built ones stay', e); }
+  try { BASE.alpsCloud = await one('models/alps-cloud.glb?v=1', 1); const c = BASE.alpsCloud.mat; c.emissive = new THREE.Color('#ffffff'); c.emissiveIntensity = .22; c.emissiveMap = c.map; }
+  catch (e) { console.warn('Alps cloud model did not load; the shape-built clouds stay', e); }
+  /* (v308, the user: "make the back mountains more into the nature and less tall, make them look like the Alps, put some
+     trees there") three low-poly Alpine mountains modelled in Blender on the Windows PC (forests of snowy firs, meadows,
+     grey rock, snow on the top third; vertex colours, 3.9k triangles each, ~1 wide x 0.36 tall in model units) */
+  try { BASE.alpsMtns = await Promise.all([1, 2, 3].map((n) => one(`models/alps-mountain-${n}.glb?v=1`, 1)));
+    for (const m of BASE.alpsMtns) { m.mat.vertexColors = true; m.mat.flatShading = true; m.mat.roughness = .95; m.mat.metalness = 0; m.mat.envMapIntensity = .5; m.mat.side = THREE.FrontSide; m.mat.needsUpdate = true; } }
+  catch (e) { console.warn('Alps mountain models did not load; the shape-built ones stay', e); }
 }
 // the menu's chalet: the Tripo one in place of the shape-built one (SHOW.chalet is the group the menu moves for portrait / landscape)
 function dressLobbyChalet() {
@@ -964,6 +969,19 @@ function dressLobbyChalet() {
   g.clear(); const m = new THREE.Mesh(BASE.chalet.geo, BASE.chalet.mat); m.rotation.y = CHALET_FACE; m.castShadow = true; m.receiveShadow = true; g.add(m); g.userData.tripo = true;
 }
 const CHALET_FACE = 0;   // (the model's front, turned to face the same way as the old chalet's)
+/* (v308, the user: "improve the kart, put some carbon fibre white details on the kart") add-on parts modelled in Blender on the
+   Windows PC in kart-default.glb's own space (kart-details.glb: carbon splitter, sills, intake frames, diffuser; white
+   number boards, pod stripes, nose stripe, seat trim). The kart itself is unchanged; the carbon is the shared twill. */
+let kartDetailsLoad = null;
+function addKartDetails(k) {
+  if (!k) return;
+  if (!kartDetailsLoad) kartDetailsLoad = gltf('models/kart-details.glb?v=1', 15000).then((g) => {
+    const white = new THREE.MeshPhysicalMaterial({ color: '#f2f4f8', roughness: .35, metalness: .05, clearcoat: .6, clearcoatRoughness: .2, side: THREE.DoubleSide });
+    g.scene.traverse((o) => { if (o.isMesh) { o.material = /Carbon/.test(o.name) || (o.material && o.material.name === 'M_Carbon') ? carbonMat(THREE) : white; o.castShadow = true; } });
+    g.scene.name = 'KartDetails'; return g.scene;
+  }).catch((e) => { console.warn('kart details did not load', e); return null; });
+  return kartDetailsLoad.then((d) => { if (d && !k.getObjectByName('KartDetails')) k.add(d.clone(true)); });
+}
 const LDP = { on: null };   // (v266) the loading screen's progress inside the model loading
 async function loadFoxino() {
   const P = (f) => { if (LDP.on) LDP.on(f); };
@@ -2317,9 +2335,9 @@ const THEMES = {
       { const firs = [firGeo(1), firGeo(2), firGeo(3)]; firs.forEach((fg, i) => instanced(scene, fg, vcm, clear.filter((_, k) => k % 3 === i), false)); }   // the detailed firs (three shapes)
       if (BASE.chaletLP) instanced(scene, BASE.chaletLP.geo, BASE.chaletLP.mat, chalets.map((c) => ({ ...c, y: c.y - .25, ry: (c.ry || 0) + CHALET_FACE })));   // (2026-11-13) the Tripo snowy chalet, its yard sunk a little into the snow
       else { const ways = [['#f4efe4', '#2f7a3a'], ['#f6e0a0', '#b8302a'], ['#f2c4bc', '#2a5a9a']]; ways.forEach(([p, sh], i) => instanced(scene, chaletGeo(p, sh), vcm, chalets.filter((_, k) => k % 3 === i))); }   // (480 trees casting shadows cost ~70k triangles a frame on phones) instanced(scene, snowmanGeo(), new THREE.MeshStandardMaterial({ vertexColors: true, roughness: .8 }), snowmen);
-      if (BASE.alpsPeak) {   // (2026-11-13) the Tripo snowy peaks round the valley (the model is 0.98 wide and 0.57 tall)
-        const peaks = []; for (let k = 0; k < 32; k++) { const a = k / 32 * Math.PI * 2 + rand(-.08, .08), r = rand(340, 430), h = rand(80, 165), s = h / .57; peaks.push({ x: MID.x + Math.cos(a) * r, y: -3, z: MID.z + Math.sin(a) * r, sx: s * rand(.8, 1.1), sy: s, sz: s * rand(.8, 1.1), ry: rand(0, 6) }); }
-        instanced(scene, BASE.alpsPeak.geo, BASE.alpsPeak.mat, peaks, false);
+      if (BASE.alpsMtns) {   // (v308) the Blender Alpine mountains round the valley: 50–95 m tall, wide forested feet, each turned to face the track
+        const lists = [[], [], []]; for (let k = 0; k < 30; k++) { const a = k / 30 * Math.PI * 2 + rand(-.06, .06), r = rand(330, 420), h = rand(50, 95), s = h / .36; lists[k % 3].push({ x: MID.x + Math.cos(a) * r, y: -2, z: MID.z + Math.sin(a) * r, sx: s * rand(.9, 1.15), sy: s, sz: s * rand(.9, 1.15), ry: -a + Math.PI / 2 + rand(-.5, .5) }); }
+        BASE.alpsMtns.forEach((m, i) => instanced(scene, m.geo, m.mat, lists[i], false));
       } else addMountains(scene, MID.x, MID.z, 340, 430, 32);
       // (v94) a stretch of the road under fresh snow (34–48 % of the lap): a snow layer over the asphalt with two dark tyre
       // tracks through it, and deep white banks on both sides

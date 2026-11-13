@@ -239,13 +239,41 @@ export function makeMetal(THREE, mat, c) {
   mat.needsUpdate = true; return mat;
 }
 // the six materials of a clean model: [paint, carbon, trim, accent, white, light]
+/* (2026-11-13, the user: "improve the kart, put some carbon fibre white details on the kart") the dark parts are woven
+   CARBON FIBRE: a 2×2 twill worked out in the shader from the part's own position (the Meshy UVs are an atlas, so a
+   tiled texture would come out scrambled), under a glossy clear coat. CARBON_K: checks per model unit. */
+const CARBON_K = 46;
+let carbonShared = null;
+export function carbonMat(THREE) {
+  if (carbonShared) return carbonShared;
+  const m = new THREE.MeshPhysicalMaterial({ color: '#2a2c34', roughness: .42, metalness: .35, clearcoat: 1, clearcoatRoughness: .08, side: THREE.DoubleSide });
+  m.onBeforeCompile = (sh) => {
+    sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying vec3 vCfP; varying vec3 vCfN;')
+      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvCfP = position; vCfN = normal;');
+    sh.fragmentShader = sh.fragmentShader.replace('#include <common>', `#include <common>
+varying vec3 vCfP; varying vec3 vCfN;
+float cfWeave(vec2 q) {
+  vec2 c = floor(q), f = fract(q);
+  float d = mod(c.x + c.y, 4.0), hor = step(2.0, d);                 // 2x2 twill: which thread is on top in this cell
+  float across = hor > .5 ? f.y : f.x, along = hor > .5 ? f.x : f.y;
+  float tube = sin(across * 3.14159);                                   // the round thread
+  float fibre = .85 + .15 * sin(along * 3.14159 * 6.0);                 // fine fibres along it
+  return mix(.35, 1.0, tube * fibre) * (hor > .5 ? 1.0 : .78);
+}`).replace('#include <color_fragment>', `#include <color_fragment>
+{ vec3 n = abs(normalize(vCfN)); vec3 p = vCfP * ${CARBON_K.toFixed(1)};
+  vec2 q = n.x > n.y && n.x > n.z ? p.zy : (n.y > n.z ? p.xz : p.xy);
+  diffuseColor.rgb *= cfWeave(q) * 1.15; }`);
+  };
+  m.customProgramCacheKey = () => 'carbon-twill';
+  return (carbonShared = m);
+}
 function cleanMaterials(THREE, main, accent, light, { gloss = false } = {}) {
   const k = main + accent + light + gloss; if (cleanMats.has(k)) return cleanMats.get(k);
   const S = (o) => new THREE.MeshStandardMaterial({ side: THREE.DoubleSide, ...o });
   const m = [
     metalOf(main) ? makeMetal(THREE, new THREE.MeshStandardMaterial({ side: THREE.DoubleSide }), main)
     : gloss ? new THREE.MeshPhysicalMaterial({ color: main, roughness: .32, metalness: .1, clearcoat: 1, clearcoatRoughness: .12, side: THREE.DoubleSide }) : new THREE.MeshPhysicalMaterial({ color: main, roughness: .5, metalness: .05, clearcoat: .35, clearcoatRoughness: .45, side: THREE.DoubleSide }),
-    S({ color: '#16171e', roughness: .62, metalness: .25 }),
+    carbonMat(THREE),
     S({ color: '#5a6070', roughness: .3, metalness: .75 }),
     S({ color: accent, roughness: .35, metalness: .45 }),
     S({ color: '#eef0f6', roughness: .4, metalness: .05 }),

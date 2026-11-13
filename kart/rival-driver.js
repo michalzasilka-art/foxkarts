@@ -142,16 +142,19 @@ function clamp01(x, a, b) { return Math.max(a, Math.min(b, x)); }
 /* the suit in a rival's colour: the saturated red of the texture takes the rival's hue (white stripes, the black visor
    and the soles stay); drawn at 1024 px */
 const RECOL = new Map();
-export function rivalSuit(map, color) {
-  const key = color; if (RECOL.has(key)) return RECOL.get(key);
+/* (2026-11-13) the player's Foxino: his helmet's main colour is a flat bright blue in the texture (#1e7bff, used nowhere
+   else on him), repainted to the colour the player picks for the kart, keeping the shading */
+export function helmetPaint(map, color) { return rivalSuit(map, color, (h) => h.s > .45 && h.h > .55 && h.h < .68, 'helm'); }
+export function rivalSuit(map, color, pick = null, tag = 'suit') {
+  const key = tag + color; if (RECOL.has(key)) return RECOL.get(key);
   const img = map.image, N = 1024, cv = document.createElement('canvas'); cv.width = cv.height = N;
   const x = cv.getContext('2d', { willReadFrequently: true }); x.drawImage(img, 0, 0, N, N);
   const d = x.getImageData(0, 0, N, N), a = d.data, target = new THREE.Color(color), th = {}; target.getHSL(th);
   const c = new THREE.Color(), hsl = {};
   for (let i = 0; i < a.length; i += 4) {
     c.setRGB(a[i] / 255, a[i + 1] / 255, a[i + 2] / 255); c.getHSL(hsl);
-    const red = hsl.s > .35 && (hsl.h < .07 || hsl.h > .93);
-    if (!red) continue;
+    const hit = pick ? pick(hsl) : hsl.s > .35 && (hsl.h < .07 || hsl.h > .93);
+    if (!hit) continue;
     // keep the shading (lightness relative to the suit's mid red), take the rival's hue and saturation
     const l = clamp01(th.l + (hsl.l - .45) * .9, .08, .9);
     c.setHSL(th.h, Math.max(.45, th.s), l);
