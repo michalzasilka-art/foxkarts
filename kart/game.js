@@ -950,8 +950,8 @@ const CHALET_S = 20;
 async function loadChalet() {
   const one = async (url, k = CHALET_S) => { const g = await gltf(url, 20000); g.scene.updateMatrixWorld(true); let m = null; g.scene.traverse((o) => { if (o.isMesh && !m) m = o; });
     const geo = m.geometry.clone().applyMatrix4(m.matrixWorld).scale(k, k, k); const mat = m.material; mat.envMapIntensity = .8; if (mat.map) mat.map.anisotropy = 4; return { geo, mat }; };
-  try { [BASE.chalet, BASE.chaletLP] = await Promise.all([one('models/chalet-alps.glb?v=3'), one('models/chalet-alps-lp.glb?v=3')]); dressLobbyChalet(); }
-  catch (e) { console.warn('chalet model did not load; the shape-built chalets stay', e); }
+  // (v307, the user: "forget it, go back to the first house before the things with Tripo") the Tripo chalet is off: the
+  // shape-built chalets are back on the track and the menu (BASE.chalet / BASE.chaletLP stay unset, so every chalet branch falls back)
   // (2026-11-13, the user: "also back mountains and clouds") the Tripo snowy rock peak (alps-peak.glb, 3k triangles) for the
   // ring of far mountains and the Tripo puffy cloud (alps-cloud.glb, 1.5k) for the Alps sky, both in model units (instances scale them)
   try { [BASE.alpsPeak, BASE.alpsCloud] = await Promise.all([one('models/alps-peak.glb?v=1', 1), one('models/alps-cloud.glb?v=1', 1)]);
@@ -5297,7 +5297,7 @@ function buildShowroom() {
       for (let i = 0; i < 26; i++) { const t = i / 26, y = (1.6 + t * 4.9) * sz + LOB_H(x, z) - .1, rr = (2.25 - t * 1.75) * sz * .92, a = t * Math.PI * 7; bulbs.push({ x: x + Math.cos(a) * rr, y, z: z + Math.sin(a) * rr, s: .09, c: cols[i % 5] }); }
     instanced(scene, new THREE.SphereGeometry(1, 8, 6), new THREE.MeshBasicMaterial({ color: '#ffffff', fog: false }), bulbs, false);
   }
-  const ch = new THREE.Group(); ch.add(new THREE.Mesh(chaletGeo(), vcm)); ch.position.set(-10, LOB_H(-10, -18) - .15, -18); ch.rotation.y = .9; ch.name = 'LobbyChalet'; scene.add(ch); SHOW.chalet = ch; dressLobbyChalet();
+  const ch = new THREE.Group(); ch.add(new THREE.Mesh(chaletGeo(), vcm)); ch.position.set(-11, LOB_H(-11, -16) - .15, -16); ch.rotation.y = .5; ch.name = 'LobbyChalet'; scene.add(ch); SHOW.chalet = ch; dressLobbyChalet();
   // purple banners on poles, as in the mockup
   {
     const bTex = canvasTex(64, 128, (g) => {
@@ -8092,7 +8092,7 @@ function updateShowroom(dt) {
   else { const d = clamp(Math.max(4.4, 2.4 / (.42 * (w / h) * .65)), 4, 12); goal[0] = .95 + d * .1; goal[1] = d; goal[4] = .95; }   // looking a little higher: more of the sky and the aurora   // a little above the racer, so the rings on the dais show
   // (v169, the user) on a phone held upright the camera sees only ~7 m either side, so the chalet (11 m to the left)
   // was out of the picture: there it stands smaller and further back on the right, roof and all beside the logo
-  { const ch = SHOW.chalet, up = isPortrait(); if (ch && ch.userData.up !== up) { ch.userData.up = up; const [x, z, ry, s] = up ? [4.2, -24, -.45, .6] : [-10, -18, .9, 1];   /* (2026-11-13: turned so the Tripo chalet shows its balcony and door, half behind the logo) */ ch.position.set(x, SHOW.groundAt(x, z) - .15, z); ch.rotation.y = ry; ch.scale.setScalar(s); } }
+  { const ch = SHOW.chalet, up = isPortrait(); if (ch && ch.userData.up !== up) { ch.userData.up = up; const [x, z, ry, s] = up ? [4.2, -24, -.45, .6] : [-11, -16, .5, 1]; ch.position.set(x, SHOW.groundAt(x, z) - .15, z); ch.rotation.y = ry; ch.scale.setScalar(s); } }
   if (!SHOW.cam || SHOW.cam.length < 5) SHOW.cam = goal.slice();
   for (let i = 0; i < 5; i++) SHOW.cam[i] += (goal[i] - SHOW.cam[i]) * Math.min(1, dt * 4);
   cam.position.set(0, SHOW.cam[0], SHOW.cam[1]); cam.lookAt(0, SHOW.cam[4], 0);
