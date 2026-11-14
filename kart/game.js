@@ -995,6 +995,18 @@ async function loadCityProps() {
     BASE.city = { robots: [g['robot-peek-1'], g['robot-peek-2']], bar: [g['barrier-neon'], g['barrier-hazard']], blocks: g['barrier-blocks'], tall: [g['tree-tall-1'], g['tree-tall-2']], mid: [g['tree-mid-1'], g['tree-mid-2']], cypress: g['tree-cypress'], bush: g.bush };
   } catch (e) { console.warn('Robo City models did not load; the shape-built trees and planters stay', e); }
 }
+/* (v322, the user: "Gold Mines: remodel the bushes around the track, also the leaves from the top, also the rocks as the
+   barrier of the lava section", modelled in Blender on the Windows PC) two hedge modules (2.2 m, 0.4k triangles), three
+   hanging vines (3.3 / 5 / 7 m, origin at the top), two hanging moss canopies, the leafy arch over the road (2.5k) and
+   three lava-rock barrier modules (3.2 m, the road face +Z) */
+async function loadMineProps() {
+  const one = async (n) => { const g = await gltf(`models/mine-${n}.glb?v=1`, 20000); g.scene.updateMatrixWorld(true); let m = null; g.scene.traverse((o) => { if (o.isMesh && !m) m = o; }); return m.geometry.clone().applyMatrix4(m.matrixWorld); };
+  try {
+    const names = ['bush-1', 'bush-2', 'vine-1', 'vine-2', 'vine-3', 'canopy-1', 'canopy-2', 'leaf-arch', 'lava-rock-1', 'lava-rock-2', 'lava-rock-3'];
+    const g = Object.fromEntries((await Promise.all(names.map(one))).map((x, k) => [names[k], x]));
+    BASE.mine = { bush: [g['bush-1'], g['bush-2']], vines: [g['vine-1'], g['vine-2'], g['vine-3']], vineLen: [3.3, 5, 7], canopy: [g['canopy-1'], g['canopy-2']], arch: g['leaf-arch'], rocks: [g['lava-rock-1'], g['lava-rock-2'], g['lava-rock-3']] };
+  } catch (e) { console.warn('Gold Mines models did not load; the shape-built hedge, vines and blocks stay', e); }
+}
 // the menu's chalet: the Tripo one in place of the shape-built one (SHOW.chalet is the group the menu moves for portrait / landscape)
 function dressLobbyChalet() {
   const g = SHOW.chalet; if (!g || !BASE.chalet || g.userData.tripo) return;
@@ -1025,7 +1037,7 @@ async function loadFoxino() {
   // (v320, the user: "the gold mines take quite a lot to load") each map waits only for its own files now, not for every
   // map's; the beach models moved here from the loading screen
   const soft = (pr) => pr.catch((e) => console.warn(e)), pit = (id) => soft(loadPitGarage(id));
-  BASE.need = { mines: Promise.all([soft(loadCrystals()), soft(loadStalagmites()), pit('mines')]), beach: Promise.all([pit('beach'), soft(loadBeachProps())]), city: Promise.all([pit('city'), soft(loadCityProps()), soft(loadBeachProps())]), space: pit('space') };
+  BASE.need = { mines: Promise.all([soft(loadCrystals()), soft(loadStalagmites()), pit('mines'), soft(loadMineProps())]), beach: Promise.all([pit('beach'), soft(loadBeachProps())]), city: Promise.all([pit('city'), soft(loadCityProps()), soft(loadBeachProps())]), space: pit('space') };
   BASE.needDone = {}; for (const [id, pr] of Object.entries(BASE.need)) pr.then(() => { BASE.needDone[id] = true; });
   BASE.later = Promise.all(Object.values(BASE.need)).then(() => { BASE.laterDone = true; });
   loadPitCrew();   // (v163) the Blender pit crew: not waited for, the stops come much later
@@ -3207,7 +3219,9 @@ const THEMES = {
         if (fp.length) { const pG = new THREE.Group(); box(pG, .24, .95, .24, fw, 0, .48, 0); box(pG, .32, .14, .32, fIron, 0, .88, 0);
           box(pG, .18, .18, 2.6, fw, 0, .74, 0); box(pG, .18, .18, 2.6, fw, 0, .4, 0);
           instanced(scene, bakeOne(pG), fw, fp, false); }
-        bush.length && instanced(scene, bushG, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: .95, flatShading: true }), bush, false);
+        if (bush.length && BASE.mine) { const hm = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: .95, flatShading: true });   // (v322: the Blender hedge, 2.2 m along its X, so turned a quarter to run along the road)
+          BASE.mine.bush.forEach((g, k) => instanced(scene, g, hm, bush.filter((_, j) => j % 2 === k).map((b) => ({ ...b, ry: b.ry + Math.PI / 2, c: null })), false)); }
+        else bush.length && instanced(scene, bushG, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: .95, flatShading: true }), bush, false);
         shafts([.295, .355, .425, .50, .585, .645], [255, 246, 214], '#fff6d8');   // daylight through the roof
         // (v124, the user's lush-cave picture) the water cavern is overgrown: light green vines swinging from the roof,
         // leaf canopies, flowers and grass on the banks, moss on the low rock, and little pools along the right ledge.
@@ -3236,7 +3250,19 @@ const THEMES = {
           for (let d = 1; d < L; d += 1.8) { const f = d / L; if (!isWater(f)) continue; const i = Math.round(d / STEP) % N; if (!noSec(i)) continue; const p = tp(i);
             for (let q = 0; q < 3; q++) { const a = rand(.6, 2.55), [l, h] = surfAt(d, a); if (Math.random() < .38) continue;
               const [x, y, z] = rolled(p, l * .96, h * .97); vines.push({ x, y, z, len: rand(2.4, 7), ph: rand(0, 6.3), s: rand(.8, 1.5) }); anchors.push([x, y, z]); } }
-          if (vines.length) {
+          if (vines.length && BASE.mine) {   // (v322) the Blender vines in three lengths, still swinging about their tops
+            const MB = BASE.mine, vm = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: .9, flatShading: true });
+            const sets = MB.vines.map((g) => { const im = new THREE.InstancedMesh(g, vm, vines.length); im.count = 0; im.frustumCulled = false; scene.add(im); return { im, list: [] }; });
+            for (const v of vines) { const k = v.len < 4.2 ? 0 : v.len < 6 ? 1 : 2; sets[k].list.push(v); v.k = MB.vineLen[k]; }
+            const M4 = new THREE.Matrix4(), Q = new THREE.Quaternion(), E = new THREE.Euler(), P3 = new THREE.Vector3(), S3 = new THREE.Vector3();
+            W.anim.push((dt, t) => { for (const st of sets) { st.im.count = st.list.length; st.list.forEach((v, j) => {
+              E.set(Math.sin(t * .7 + v.ph) * .09, v.ph, Math.cos(t * .55 + v.ph * 1.7) * .09); Q.setFromEuler(E);
+              const sc = Math.min(1.3, Math.max(.75, v.len / v.k)) * (.8 + v.s * .15); P3.set(v.x, v.y, v.z); S3.set(sc, sc, sc); M4.compose(P3, Q, S3); st.im.setMatrixAt(j, M4); });
+              st.im.instanceMatrix.needsUpdate = true; } });
+            const caps = anchors.filter((_, k) => k % 3 === 0).map(([x, y, z]) => ({ x, y: y + .15, z, s: rand(.55, 1), ry: rand(0, 6) }));
+            const cm = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: .95, flatShading: true });
+            MB.canopy.forEach((g, k) => { const l = caps.filter((_, j) => j % 2 === k); l.length && instanced(scene, g, cm, l, false); });
+          } else if (vines.length) {
             const vg = crossG(1, 1), vmesh = new THREE.InstancedMesh(vg, cutMat(vineT), vines.length); vmesh.frustumCulled = false; scene.add(vmesh);
             const M4 = new THREE.Matrix4(), Q = new THREE.Quaternion(), E = new THREE.Euler(), P3 = new THREE.Vector3(), S3 = new THREE.Vector3();
             W.anim.push((dt, t) => { for (let k = 0; k < vines.length; k++) { const v = vines[k];
@@ -3342,9 +3368,11 @@ const THEMES = {
         const blockM = flatM('#4c3a57', { roughness: .9 }), studM = flatM('#d8a13a', { metalness: .6, roughness: .4 });
         const blocks = [], studs = [];
         for (let d = 0; d < L; d += 3.2) { const f = d / L; if (!isLava(f)) continue; const i = Math.round(d / STEP) % N; if (!noSec(i)) continue; const p = tp(i), ry = Math.atan2(-p.tx, -p.tz);
-          for (const sd of [-1, 1]) { if ((sd > 0 ? openR(f) : openL(f)) < 2.5) continue; const [x, y, z] = rolled(p, sd * (IN - .6), 0); blocks.push({ x, y, z, s: 1, ry });
+          for (const sd of [-1, 1]) { if ((sd > 0 ? openR(f) : openL(f)) < 2.5) continue; const [x, y, z] = rolled(p, sd * (IN - .6), 0); blocks.push({ x, y, z, s: 1, ry, ryR: Math.atan2(-sd * p.nx, -sd * p.nz) });
             const [bx, by, bz] = rolled(p, sd * (IN - .6 - .5), .66); studs.push({ x: bx, y: by, z: bz, s: 1 }); } }
-        if (blocks.length) { const bG = blockBlob(1.3, .95, 2.5, 1, .55, .22, ['#4c3a57', '#574363', '#42314d', '#605070', '#4a3855'], 11).translate(0, .42, 0);
+        if (blocks.length && BASE.mine) { const rm = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: .9, flatShading: true });   // (v322: the Blender lava rocks, the road face turned to the road)
+          BASE.mine.rocks.forEach((g, k) => instanced(scene, g, rm, blocks.filter((_, j) => j % 3 === k).map((b) => ({ ...b, ry: b.ryR })), true)); }
+        else if (blocks.length) { const bG = blockBlob(1.3, .95, 2.5, 1, .55, .22, ['#4c3a57', '#574363', '#42314d', '#605070', '#4a3855'], 11).translate(0, .42, 0);
           instanced(scene, bG, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: .9, flatShading: true }), blocks, false); instanced(scene, new THREE.SphereGeometry(.14, 7, 6), studM, studs, false); }
         // basalt columns standing in the lava, and the lava fall down the far wall
         const colG = (() => { const g = new THREE.Group(); for (const [x, z, h, r] of [[0, 0, 6, 1.15], [1.7, .5, 4.2, .85], [-1.5, .9, 5, .95], [.6, -1.6, 3.2, .7]]) { const c = new THREE.Mesh(new THREE.CylinderGeometry(r, r * 1.08, h, 6), M('#ffffff')); c.position.set(x, h / 2, z); g.add(c); } return bakeOne(g); })();
@@ -3445,7 +3473,8 @@ const THEMES = {
         const arches = [];
         for (const ff of [.315, .40, .49, .62]) { const i = Math.round(ff * N) % N, f = i / N; if (!isWater(f) || !noSec(i) || brg(f) > .2) continue;
           const p = tp(i); arches.push({ x: p.x, y: p.y, z: p.z, s: 1, ry: Math.atan2(-p.tx, -p.tz) }); }
-        arches.length && instanced(scene, archG, flatM('#49ad52', { roughness: .95 }), arches, false); }
+        if (arches.length && BASE.mine) instanced(scene, BASE.mine.arch, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: .9, flatShading: true }), arches, false);   // (v322: the Blender leaf arch)
+        else arches.length && instanced(scene, archG, flatM('#49ad52', { roughness: .95 }), arches, false); }
       // LAVA — an ember realm: fiery shafts, cracks glowing in the ground, and geysers of flame
       shafts([.745, .825, .905], [255, 190, 110], '#ffd09a');
       motes(isLava, '#ffb259', 240, .19, 1.8);
