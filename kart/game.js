@@ -704,6 +704,11 @@ function lowPolyProfile(geo, bands = 7, sides = 6) {
 }
 // the user's three stalagmite models, rebuilt low-poly and scaled to the cave
 async function loadStalagmites() {
+  // (v320) the low-poly stand-ins pre-made once (models/stalagmites-lp.json, 88 kB) instead of downloading the three
+  // 1.15 MB originals and rebuilding them on every visit
+  try { const js = await (await fetch('models/stalagmites-lp.json?v=1')).json();
+    BASE.stal = js.map((o) => { const g = new THREE.BufferGeometry(); for (const k of ['position', 'normal', 'uv', 'color']) if (o[k]) g.setAttribute(k, new THREE.Float32BufferAttribute(o[k].a, o[k].n)); if (o.index) g.setIndex(o.index); return g; });
+    if (BASE.stal.length === 3) return; } catch (e) { console.warn('stalagmites-lp.json missing, rebuilding from the originals', e); }
   const out = [];
   for (const file of ['stalagmite-1', 'stalagmite-2', 'stalagmite-3']) {
     try { const g = await new GLTFLoader().loadAsync(`models/${file}.glb?v=1`); g.scene.updateMatrixWorld(true);
@@ -1000,11 +1005,16 @@ const LDP = { on: null };   // (v266) the loading screen's progress inside the m
 async function loadFoxino() {
   const P = (f) => { if (LDP.on) LDP.on(f); };
   let done = 0; const tick = () => P(++done / 4 * .95);   // (v277: all at once, not one after another, so one slow file costs only its own time)
-  await Promise.all([loadKart().then(tick), loadOfficial().then(tick), giveUp(loadPitGarage('alps')).catch((e) => console.warn(e)).then(tick), loadTyre().then(tick), loadChalet(), loadBeachProps()]);   // (the garage screen uses the Alps one)
+  await Promise.all([loadKart().then(tick), loadOfficial().then(tick), giveUp(loadPitGarage('alps')).catch((e) => console.warn(e)).then(tick), loadTyre().then(tick), loadChalet()]);   // (the garage screen uses the Alps one)
   { const t = TYRE_BY_ID[(save.kart && save.kart.skin || {}).tyre]; if (t && t.model) await giveUp(loadTyreModel(t.model), 8000).catch((e) => console.warn(e)); }   // (v186) your design tyre, before the first race
   // (v266, the user: slow devices sat on the loading screen) what only the races need — the cave's crystals and
   // stalagmites, the other four maps' pit garages (about 6 MB) — now downloads behind the menu; a race waits for it
-  BASE.later = Promise.all([loadCrystals(), loadStalagmites(), ...['beach', 'city', 'mines', 'space'].map((id) => loadPitGarage(id))]).catch((e) => console.warn(e)).then(() => { BASE.laterDone = true; });
+  // (v320, the user: "the gold mines take quite a lot to load") each map waits only for its own files now, not for every
+  // map's; the beach models moved here from the loading screen
+  const soft = (pr) => pr.catch((e) => console.warn(e)), pit = (id) => soft(loadPitGarage(id));
+  BASE.need = { mines: Promise.all([soft(loadCrystals()), soft(loadStalagmites()), pit('mines')]), beach: Promise.all([pit('beach'), soft(loadBeachProps())]), city: pit('city'), space: pit('space') };
+  BASE.needDone = {}; for (const [id, pr] of Object.entries(BASE.need)) pr.then(() => { BASE.needDone[id] = true; });
+  BASE.later = Promise.all(Object.values(BASE.need)).then(() => { BASE.laterDone = true; });
   loadPitCrew();   // (v163) the Blender pit crew: not waited for, the stops come much later
   if (BASE.off && BASE.off.foxino) return;   // the official Foxino is in; the old Higgsfield one stays only as a fallback
   try {
@@ -2876,9 +2886,9 @@ const THEMES = {
       const _ca = new THREE.Color(), _cb = new THREE.Color();
       /* ---------- the three caverns, and the cross-fade between them ---------- */
       const SEC = [
-        { wl: 8.8,  wr: 8.8,  h: 8.6, rock: ['#5a3a86', '#6a4799', '#7a55ab', '#4a2e72'], floor: '#8a6240', hemi: '#b48ce4', hi: .58, fog: '#190c33', sun: .26 },
-        { wl: 30,   wr: 12.6, h: 15,  rock: ['#7b8792', '#8b97a2', '#9aa6b0', '#6b7782'], floor: '#74814e', hemi: '#cfe0e8', hi: .98, fog: '#44565f', sun: .46 },
-        { wl: 26,   wr: 26,   h: 13,  rock: ['#8a4529', '#9c5333', '#ad613e', '#703720'], floor: '#9c653c', hemi: '#e8834a', hi: .74, fog: '#1d0609', sun: .28 },
+        { wl: 8.8,  wr: 8.8,  h: 8.6, rock: ['#5a3a86', '#6a4799', '#7a55ab', '#4a2e72'], floor: '#8a6240', hemi: '#d8c4ff', hi: 1.75, fog: '#4a3a7a', sun: 1.1 },   /* (v320, the user: "make the environment brighter, lighted all the time": was hi .58/.98/.74, sun .26/.46/.28, darker fog) */
+        { wl: 30,   wr: 12.6, h: 15,  rock: ['#7b8792', '#8b97a2', '#9aa6b0', '#6b7782'], floor: '#74814e', hemi: '#e8f2f6', hi: 1.75, fog: '#7a8f98', sun: 1.1 },
+        { wl: 26,   wr: 26,   h: 13,  rock: ['#8a4529', '#9c5333', '#ad613e', '#703720'], floor: '#9c653c', hemi: '#ffc8a0', hi: 1.75, fog: '#6a3424', sun: 1.1 },
       ];
       const B0 = [0, .27, .66], BW = .035, wrapF = (f) => ((f % 1) + 1) % 1;
       const mixAt = (f) => { f = wrapF(f); const i = f < B0[1] ? 0 : f < B0[2] ? 1 : 2, st = B0[i], en = i === 2 ? 1 : B0[i + 1];
@@ -2964,7 +2974,7 @@ const THEMES = {
               _nv.crossVectors(_e1, _e2).normalize();
               _to.set(pc.x - X.v[0], pc.y + 1.2 - X.v[1], pc.z - X.v[2]);
               if (_nv.dot(_to) < 0) _nv.negate();                       // always the face as seen from the road
-              const sh = (.6 + .34 * (_nv.y * .5 + .5)) * (.56 + .44 * smoothstep(-.6, 4.2, hh));
+              const sh = 1.3 * (.78 + .22 * (_nv.y * .5 + .5)) * (.8 + .2 * smoothstep(-.6, 4.2, hh));   /* (v320, the user: brighter) was (.6 + .34 ..) * (.56 + .44 ..) */
               _cc.copy(hh < 1.3 ? pr.fl : pr.tone[sq % 4]).lerp(pr.bo, Math.max(0, 1 - hh / 6.5) * .17).multiplyScalar(sh);
               for (let q = 0; q < 3; q++) col.push(_cc.r, _cc.g, _cc.b);
             }
@@ -3006,7 +3016,8 @@ const THEMES = {
           x.putImageData(im, 0, 0); });
         t.minFilter = THREE.LinearMipmapLinearFilter; t.magFilter = THREE.LinearFilter; return t; };
       // shafts of light down through holes in the roof, with a pool of light where they land
-      const shafts = (fracs, rgb, hole) => {
+      /* (v320, the user: "remove the lights from the top, make it lighted all the time") the shafts of light are off */
+      const shafts = (fracs, rgb, hole) => { if (!MINE_SHAFTS) return;
         const beamT = soft(128, 256, (u, v) => (1 - v) ** 1.6 * .85 * Math.cos((u - .5) * Math.PI) ** 1.3, rgb[0], rgb[1], rgb[2]);
         const poolT = soft(128, 128, (u, v) => Math.max(0, 1 - Math.hypot(u - .5, v - .5) * 2) ** 1.7, rgb[0], rgb[1], rgb[2]);
         const beamM = new THREE.MeshBasicMaterial({ map: beamT, transparent: true, opacity: .62, depthWrite: false, side: THREE.DoubleSide, fog: false });
@@ -3437,9 +3448,9 @@ const THEMES = {
           putStal(L3, DOWN, [flatM('#6a3a22'), flatM('#7c4628'), flatM('#552c1a')]); } }
       /* ---------- the lights: a pool that follows the glow nearest the player, and the colour of each cavern ---------- */
       W.glowPts = glow; W.lanternPos = glow.map((g) => new THREE.Vector3(g.x, g.y, g.z));
-      W.lampPool = Array.from({ length: 6 }, () => { const l = new THREE.PointLight('#ffb35a', 0, 24, 1.5); l.shadow.mapSize.set(256, 256); l.shadow.bias = -.004; scene.add(l); return l; });
+      if (MINE_SHAFTS) W.lampPool = Array.from({ length: 6 }, () => { const l = new THREE.PointLight('#ffb35a', 0, 24, 1.5); l.shadow.mapSize.set(256, 256); l.shadow.bias = -.004; scene.add(l); return l; });
       W.hemi = scene.children.find((o) => o.isHemisphereLight);
-      if (W.hemi) { W.hemi.color.set(SEC[0].hemi); W.hemi.intensity = SEC[0].hi; W.hemi0 = SEC[0].hi; }
+      if (W.hemi) { W.hemi.color.set(SEC[0].hemi); W.hemi.groundColor.set('#b89a80'); W.hemi.intensity = SEC[0].hi; W.hemi0 = SEC[0].hi; }   /* (v320) a warm bounce from below lights the roof too */
       W.sun.intensity = SEC[0].sun;
       { const cA = new THREE.Color(), cB = new THREE.Color();
         W.anim.push(() => { if (!race || !race.player || !W.hemi) return;
@@ -6806,10 +6817,11 @@ const FLAME_GEO = new THREE.ConeGeometry(.12, .7, 10).rotateX(-Math.PI / 2), WAR
 function freeRacers(list) { for (const r of list) { WORLD.scene.remove(r.model.root); if (r.model.wing) { r.model.wing.removeFromParent(); wingDispose(r.model.wing, new Set()); r.model.wing = null; r.model.wingLv = 0; }   /* (v270) */ if (r.model.ups) { r.model.ups.removeFromParent(); r.model.ups = null; } if (r.label) { r.label.material.map.dispose(); r.label.material.dispose(); } } }
 // (v266) a race needs the models that load behind the menu: on a slow device a quick start waits for them under a small notice
 function startRace(trackId, opts) {
-  if (!BASE.later || BASE.laterDone) return startRaceNow(trackId, opts);
+  const tid = trackId || save.track || 'alps', need = BASE.need ? BASE.need[tid] : BASE.later;
+  if (!need || BASE.laterDone || (BASE.needDone && BASE.needDone[tid])) return startRaceNow(trackId, opts);
   if (BASE.raceWait) return; BASE.raceWait = true;
   const n = document.createElement('div'); n.className = 'mapwait'; n.innerHTML = '<i></i><b>Loading the map\u2026</b>'; document.body.appendChild(n);
-  Promise.race([BASE.later, wait(10000)]).then(() => { n.remove(); BASE.raceWait = false; startRaceNow(trackId, opts); });   // (v277: never waits for ever)
+  Promise.race([need, wait(10000)]).then(() => { n.remove(); BASE.raceWait = false; startRaceNow(trackId, opts); });   // (v277: never waits for ever)
 }
 function startRaceNow(trackId = save.track || 'alps', opts = {}) {
   if (!TRACK_DEFS[trackId]) trackId = 'alps';   // (v168: a save may still name Japan)
@@ -8237,6 +8249,7 @@ function updateLamps() {
   const near = W.lanternPos.map((v) => [v, (v.x - P.x) ** 2 + (v.z - P.z) ** 2]).sort((a, b) => a[1] - b[1]);
   W.lampPool.forEach((l, i) => { if (i < n && near[i]) { l.position.copy(near[i][0]); l.intensity = 42; } else l.intensity = 0; });
 }
+const MINE_SHAFTS = false;   // (v320) the Gold Mines roof light shafts and the moving lantern lights: off, the cave is lit evenly instead
 const PAD = .42;   // phone mode: the bottom 42% of the screen is the control pad
 function resize() {
   const w = stage.clientWidth, h = stage.clientHeight; renderer.setSize(w, h, false);
