@@ -1186,7 +1186,7 @@ const FOX_FIT = { s: 1.5, seat: [0, .17, .08], pose: { dropFeet: false, hunch: .
    arm height) are put on the rim at FOX_SEAT.grip (rad from the top, 1.0 = 10 and 2), the scale set by how far apart the
    fists are, then he is tipped about the fists so his seat sits on the kart's seat. The geometry is baked into kart
    space and gets the same wheel-turn morphs (the fists turn with the rim). */
-const FOX_SEAT = { grip: 1.1, grow: 1.5, sink: .0, lift: 0, pitchMax: .5 };   /* (v314/v315, the user: "make him bigger, more to the back so he fits the seat", "a bit more bigger") fists near 9 and 3, grown 12 % more round the fists */
+const FOX_SEAT = { grip: 1.1, grow: 1.5, sink: .0, lift: 0, pitchMax: .5, tilt: -.25 };   /* (v318, the user: "dont make him lay that much": sat up by .25 rad about the fists) (v314/v315, the user: "make him bigger, more to the back so he fits the seat", "a bit more bigger") fists near 9 and 3, grown 12 % more round the fists */
 function foxSeated() {
   if (BASE.foxSeat) return BASE.foxSeat;
   const W = wheelInKart(); if (!BASE.foxSeatSrc || !W || !BASE.seatShift) return null;
@@ -1213,7 +1213,7 @@ function foxSeated() {
   // tip him about the fists' axis so his seat lands at the kart's seat height (within pitchMax)
   const seatK = new THREE.Vector3(0, .17, -.24).add(BASE.seatShift).add(new THREE.Vector3(0, FOX_SEAT.lift, 0));
   const rel = seatM.clone().sub(fm).multiplyScalar(k), want = seatK.clone().sub(gm);
-  let pitch = Math.atan2(want.y, -want.z) - Math.atan2(rel.y, -rel.z); pitch = clamp(pitch, -FOX_SEAT.pitchMax, FOX_SEAT.pitchMax);
+  let pitch = Math.atan2(want.y, -want.z) - Math.atan2(rel.y, -rel.z); pitch = clamp(pitch, -FOX_SEAT.pitchMax, FOX_SEAT.pitchMax) + (FOX_SEAT.tilt || 0);   /* tilt: extra turn about the fists (sits him up or lays him back) */
   const M = new THREE.Matrix4().makeTranslation(gm.x, gm.y - FOX_SEAT.sink, gm.z).multiply(new THREE.Matrix4().makeRotationX(-pitch)).multiply(new THREE.Matrix4().makeScale(k, k, k)).multiply(new THREE.Matrix4().makeTranslation(-fm.x, -fm.y, -fm.z));
   geo.applyMatrix4(M); geo.computeBoundingBox(); geo.computeBoundingSphere();
   const I = (x) => x.clone();
