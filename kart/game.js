@@ -974,13 +974,26 @@ async function loadChalet() {
    beach houses", modelled in Blender on the Windows PC) three palms (leaning, curved, twin; 0.8-1.1k triangles), the
    drive-through sand castle gate (3.7k; the road runs along its Z through a 16 x 7.5 m opening) and four stilt beach houses
    (2.1k each, one per colourway). One mesh, vertex colours, metres, origin at the ground centre. */
-async function loadBeachProps() {
+function loadBeachProps() { return BASE.beachP || (BASE.beachP = loadBeachProps0()); }   // (once: the beach and Robo City both use the palms)
+async function loadBeachProps0() {
   const one = async (url) => { const g = await gltf(url, 20000); g.scene.updateMatrixWorld(true); let m = null; g.scene.traverse((o) => { if (o.isMesh && !m) m = o; });
     return m.geometry.clone().applyMatrix4(m.matrixWorld); };
   try {
     const [p1, p2, p3, castle, h1, h2, h3, h4] = await Promise.all(['palm-1', 'palm-2', 'palm-3', 'castle', 'house-1', 'house-2', 'house-3', 'house-4'].map((n) => one(`models/beach-${n}.glb?v=1`)));
     BASE.beach = { palms: [p1, p2, p3], castle, houses: [h1, h2, h3, h4] };
   } catch (e) { console.warn('Beach models did not load; the shape-built palms, castle and houses stay', e); }
+}
+/* (v321, the user: "Robo City: the robot peeking over the fence in the thumbnail, the mix of barriers from the picture,
+   redesign the trees so they look more natural", modelled in Blender on the Windows PC) two peeking robots (2.3k
+   triangles), three barrier modules (2 m long, the road face at z = 0: neon concrete 1.15 m, yellow/black hazard
+   0.9 m, a stack of soft blocks with chevrons 1.4 m) and six park trees (tall 1.2k, mid 0.8k, cypress, bush) */
+async function loadCityProps() {
+  const one = async (n) => { const g = await gltf(`models/city-${n}.glb?v=1`, 20000); g.scene.updateMatrixWorld(true); let m = null; g.scene.traverse((o) => { if (o.isMesh && !m) m = o; }); return m.geometry.clone().applyMatrix4(m.matrixWorld); };
+  try {
+    const names = ['robot-peek-1', 'robot-peek-2', 'barrier-neon', 'barrier-hazard', 'barrier-blocks', 'tree-tall-1', 'tree-tall-2', 'tree-mid-1', 'tree-mid-2', 'tree-cypress', 'bush'];
+    const g = Object.fromEntries((await Promise.all(names.map(one))).map((x, k) => [names[k], x]));
+    BASE.city = { robots: [g['robot-peek-1'], g['robot-peek-2']], bar: [g['barrier-neon'], g['barrier-hazard']], blocks: g['barrier-blocks'], tall: [g['tree-tall-1'], g['tree-tall-2']], mid: [g['tree-mid-1'], g['tree-mid-2']], cypress: g['tree-cypress'], bush: g.bush };
+  } catch (e) { console.warn('Robo City models did not load; the shape-built trees and planters stay', e); }
 }
 // the menu's chalet: the Tripo one in place of the shape-built one (SHOW.chalet is the group the menu moves for portrait / landscape)
 function dressLobbyChalet() {
@@ -1012,7 +1025,7 @@ async function loadFoxino() {
   // (v320, the user: "the gold mines take quite a lot to load") each map waits only for its own files now, not for every
   // map's; the beach models moved here from the loading screen
   const soft = (pr) => pr.catch((e) => console.warn(e)), pit = (id) => soft(loadPitGarage(id));
-  BASE.need = { mines: Promise.all([soft(loadCrystals()), soft(loadStalagmites()), pit('mines')]), beach: Promise.all([pit('beach'), soft(loadBeachProps())]), city: pit('city'), space: pit('space') };
+  BASE.need = { mines: Promise.all([soft(loadCrystals()), soft(loadStalagmites()), pit('mines')]), beach: Promise.all([pit('beach'), soft(loadBeachProps())]), city: Promise.all([pit('city'), soft(loadCityProps()), soft(loadBeachProps())]), space: pit('space') };
   BASE.needDone = {}; for (const [id, pr] of Object.entries(BASE.need)) pr.then(() => { BASE.needDone[id] = true; });
   BASE.later = Promise.all(Object.values(BASE.need)).then(() => { BASE.laterDone = true; });
   loadPitCrew();   // (v163) the Blender pit crew: not waited for, the stops come much later
@@ -2197,8 +2210,31 @@ function buildWorld(def) {
       const stoneM = new THREE.MeshStandardMaterial({ map: stoneT, roughness: .9, side: THREE.DoubleSide, fog: !def.clearRoad });
       const hedgeM = new THREE.MeshStandardMaterial({ map: hedgeT, roughness: 1, side: THREE.DoubleSide, fog: !def.clearRoad });
       const H = HALF + .95, Wd = 1.05, PH = .52, HH = 1.28;   // (the planter: from the wall line out 1.05 m, .52 m tall; the hedge to 1.28 m)
+      // (v321, the user: "put the mix of the barriers from the picture") runs of about 70 m in turn: the white concrete wall
+      // with neon strips, the yellow/black hazard barrier, and the stone planter with its hedge; a stack of soft blocks
+      // now and then on the outside of a bend, and Rob's little robots peeking over the neon wall
+      const CP = BASE.city, cstyle = (i) => (CP ? Math.floor(((i % N) + N) % N * STEP / 70) % 3 : 2);
+      if (CP) { const mods = [[], [], []], bots = [[], []];
+        for (const sd of [-1, 1]) for (let m = 0, nM = Math.floor(TRACK.L / 2); m < nM; m++) {
+          const d0 = m * 2, i0 = Math.round(d0 / STEP) % N, i1 = Math.round((d0 + 2) / STEP) % N, im = Math.round((d0 + 1) / STEP) % N, st = cstyle(im);
+          if (st === 2 || !open(i0, sd) || !open(i1, sd) || !open(im, sd)) continue;
+          const a = tp(i0), b = tp(i1), q = tp(im), lat = sd * H, ax = a.x + a.nx * lat, az = a.z + a.nz * lat, bx = b.x + b.nx * lat, bz = b.z + b.nz * lat, len = Math.hypot(bx - ax, bz - az);
+          if (len < .4 || len > 4) continue;
+          const it = { x: (ax + bx) / 2, y: (a.y + b.y) / 2, z: (az + bz) / 2, s: 1, sx: len / 2 * 1.02, ry: Math.atan2(-sd * q.nx, -sd * q.nz) };
+          const turn = wrapA(angleOf(tp(im + 17)) - angleOf(tp(im - 17)));
+          if (Math.abs(turn) > .3 && sd === -Math.sign(turn) && m % 6 === 0) { mods[2].push(it); continue; }
+          mods[st].push(it);
+          // (the robots drawn 1.6x so they read like the picture's; sunk so their hands still hold the wall's top at 1.15 m)
+          if (st === 0 && q.y < .4 && m % 5 === 2 && Math.random() < .6) bots[bots[0].length <= bots[1].length ? 0 : 1].push({ ...it, sx: 0, s: 1.6, y: it.y - 1.15 * .6 });
+        }
+        const bm = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: .55, flatShading: true, fog: !def.clearRoad });
+        mods[0].length && instanced(scene, CP.bar[0], bm, mods[0]); mods[1].length && instanced(scene, CP.bar[1], bm, mods[1]); mods[2].length && instanced(scene, CP.blocks, bm, mods[2]);
+        const rm = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: .35, flatShading: true, fog: !def.clearRoad });
+        bots.forEach((l, k) => l.length && instanced(scene, CP.robots[k], rm, l, false));
+        W.cityBar = { neon: mods[0].length, hazard: mods[1].length, blocks: mods[2].length, robots: bots[0].length + bots[1].length, botAt: bots.flat()[0] || null, bots: bots.flat() };   // (a test hook reads this)
+      }
       for (const sd of [-1, 1]) {
-        const o = { only: (i) => open(i, sd) }, L = (d) => sd * (H + d);
+        const o = { only: (i) => open(i, sd) && cstyle(i) === 2 }, L = (d) => sd * (H + d);
         const add = (m, sh) => { m.castShadow = !!sh; m.receiveShadow = true; scene.add(m); };
         add(new THREE.Mesh(strip(L(0), L(0), 0, PH, { uvLen: 2, ...o }), stoneM), true);                // the planter's face
         add(new THREE.Mesh(strip(L(0), L(.12), PH, PH, o), stoneM));                                     // its lip
@@ -2515,7 +2551,9 @@ const THEMES = {
         for (let d = 9; d < TRACK.L; d += 26) { const i = Math.round(d / STEP) % TRACK.N, p = tp(i); if (p.y > .4) continue;
           const sd = Math.random() < .5 ? -1 : 1, off = HALF + rand(5.2, 7.5);   // (v293: fewer, behind the promenade)
           pl.push({ x: p.x + p.nx * sd * off, y: 0, z: p.z + p.nz * sd * off, s: rand(.8, 1.3), ry: rand(0, 6) }); }
-        pl.length && instanced(scene, palmG, vcm2, pl, false); }
+        if (pl.length && BASE.beach) { const palmM = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: .85, flatShading: true, side: THREE.DoubleSide, fog: !def.clearRoad });   // (v321: the Blender palms from the beach)
+          BASE.beach.palms.slice(0, 2).forEach((g, k) => instanced(scene, g, palmM, pl.filter((_, j) => j % 2 === k).map((d) => ({ ...d, s: d.s * .85 })), false)); }
+        else pl.length && instanced(scene, palmG, vcm2, pl, false); }
       // (v301, the user: "this pool that is in the track — I don't want it there") the harbour basin with the yachts in the
       // middle of the circuit is gone; the park (lawn, trees, beds, fountains) fills the space. W.harbour stays unset.
       // Inside the loop of the circuit it is all park now: no houses there (inField: inside the road's outline)
@@ -2630,12 +2668,13 @@ const THEMES = {
               if (!farFromRoad(x, z, 8, 3) || inHarbour(x, z) || nearStart(x, z, 40) || fountains.some((f) => (f.x - x) ** 2 + (f.z - z) ** 2 < 10 ** 2) || tallAll.some((t) => (t.x - x) ** 2 + (t.z - z) ** 2 < 8 ** 2)) continue;
               const t = { x, y: 0, z, s: rand(.95, 1.25), ry: rand(0, 6) }; tallAll.push(t); tall[Math.random() < .5 ? 0 : 1].push(t); break; } } }
         const pm = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: .95, fog: !def.clearRoad });
-        if (tall[0].length) instanced(scene, tallG('#2f7d34', '#3f9440'), pm, tall[0], false);
-        if (tall[1].length) instanced(scene, tallG('#4a9a3c', '#62ad48'), pm, tall[1], false);
-        if (lists.t1.length) instanced(scene, treeG('#3f8f3a'), pm, lists.t1, false);
-        if (lists.t2.length) instanced(scene, treeG('#5aa43e'), pm, lists.t2, false);
-        if (lists.cy.length) instanced(scene, cypG, pm, lists.cy, false);
-        if (lists.bu.length) instanced(scene, bushG, pm, lists.bu, false);
+        const CT = BASE.city;   // (v321) the Blender park trees, when they are in
+        if (tall[0].length) instanced(scene, CT ? CT.tall[0] : tallG('#2f7d34', '#3f9440'), pm, tall[0], false);
+        if (tall[1].length) instanced(scene, CT ? CT.tall[1] : tallG('#4a9a3c', '#62ad48'), pm, tall[1], false);
+        if (lists.t1.length) instanced(scene, CT ? CT.mid[0] : treeG('#3f8f3a'), pm, lists.t1, false);
+        if (lists.t2.length) instanced(scene, CT ? CT.mid[1] : treeG('#5aa43e'), pm, lists.t2, false);
+        if (lists.cy.length) instanced(scene, CT ? CT.cypress : cypG, pm, lists.cy, false);
+        if (lists.bu.length) instanced(scene, CT ? CT.bush : bushG, pm, lists.bu, false);
         if (lists.b1.length) instanced(scene, bedG(['#ff5d7a', '#ffd23a', '#ffffff', '#ff8ab8']), pm, lists.b1, false);
         if (lists.b2.length) instanced(scene, bedG(['#8a5ae8', '#ff8a1e', '#ffe680', '#e8403a']), pm, lists.b2, false);
         W.park = { fountains, cars: cars.reduce((a, l) => a + l.length, 0), carAt: cars.flat()[0] || null, benches: benches.length, trees: lists.t1.length + lists.t2.length + lists.cy.length, tall: tall[0].length + tall[1].length, tallAt: tall.flat() };   // (a test hook reads this)
