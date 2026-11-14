@@ -990,9 +990,9 @@ async function loadBeachProps0() {
 async function loadCityProps() {
   const one = async (n) => { const g = await gltf(`models/city-${n}.glb?v=1`, 20000); g.scene.updateMatrixWorld(true); let m = null; g.scene.traverse((o) => { if (o.isMesh && !m) m = o; }); return m.geometry.clone().applyMatrix4(m.matrixWorld); };
   try {
-    const names = ['robot-peek-1', 'robot-peek-2', 'barrier-neon', 'barrier-hazard', 'barrier-blocks', 'tree-tall-1', 'tree-tall-2', 'tree-mid-1', 'tree-mid-2', 'tree-cypress', 'bush'];
+    const names = ['robot-peek-1', 'robot-peek-2', 'barrier-neon', 'barrier-hazard', 'barrier-blocks', 'tree-tall-1', 'tree-tall-2', 'tree-mid-1', 'tree-mid-2', 'tree-cypress', 'bush', 'tower-1', 'tower-2', 'tower-3', 'tower-4', 'tower-5', 'tower-6', 'midrise-1', 'midrise-2'];
     const g = Object.fromEntries((await Promise.all(names.map(one))).map((x, k) => [names[k], x]));
-    BASE.city = { robots: [g['robot-peek-1'], g['robot-peek-2']], bar: [g['barrier-neon'], g['barrier-hazard']], blocks: g['barrier-blocks'], tall: [g['tree-tall-1'], g['tree-tall-2']], mid: [g['tree-mid-1'], g['tree-mid-2']], cypress: g['tree-cypress'], bush: g.bush };
+    BASE.city = { robots: [g['robot-peek-1'], g['robot-peek-2']], bar: [g['barrier-neon'], g['barrier-hazard']], blocks: g['barrier-blocks'], tall: [g['tree-tall-1'], g['tree-tall-2']], mid: [g['tree-mid-1'], g['tree-mid-2']], cypress: g['tree-cypress'], bush: g.bush, towers: [1, 2, 3, 4, 5, 6].map((n) => g['tower-' + n]), mids: [g['midrise-1'], g['midrise-2']] };   // (v323: the futuristic towers and midrises)
   } catch (e) { console.warn('Robo City models did not load; the shape-built trees and planters stay', e); }
 }
 /* (v322, the user: "Gold Mines: remodel the bushes around the track, also the leaves from the top, also the rocks as the
@@ -2030,6 +2030,19 @@ function addMountains(scene, cx, cz, r0, r1, count) {
   }
 }
 let PIT_CLEAR = false;   // (v177) while a map's scenery is built: nothing stands on the pit lane or its garages
+/* (v323, the user: "Robo City: futuristic tall buildings, and from a certain level there will be fog") a height fog on a
+   material: above y0 it fades into the haze colour, fully hidden by y1 (world heights, instancing included) */
+const HFOG = { col: new THREE.Color('#d6e8f2'), y: new THREE.Vector2(38, 92) };
+function heightFog(mat) {
+  mat.onBeforeCompile = (sh) => {
+    sh.uniforms.hfCol = { value: HFOG.col }; sh.uniforms.hfY = { value: HFOG.y };
+    sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying float vHfY;')
+      .replace('#include <project_vertex>', '#include <project_vertex>\n{ vec4 hp = vec4(transformed, 1.0);\n#ifdef USE_INSTANCING\nhp = instanceMatrix * hp;\n#endif\nvHfY = (modelMatrix * hp).y; }');
+    sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nuniform vec3 hfCol; uniform vec2 hfY; varying float vHfY;')
+      .replace('#include <fog_fragment>', '#include <fog_fragment>\ngl_FragColor.rgb = mix(gl_FragColor.rgb, hfCol, smoothstep(hfY.x, hfY.y, vHfY));');
+  };
+  mat.customProgramCacheKey = () => 'hfog'; return mat;
+}
 function instanced(scene, geo, mat, list, shadow = true) {
   if (PIT_CLEAR && WORLD && WORLD.pitDist) list = list.filter((d) => WORLD.pitDist(d.x, d.z) > 18);
   const im = new THREE.InstancedMesh(geo, mat, list.length), m = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler();
@@ -2714,12 +2727,18 @@ const THEMES = {
       });
       winTex.wrapS = winTex.wrapT = THREE.RepeatWrapping;
       const pos = [], nor = [], uv = [], col = [], pal = ['#f2d7a7', '#efb9a0', '#f6e6c8', '#e9c46a', '#f4c7b8', '#d8e3d0', '#f7efe3', '#e8a87c', '#cfe0ea', '#f3d9c4'];
+      // (v323, the user: "make the buildings more futuristic, tall, and from a certain level there will be fog") the
+      // Blender towers (70-160 m) further back and the futuristic midrises in the front row, fading into the haze above 38 m
+      const TW = BASE.city && BASE.city.towers ? BASE.city : null, towerL = [[], [], [], [], [], []], midL = [[], []];
       const blds = [], cornice = new THREE.Color('#f6efe0'), tiles = new THREE.Color('#b5583a'), flatRoof = new THREE.Color('#c9c4bb');
       const put = (geo, colOf, plain) => { const u = geo.attributes.uv, n = geo.attributes.normal; pos.push(...geo.attributes.position.array); nor.push(...n.array);
         for (let i = 0; i < u.count; i++) { if (plain) uv.push(.05, .02); else uv.push(u.getX(i), u.getY(i)); const c = colOf(n.getY(i)); col.push(c.r, c.g, c.b); } };
       for (let gx = BOUNDS.x0 - 70; gx < BOUNDS.x1 + 70; gx += 24) for (let gz = BOUNDS.z0 - 70; gz < BOUNDS.z1 + 70; gz += 24) {
         const x = gx + rand(-4, 4), z = gz + rand(-4, 4); if (!farFromRoad(x, z, 34, 3) || inField(x, z)) continue;   // (v301: none inside the circuit)
         if (W.harbour && Math.abs(x - W.harbour.x) < W.harbour.w + 9 && Math.abs(z - W.harbour.z) < W.harbour.l + 9) continue;
+        if (TW) { const far = farFromRoad(x, z, 60, 6), k = far ? Math.floor(Math.random() * 6) : Math.floor(Math.random() * 2), g = far ? TW.towers[k] : TW.mids[k], s = far ? rand(.8, 1.2) : rand(.9, 1.1);
+          if (!g.boundingBox) g.computeBoundingBox(); const bb = g.boundingBox, ry = Math.floor(Math.random() * 4) * Math.PI / 2;
+          (far ? towerL : midL)[k].push({ x, y: 0, z, s, ry }); blds.push({ x, z, w: (bb.max.x - bb.min.x) * s, d: (bb.max.z - bb.min.z) * s, h: bb.max.y * s, mid: !far }); continue; }
         const w = rand(10, 17), d = rand(10, 17), h = Math.round(rand(3, 9) * (farFromRoad(x, z, 60, 6) ? 1.35 : 1)) * 4; blds.push({ x, z, w, d, h });
         const bg = new THREE.BoxGeometry(w, h, d).toNonIndexed().translate(x, h / 2, z), c = new THREE.Color(pick(pal)), u = bg.attributes.uv, n = bg.attributes.normal;
         for (let i = 0; i < u.count; i++) { const ny = Math.abs(n.getY(i)) > .5; u.setXY(i, u.getX(i) * (ny ? 1 : (Math.abs(n.getX(i)) > .5 ? d : w) / 4), u.getY(i) * (ny ? 1 : h / 4)); }
@@ -2728,7 +2747,9 @@ const THEMES = {
         if (low) { const r = new THREE.ConeGeometry(Math.hypot(w, d) / 2 * 1.02, 3.2, 4, 1).toNonIndexed(); r.rotateY(Math.PI / 4); r.scale(w / Math.hypot(w, d) * Math.SQRT2, 1, d / Math.hypot(w, d) * Math.SQRT2); r.translate(x, h + .15 + 1.6, z); put(r, () => tiles, true); }   // a hipped tile roof
       }
       const bgeo = new THREE.BufferGeometry(); bgeo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); bgeo.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3)); bgeo.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2)); bgeo.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
-      const bm = new THREE.Mesh(bgeo, new THREE.MeshStandardMaterial({ map: winTex, vertexColors: true, roughness: .85 })); bm.castShadow = false; bm.receiveShadow = true; scene.add(bm);
+      if (TW) { const tm = heightFog(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: .45, metalness: .1, flatShading: true }));
+        towerL.forEach((l, k) => l.length && instanced(scene, TW.towers[k], tm, l, false)); midL.forEach((l, k) => l.length && instanced(scene, TW.mids[k], tm, l, false)); }
+      const bm = new THREE.Mesh(bgeo, heightFog(new THREE.MeshStandardMaterial({ map: winTex, vertexColors: true, roughness: .85 }))); bm.castShadow = false; bm.receiveShadow = true; scene.add(bm);
       // neon signs on the buildings that face the road
       const words = [['ROBO CITY', '#7af8ff'], ['FOXINO', '#ff8a1e'], ['ENGLISH!', '#4fc84a'], ['FUGIO', '#ff5db1'], ['ROB RULES', '#ff3a5a'], ['SPEED!', '#ffe14a']];
       const signTex = words.map(([w, c]) => canvasTex(512, 128, (x) => { x.fillStyle = '#120a2a'; x.fillRect(0, 0, 512, 128); x.strokeStyle = c; x.lineWidth = 8; x.strokeRect(8, 8, 496, 112); x.font = 'bold 76px Fredoka, Arial Rounded MT Bold, Arial'; x.textAlign = 'center'; x.textBaseline = 'middle'; x.shadowColor = c; x.shadowBlur = 18; x.fillStyle = c; x.fillText(w, 256, 68); x.fillStyle = '#fff'; x.shadowBlur = 0; x.globalAlpha = .55; x.fillText(w, 256, 68); }));
@@ -8348,7 +8369,7 @@ window.FK.renderer = renderer; window.FK.world = () => WORLD; window.FK.start = 
 window.FK.char = (id) => { save.char = id; setShowRacer(); };
 window.FK.SHOW = SHOW;
 window.FK.quizViewY = (v) => { if (v != null) QUIZ_VIEWY = +v; return QUIZ_VIEWY; };   // (v275) test hook: the quiz picture's slide on upright phones
-window.FK.track = () => TRACK; window.FK.half = () => HALF; window.FK.at = (d, l = 0) => at(d, l);   // test hooks: the track and a point on it
+window.FK.hfog = HFOG; window.FK.track = () => TRACK; window.FK.half = () => HALF; window.FK.at = (d, l = 0) => at(d, l);   // test hooks: the track and a point on it
 window.FK.ask = (secs = 30) => race && !race.dialog && askOne('jump', `${ico('icon-jump', 'tico')} JUMP QUESTION!`, secs, () => {});   // test hook: a race question now
 // test hook: nudge how an official character sits (FK.fit('rob', { s: 1.2, helm: { r: .42 } }))
 window.FK.fit = (id, patch) => { const f = CHAR_FIT[id]; if (patch.helm) { Object.assign(f.helm, patch.helm); delete patch.helm; } Object.assign(f, patch); driverCache.clear(); kartCache.clear(); setShowRacer(); return f; };
