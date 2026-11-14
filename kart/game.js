@@ -965,6 +965,18 @@ async function loadChalet() {
     for (const m of BASE.alpsMtns) { m.mat.vertexColors = true; m.mat.flatShading = true; m.mat.roughness = .95; m.mat.metalness = 0; m.mat.envMapIntensity = .5; m.mat.side = THREE.FrontSide; m.mat.needsUpdate = true; } }
   catch (e) { console.warn('Alps mountain models did not load; the shape-built ones stay', e); }
 }
+/* (v319, the user: "redesign the Beach map: new low poly palm model, the sand castle drive-through model new, better
+   beach houses", modelled in Blender on the Windows PC) three palms (leaning, curved, twin; 0.8-1.1k triangles), the
+   drive-through sand castle gate (3.7k; the road runs along its Z through a 16 x 7.5 m opening) and four stilt beach houses
+   (2.1k each, one per colourway). One mesh, vertex colours, metres, origin at the ground centre. */
+async function loadBeachProps() {
+  const one = async (url) => { const g = await gltf(url, 20000); g.scene.updateMatrixWorld(true); let m = null; g.scene.traverse((o) => { if (o.isMesh && !m) m = o; });
+    return m.geometry.clone().applyMatrix4(m.matrixWorld); };
+  try {
+    const [p1, p2, p3, castle, h1, h2, h3, h4] = await Promise.all(['palm-1', 'palm-2', 'palm-3', 'castle', 'house-1', 'house-2', 'house-3', 'house-4'].map((n) => one(`models/beach-${n}.glb?v=1`)));
+    BASE.beach = { palms: [p1, p2, p3], castle, houses: [h1, h2, h3, h4] };
+  } catch (e) { console.warn('Beach models did not load; the shape-built palms, castle and houses stay', e); }
+}
 // the menu's chalet: the Tripo one in place of the shape-built one (SHOW.chalet is the group the menu moves for portrait / landscape)
 function dressLobbyChalet() {
   const g = SHOW.chalet; if (!g || !BASE.chalet || g.userData.tripo) return;
@@ -988,7 +1000,7 @@ const LDP = { on: null };   // (v266) the loading screen's progress inside the m
 async function loadFoxino() {
   const P = (f) => { if (LDP.on) LDP.on(f); };
   let done = 0; const tick = () => P(++done / 4 * .95);   // (v277: all at once, not one after another, so one slow file costs only its own time)
-  await Promise.all([loadKart().then(tick), loadOfficial().then(tick), giveUp(loadPitGarage('alps')).catch((e) => console.warn(e)).then(tick), loadTyre().then(tick), loadChalet()]);   // (the garage screen uses the Alps one)
+  await Promise.all([loadKart().then(tick), loadOfficial().then(tick), giveUp(loadPitGarage('alps')).catch((e) => console.warn(e)).then(tick), loadTyre().then(tick), loadChalet(), loadBeachProps()]);   // (the garage screen uses the Alps one)
   { const t = TYRE_BY_ID[(save.kart && save.kart.skin || {}).tyre]; if (t && t.model) await giveUp(loadTyreModel(t.model), 8000).catch((e) => console.warn(e)); }   // (v186) your design tyre, before the first race
   // (v266, the user: slow devices sat on the loading screen) what only the races need — the cave's crystals and
   // stalagmites, the other four maps' pit garages (about 6 MB) — now downloads behind the menu; a race waits for it
@@ -2771,7 +2783,10 @@ const THEMES = {
       for (let k = 0; k < 900 && huts.length < 16; k++) { const x = rand(BOUNDS.x0 + 15, BOUNDS.x1 - 15), z = rand(BOUNDS.z0 + 15, BOUNDS.z1 - 15); if (farFromRoad(x, z, 11) && !W.inWater(x, z) && huts.every((h) => (h.x - x) ** 2 + (h.z - z) ** 2 > 500)) huts.push({ x, z, s: 1, ry: rand(0, 6) }); }
       for (let k = 0; k < 400 && rocks.length < 40; k++) { const x = rand(BOUNDS.x0 - 20, BOUNDS.x1 + 20), z = rand(BOUNDS.z0 - 20, BOUNDS.z1 + 20); if (farFromRoad(x, z, 8) && !W.inWater(x, z)) rocks.push({ x, z, s: rand(.8, 2.4), ry: rand(0, 6) }); }
       for (const l of [palms, brollies, huts, rocks]) for (const d of l) d.y = W.groundAt(d.x, d.z) - .1;
-      instanced(scene, palmGeo(), vcm, palms.filter((p) => palms.indexOf(p) % 2 === 0)); instanced(scene, palmGeo(), vcm, palms.filter((p) => palms.indexOf(p) % 2 === 1), false);
+      const BP = BASE.beach;
+      if (BP) { const palmM = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: .85, flatShading: true, side: THREE.DoubleSide });   // (the fronds are single sheets)
+        BP.palms.forEach((g, i) => instanced(scene, g, palmM, palms.filter((_, k) => k % 3 === i), i === 0)); }
+      else { instanced(scene, palmGeo(), vcm, palms.filter((p) => palms.indexOf(p) % 2 === 0)); instanced(scene, palmGeo(), vcm, palms.filter((p) => palms.indexOf(p) % 2 === 1), false); }
       // beach umbrellas (the colour per umbrella) and small huts
       const brolly = new THREE.Group(); { const pole = new THREE.Mesh(new THREE.CylinderGeometry(.05, .05, 2.6, 6), M('#f4f4f4')); pole.position.y = 1.3; brolly.add(pole); const top = new THREE.Mesh(new THREE.ConeGeometry(1.5, .7, 10), M('#ffffff')); top.position.y = 2.6; brolly.add(top); }
       instanced(scene, bakeOne(brolly), new THREE.MeshStandardMaterial({ vertexColors: true, roughness: .7 }), brollies.map((b) => ({ ...b, c: b.c })), false);
@@ -2787,7 +2802,8 @@ const THEMES = {
         for (let k = 0; k < 6; k++) { const a = new THREE.Mesh(new THREE.BoxGeometry(.7, .06, 1.3), M(k % 2 ? '#ffffff' : stripe)); a.position.set(-1.75 + k * .7, 3.45, 2.3); a.rotation.x = .35; g.add(a); }
         const roof = new THREE.Mesh(new THREE.ConeGeometry(3.6, 1.9, 4), thatch); roof.position.y = 4.85; roof.rotation.y = Math.PI / 4; g.add(roof);
         return bakeOne(g); };
-      [['#4fd0c8', '#ff5a5a'], ['#ffb0a0', '#2a8cff'], ['#ffe27a', '#ff7a1e'], ['#9fd8ff', '#ff5db1']].forEach(([w, st], i) => instanced(scene, beachHouse(w, st), vcm, huts.filter((_, k) => k % 4 === i)));
+      if (BP) BP.houses.forEach((g, i) => instanced(scene, g, vcm, huts.filter((_, k) => k % 4 === i)));
+      else [['#4fd0c8', '#ff5a5a'], ['#ffb0a0', '#2a8cff'], ['#ffe27a', '#ff7a1e'], ['#9fd8ff', '#ff5db1']].forEach(([w, st], i) => instanced(scene, beachHouse(w, st), vcm, huts.filter((_, k) => k % 4 === i)));
       // rest spots: two sunbeds with cushions and towels under a striped umbrella, a beach ball or a surfboard, along the road
       { const sunbed = new THREE.Group(), frame = M('#ffffff'), wood = M('#c89a68');
         box(sunbed, .7, .12, 1.9, wood, 0, .35, 0); const back = box(sunbed, .7, .12, .8, wood, 0, .62, -.85); back.rotation.x = .7; for (const [x, z] of [[-.3, -.8], [.3, -.8], [-.3, .8], [.3, .8]]) box(sunbed, .06, .35, .06, frame, x, .17, z);
@@ -2842,7 +2858,7 @@ const THEMES = {
           const keep = box(g, 5, 5, 4, sand, 0, 11.8, 0); const kr = new THREE.Mesh(new THREE.ConeGeometry(3.6, 3.4, 4), dark); kr.position.set(0, 16, 0); kr.rotation.y = Math.PI / 4; g.add(kr); void keep;
           return bakeOne(g);
         };
-        const cg = castleGeo(), cm = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: .92, flatShading: true });
+        const cg = BP ? BP.castle : castleGeo(), cm = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: .92, flatShading: true });
         for (const i of [ia, ib]) { const p = tp(i), m = new THREE.Mesh(cg, cm); m.position.set(p.x, yTop - .1, p.z); m.rotation.y = Math.atan2(p.tx, p.tz); m.castShadow = true; scene.add(m); }
       }
       flagsAndBoards(scene, W, true); grandstands(scene, W, '#1ab8c8');
