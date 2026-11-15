@@ -1004,6 +1004,18 @@ async function loadCityProps() {
    barrier of the lava section", modelled in Blender on the Windows PC) two hedge modules (2.2 m, 0.4k triangles), three
    hanging vines (3.3 / 5 / 7 m, origin at the top), two hanging moss canopies, the leafy arch over the road (2.5k) and
    three lava-rock barrier modules (3.2 m, the road face +Z) */
+/* (v325, the user: "redesign the tribunes in the style of each map", modelled in Blender on the Windows PC) one 22 m stand
+   section per map (models/stand-<map>.glb: front edge at z = 0 facing the road, seats at 0.6/1.4/2.2/3 m going back).
+   STAND_MAPS lists the maps whose stand has arrived; the others keep the shape-built stands; Gold Mines has none. */
+const STAND_MAPS = ['alps'];
+async function loadStand(id) {
+  if (!STAND_MAPS.includes(id)) return null; BASE.stand = BASE.stand || {}; if (BASE.stand[id]) return BASE.stand[id];
+  const g = await gltf(`models/stand-${id}.glb?v=1`, 20000);
+  g.scene.traverse((o) => { if (!o.isMesh) return; o.castShadow = true; o.receiveShadow = true;
+    const m = o.material; if (m && /glow/i.test(m.name)) o.material = new THREE.MeshBasicMaterial({ color: m.color ? m.color.clone().multiplyScalar(1.3) : 0xffffff, vertexColors: !!m.vertexColors, toneMapped: false });
+    else if (m) { m.roughness = Math.max(m.roughness ?? .8, .75); m.metalness = Math.min(m.metalness ?? 0, .3); } });
+  return (BASE.stand[id] = g.scene);
+}
 async function loadMineProps() {
   const one = async (n) => { const g = await gltf(`models/mine-${n}.glb?v=1`, 20000); g.scene.updateMatrixWorld(true); let m = null; g.scene.traverse((o) => { if (o.isMesh && !m) m = o; }); return m.geometry.clone().applyMatrix4(m.matrixWorld); };
   try {
@@ -1042,7 +1054,8 @@ async function loadFoxino() {
   // (v320, the user: "the gold mines take quite a lot to load") each map waits only for its own files now, not for every
   // map's; the beach models moved here from the loading screen
   const soft = (pr) => pr.catch((e) => console.warn(e)), pit = (id) => soft(loadPitGarage(id));
-  BASE.need = { mines: Promise.all([soft(loadCrystals()), soft(loadStalagmites()), pit('mines'), soft(loadMineProps())]), beach: Promise.all([pit('beach'), soft(loadBeachProps())]), city: Promise.all([pit('city'), soft(loadCityProps()), soft(loadBeachProps())]), space: pit('space') };
+  const stand = (id) => soft(loadStand(id));
+  BASE.need = { mines: Promise.all([soft(loadCrystals()), soft(loadStalagmites()), pit('mines'), soft(loadMineProps())]), beach: Promise.all([pit('beach'), soft(loadBeachProps()), stand('beach')]), city: Promise.all([pit('city'), soft(loadCityProps()), soft(loadBeachProps()), stand('city')]), space: Promise.all([pit('space'), stand('space')]), alps: stand('alps') };
   BASE.needDone = {}; for (const [id, pr] of Object.entries(BASE.need)) pr.then(() => { BASE.needDone[id] = true; });
   BASE.later = Promise.all(Object.values(BASE.need)).then(() => { BASE.laterDone = true; });
   loadPitCrew();   // (v163) the Blender pit crew: not waited for, the stops come much later
@@ -3632,6 +3645,14 @@ const THEMES = {
 };
 // grandstands with a cheering crowd on both sides of the start (Alps and Robo City)
 function grandstands(scene, W, roof) {
+  const model = BASE.stand && BASE.stand[TDEF.id];
+  if (model) {   // (v325) the map's own stand from Blender, four sections like the old ones
+    for (const side of [-1, 1]) for (let s0 = -34; s0 <= 18; s0 += 26) {
+      const back = W.pitIdx && PITS && side === PITS.side && W.pitIdx[Math.round(((s0 + TRACK.L) % TRACK.L) / STEP) % TRACK.N] ? 21 : 0;
+      const p = at((s0 + TRACK.L) % TRACK.L, side * (HALF + 9.5 + back)), g = model.clone(true); g.position.set(p.x, groundY(p.x, p.z), p.z); g.rotation.y = Math.atan2(-side * p.p.nx, -side * p.p.nz); scene.add(g);
+    }
+    W.crowd = null; return;
+  }
   const standM = M('#e8eef8', { roughness: .6 }), roofM = M(roof, { roughness: .5 }), crowd = [], heads = [], all = new THREE.Group();
   for (const side of [-1, 1]) for (let s0 = -34; s0 <= 18; s0 += 26) {
     const back = W.pitIdx && PITS && side === PITS.side && W.pitIdx[Math.round(((s0 + TRACK.L) % TRACK.L) / STEP) % TRACK.N] ? 21 : 0;   // (v152) behind the garages
