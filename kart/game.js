@@ -862,10 +862,12 @@ function clusterGeo(src, cell) {
 // grid cells (metres, on the 0.28 m tyre) per part, for the two versions; 0 = the part as it came
 // measured: these give about 10 300 triangles a wheel for your kart and 2 900 for a rival's (the code-built
 // wheel was 2 700), so twenty wheels cost about 87k — up from 54k, for a kart whose tyres are the user's own
-const TYRE_CELLS = { hi: { Tyre_Rubber: .0105, Rim: .0065, LED_Strip: 0, Rim_Spokes: 0, Hub_Cap: 0, Lug_Nuts: 0 }, lo: { Tyre_Rubber: .024, Rim: .016, LED_Strip: .013, Rim_Spokes: .005, Hub_Cap: .005, Lug_Nuts: .008 } };
+const TYRE_CELLS = { hi: { Tyre_Rubber: .0105, Rim: .0065, LED_Strip: 0, Rim_Spokes: 0, Hub_Cap: 0, Lug_Nuts: 0 }, lo: { Tyre_Rubber: .024, Rim: .016, LED_Strip: .013, Rim_Spokes: .005, Hub_Cap: .005, Lug_Nuts: .008 },
+  // (v331, 100k a frame) the rivals' wheels in a race; yours in a race uses lo, the garage keeps hi
+  xlo: { Tyre_Rubber: .05, Rim: .034, LED_Strip: .03, Rim_Spokes: .014, Hub_Cap: .014, Lug_Nuts: .03 } };
 function buildTyreLods(src) {
   const lods = {};
-  for (const lod of ['hi', 'lo']) {
+  for (const lod of ['hi', 'lo', 'xlo']) {
     const g = new THREE.Group(); g.name = 'Spin'; let tris = 0;
     for (const m of src) { const geo = clusterGeo(m.geometry, TYRE_CELLS[lod][m.name] || 0); const mesh = new THREE.Mesh(geo, m.material); mesh.name = m.name; mesh.castShadow = true; g.add(mesh); tris += (geo.index ? geo.index.count : geo.attributes.position.count) / 3; }
     lods[lod] = g; lods[lod + 'Tris'] = tris;
@@ -878,7 +880,7 @@ async function loadTyre(hi = false) {
     const src = []; g.scene.traverse((o) => { if (o.isMesh) { o.geometry.applyMatrix4(o.matrixWorld); o.material.envMapIntensity = .8; src.push(o); } });
     if (!src.find((m) => m.name === 'LED_Strip')) throw new Error('no LED_Strip in the tyre');
     BASE.tyreSrc = src; BASE.tyre = buildTyreLods(src);
-    console.log(`tyre: ${BASE.tyre.hiTris} / ${BASE.tyre.loTris} triangles a wheel (hi / lo)`);
+    console.log(`tyre: ${BASE.tyre.hiTris} / ${BASE.tyre.loTris} / ${BASE.tyre.xloTris} triangles a wheel (hi / lo / xlo)`);
   } catch (e) { console.warn('tyre model missing; the code-built wheels stay', e); if (!hi) BASE.tyre = null; }
 }
 // one LED material per light colour and one spoke material per body colour, shared by every wheel of that colour
@@ -1017,7 +1019,7 @@ async function loadStand(id) {
   return (BASE.stand[id] = g.scene);
 }
 async function loadMineProps() {
-  const one = async (n) => { const g = await gltf(`models/mine-${n}.glb?v=1`, 20000); g.scene.updateMatrixWorld(true); let m = null; g.scene.traverse((o) => { if (o.isMesh && !m) m = o; }); return m.geometry.clone().applyMatrix4(m.matrixWorld); };
+  const one = async (n) => { const g = await gltf(`models/mine-${n}.glb?v=2`, 20000); g.scene.updateMatrixWorld(true); let m = null; g.scene.traverse((o) => { if (o.isMesh && !m) m = o; }); return m.geometry.clone().applyMatrix4(m.matrixWorld); };
   try {
     const names = ['bush-1', 'bush-2', 'vine-1', 'vine-2', 'vine-3', 'canopy-1', 'canopy-2', 'leaf-arch', 'lava-rock-1', 'lava-rock-2', 'lava-rock-3'];
     const g = Object.fromEntries((await Promise.all(names.map(one))).map((x, k) => [names[k], x]));
@@ -1363,7 +1365,16 @@ function kartShadow() {
     KSHADOW = { geo: new THREE.PlaneGeometry(1.75, 2.75).rotateX(-Math.PI / 2), mat: new THREE.MeshBasicMaterial({ map: t, transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2, toneMapped: false }) }; }
   const m = new THREE.Mesh(KSHADOW.geo, KSHADOW.mat); m.position.y = .03; m.renderOrder = 1; m.name = 'KartShadow'; return m;
 }
-function makeRacerModel(ch, kartColor, sticker, player = false, skinOver = null, ship = false) {
+// (v331, at most 100k triangles a frame) a rival in a race: its bigger parts thinned by vertex clustering (Body 6.7k -> ~2k,
+// Neon 6.2k -> ~1.5k, once per part and shared), and no real shadow (its soft KartShadow stays); yours is untouched
+const LITE_GEO = new Map(), LITE_CELL = .045;
+function lightenRacer(root) {
+  root.traverse((o) => { if (!o.isMesh || !o.geometry) return; o.castShadow = false; if (o.isSkinnedMesh || o.name === 'KartShadow') return;
+    const g = o.geometry, t = (g.index ? g.index.count : g.attributes.position.count) / 3; if (t < 400) return;
+    if (Array.isArray(o.material) || (o.material && (o.material.map || o.material.vertexColors)) || (g.groups && g.groups.length > 1) || g.morphAttributes.position) return;   // (textured, multi-material or morphing parts stay as they are)
+    let lg = LITE_GEO.get(g.uuid); if (!lg) { try { lg = clusterGeo(g, LITE_CELL); } catch (e) { lg = g; } LITE_GEO.set(g.uuid, lg); } o.geometry = lg; });
+}
+function makeRacerModel(ch, kartColor, sticker, player = false, skinOver = null, ship = false, inRace = false) {
   const root = new THREE.Group(), body = new THREE.Group(); root.add(body); root.add(kartShadow());
   if (ship && BASE.ship && BASE.dk) {
     // (v184) on Star Loop everyone flies the starship: your own paint, or each rival's colours
@@ -1383,7 +1394,7 @@ function makeRacerModel(ch, kartColor, sticker, player = false, skinOver = null,
     const k = BASE.dk.clone(), look = skinFor(ch, player, skinOver); dressKart(THREE, k, look); body.add(k);
     const N = k.nodes, wheels = [N.WheelFrontLeft, N.WheelFrontRight, N.WheelRearLeft, N.WheelRearRight];
     // (v158) the user's LED tyre in place of the code-built wheel: the fine version on your kart, the coarse one on a rival's
-    if (BASE.tyre) for (const [name, [r, w, side]] of Object.entries(WHEEL_SIZE)) { const a = N[name], old = a.getObjectByName('Spin'); if (old) a.remove(old); a.add(tyreWheel(r, w, side, look, player ? 'hi' : 'lo')); }
+    if (BASE.tyre) for (const [name, [r, w, side]] of Object.entries(WHEEL_SIZE)) { const a = N[name], old = a.getObjectByName('Spin'); if (old) a.remove(old); a.add(tyreWheel(r, w, side, look, inRace ? (player ? 'lo' : 'xlo') : (player ? 'hi' : 'lo'))); }
     const fronts = [N.WheelFrontLeft, N.WheelFrontRight], spins = wheels.map((n) => n.getObjectByName('Spin') || n.children[0]);
     const driver = driverBody(ch, skinFor(ch, player, skinOver), !player && !skinOver).clone(); driver.position.copy(BASE.foxPos).add(BASE.seatShift); driver.rotation.copy(BASE.foxRot); body.add(driver);
     let dmesh = null; driver.traverse((o) => { if (o.isMesh && o.morphTargetInfluences && o.morphTargetInfluences.length === 4) dmesh = o; });
@@ -2071,8 +2082,17 @@ function heightFog(mat) {
   };
   mat.customProgramCacheKey = () => 'hfog'; return mat;
 }
-function instanced(scene, geo, mat, list, shadow = true) {
+// (v331, the user: at most 100k triangles a frame) a long list is split into 40 m patches of ground, one InstancedMesh each,
+// so the patches behind the camera or out of sight are not drawn at all (one mesh for the whole map was always drawn whole)
+const CHUNK = 40;
+const GROUND_STEP = 3.4;   // (v331) the heightfield ground's grid, metres (was 2.2: 85k triangles on the beach, now about a third of that)
+function instanced(scene, geo, mat, list, shadow = true, chunk = true) {
   if (PIT_CLEAR && WORLD && WORLD.pitDist) list = list.filter((d) => WORLD.pitDist(d.x, d.z) > 18);
+  if (chunk && list.length > 24) {
+    const cells = new Map(); for (const d of list) { const k = Math.floor(d.x / CHUNK) + ',' + Math.floor(d.z / CHUNK); (cells.get(k) || cells.set(k, []).get(k)).push(d); }
+    let first = null; for (const part of cells.values()) { const im = instanced(scene, geo, mat, part, shadow, false); im.computeBoundingSphere(); first = first || im; }
+    return first;
+  }
   const im = new THREE.InstancedMesh(geo, mat, list.length), m = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler();
   list.forEach((d, i) => { e.set(0, d.ry || 0, 0); q.setFromEuler(e); m.compose(new THREE.Vector3(d.x, d.y || 0, d.z), q, new THREE.Vector3(d.sx || d.s, d.sy || d.s, d.sz || d.s)); im.setMatrixAt(i, m); if (d.c) im.setColorAt(i, new THREE.Color(d.c)); });
   im.castShadow = shadow; im.receiveShadow = false; scene.add(im); return im;
@@ -2479,7 +2499,7 @@ const THEMES = {
         return (hy - .06 + k * Math.max(0, hills(x, z) * (.4 + Math.min(1, (d - HALF) / 50)))) * e;
       };
       const snowTex = snowTexture([60, 60]);
-      const sx = Math.round((x1 - x0) / 2.2), sz = Math.round((z1 - z0) / 2.2), g = new THREE.PlaneGeometry(x1 - x0, z1 - z0, sx, sz).rotateX(-Math.PI / 2), p = g.attributes.position;
+      const sx = Math.round((x1 - x0) / GROUND_STEP), sz = Math.round((z1 - z0) / GROUND_STEP), g = new THREE.PlaneGeometry(x1 - x0, z1 - z0, sx, sz).rotateX(-Math.PI / 2), p = g.attributes.position;
       for (let i = 0; i < p.count; i++) { const x = p.getX(i) + (x0 + x1) / 2, z = p.getZ(i) + (z0 + z1) / 2; p.setY(i, W.groundAt(x, z)); }
       g.computeVertexNormals();
       // (v94) the snow catches the sky: big soft patches of lavender, ice blue and warm sunlight in its vertex colours (Beach and Mines re-dress this mesh)
@@ -2795,7 +2815,7 @@ const THEMES = {
       instanced(scene, new THREE.SphereGeometry(.32, 12, 8).translate(0, 5.8, 1.4), new THREE.MeshBasicMaterial({ color: '#fff0b0' }), lamps, false);
       // Rob's robot fans cheering behind the walls (off since v62, see CROWD)
       const fans = []; if (CROWD) for (let i = 0; i < TRACK.N; i += 9) { if (tp(i).y > .4 || Math.random() < .35) continue; const p = tp(i), s = pick([-1, 1]); fans.push({ x: p.x + p.nx * s * (HALF + 2.2 + rand(0, 2)), z: p.z + p.nz * s * (HALF + 2.2 + rand(0, 2)), s: rand(.8, 1.1), ry: Math.atan2(-s * p.nx, -s * p.nz) + rand(-.3, .3) }); }
-      if (CROWD) { W.fans = instanced(scene, robotFanGeo(), new THREE.MeshStandardMaterial({ vertexColors: true, roughness: .4 }), fans, false); W.fanList = fans; }
+      if (CROWD) { W.fans = instanced(scene, robotFanGeo(), new THREE.MeshStandardMaterial({ vertexColors: true, roughness: .4 }), fans, false, false); W.fanList = fans; }
       // (v293: the giant gold gears that floated by the road are gone — the user: they looked like arc reactors)
       const clouds = []; for (let k = 0; k < 14; k++) { const a = rand(0, 6.28), r = rand(220, 380); clouds.push({ x: MID.x + Math.cos(a) * r, y: rand(70, 110), z: MID.z + Math.sin(a) * r, s: rand(1.4, 2.6), ry: rand(0, 6) }); }
       instanced(scene, cloudGeo('#ffc0d8'), new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1, emissive: '#ff9ac0', emissiveIntensity: .35 }), clouds, false);
@@ -3688,8 +3708,8 @@ function grandstands(scene, W, roof) {
   }
   const stands = new THREE.Mesh(bakeOne(all), new THREE.MeshStandardMaterial({ vertexColors: true, roughness: .6 })); stands.receiveShadow = true; scene.add(stands);   // all the stands in one draw
   if (!CROWD) { W.crowd = null; return; }
-  W.crowd = instanced(scene, new THREE.CapsuleGeometry(.24, .4, 4, 8), M('#ffffff', { roughness: .7 }), crowd, false);
-  W.heads = instanced(scene, new THREE.SphereGeometry(.2, 10, 8), M('#ffffff', { roughness: .6 }), heads, false);
+  W.crowd = instanced(scene, new THREE.CapsuleGeometry(.24, .4, 4, 8), M('#ffffff', { roughness: .7 }), crowd, false, false);
+  W.heads = instanced(scene, new THREE.SphereGeometry(.2, 10, 8), M('#ffffff', { roughness: .6 }), heads, false, false);
   W.crowdList = crowd; W.headList = heads;
 }
 const CROWD = false;   // the bobbing crowd in the stands and Rob's robot fans: off since v62 (the user: "remove the moving fans")
@@ -3826,6 +3846,9 @@ const PIT_SPECS = {
   // (Star Loop: the same short lane round its own garage row, which stands further back from the line)
   space: { side: -1, entry: -175, tIn: -139, tOut: -79, exit: -53, mouthIn: 2.0, mouthOut: 7.9, laneU: 14.2, laneW: 4.2, bays: [-130, -119.4, -108.8, -98.2, -87.6], me: 2, bayU: 15.9, gateFrom: -249, gateTo: -149 },
 };
+// (v331, the user: "what are these blocks… remove them") only YOUR garage is built; the other four racers' closed garages
+// (their doors and coloured panels) are gone from every map. false brings them back.
+const ONLY_MY_GARAGE = true;
 let PITS = null;                        // the spec for the track in play (null = no pit lane here)
 // metres from the start/finish line, −L/2 … +L/2
 const dsOf = (s) => { const L = TRACK.L, d = ((s % L) + L) % L; return d > L / 2 ? d - L : d; };
@@ -4030,17 +4053,17 @@ function buildPitLane(scene, W, def) {
     // (v176, the user) only YOUR garage is open: the other four have their roller door down, and their insides are not drawn
     const doorTex = canvasTex(64, 128, (x) => { x.fillStyle = '#ffffff'; x.fillRect(0, 0, 64, 128); for (let y = 0; y < 128; y += 8) { x.fillStyle = 'rgba(0,0,0,.18)'; x.fillRect(0, y, 64, 2); x.fillStyle = 'rgba(255,255,255,.5)'; x.fillRect(0, y + 2, 64, 1); } x.fillStyle = 'rgba(0,0,0,.35)'; x.fillRect(0, 120, 64, 8); }, [6, 3]);
     const doorGeo = new THREE.BoxGeometry(.12, 3.5, 9.3);
-    for (const b of bays) if (b.i !== P.me) { const d = new THREE.Mesh(doorGeo, new THREE.MeshStandardMaterial({ map: doorTex, color: '#c8ccd4', roughness: .5, metalness: .3 })); d.position.set(.32, 1.75, 0); const gp = new THREE.Group(); gp.position.set(b.x, b.y, b.z); gp.rotation.y = b.ry; gp.add(d); d.castShadow = true; d.receiveShadow = true; scene.add(gp); paint.doors.push({ mesh: d, bay: b.i }); }
+    if (!ONLY_MY_GARAGE) for (const b of bays) if (b.i !== P.me) { const d = new THREE.Mesh(doorGeo, new THREE.MeshStandardMaterial({ map: doorTex, color: '#c8ccd4', roughness: .5, metalness: .3 })); d.position.set(.32, 1.75, 0); const gp = new THREE.Group(); gp.position.set(b.x, b.y, b.z); gp.rotation.y = b.ry; gp.add(d); d.castShadow = true; d.receiveShadow = true; scene.add(gp); paint.doors.push({ mesh: d, bay: b.i }); }
     for (const { geo, mat, structural, tint } of GAR.parts) {
       if (!geo.boundingBox) geo.computeBoundingBox();
-      const inside = !structural && geo.boundingBox.min.x >= .5, list = inside ? mine : bays;
+      const inside = !structural && geo.boundingBox.min.x >= .5, list = inside || ONLY_MY_GARAGE ? mine : bays;
       if (tint === 'tex') {   // purple painted into a texture: one mesh per bay, each with its own material to carry its own copy
         const meshes = bays.map((b) => { if (!list.includes(b)) return null; const m = new THREE.Mesh(geo, mat.clone()); m.position.set(b.x, b.y, b.z); m.rotation.y = b.ry; m.castShadow = !structural; m.receiveShadow = true; scene.add(m); return m; });
         paint.tex.push({ src: mat.map, meshes });
         continue;
       }
       const white = tint === 'col' ? mat.clone() : null; if (white) white.color.set('#ffffff');   // (the colour comes from the instance)
-      const im = instanced(scene, geo, white || mat, list, !structural);
+      const im = instanced(scene, geo, white || mat, list, !structural, false);
       if (structural) im.receiveShadow = true;
       if (white) { for (let i = 0; i < list.length; i++) im.setColorAt(i, gc.copy(mat.color)); im.instanceColor.needsUpdate = true; paint.col.push({ im, src: mat.color.clone(), bays: list.map((b) => b.i) }); }
     }
@@ -7002,7 +7025,7 @@ function startRaceNow(trackId = save.track || 'alps', opts = {}) {
   race.racers = order.map((slot, i) => {
     const rem = slot.remote ? slot : null, ch = rem ? rem.ch : slot;
     const player = slot === me, { s, lat } = gridSpot(i), p = at(s, lat), pY = p.y;
-    const model = makeRacerModel(ch, player ? save.kart.color : ch.color, player ? save.kart.sticker : ch.sticker || 'none', player, rem ? rem.skin : null, !!TDEF.ship); WORLD.scene.add(model.root);
+    const model = makeRacerModel(ch, player ? save.kart.color : ch.color, player ? save.kart.sticker : ch.sticker || 'none', player, rem ? rem.skin : null, !!TDEF.ship, true); if (!player) lightenRacer(model.root || model); WORLD.scene.add(model.root);
     if (player) setTyre({ model }, 1, false);   // (v274) every race starts on level-1 tyres (the garage's tyre is for the menu)
     const r = { ch, player, model, x: p.x, z: p.z, angle: angleOf(p.p), speed: 0, idx: Math.round(s / STEP) % TRACK.N, s, lap: 0, dist: 0, steerVis: 0,
       spinT: 0, spinA: 0, slideT: 0, boostT: 0, boostMul: 1, shield: 0, shieldT: 0, iceCd: 0, finished: false, finishTime: 0, bounceT: 0,
@@ -8139,7 +8162,7 @@ function arenaProps(scene, T, neon) {
   if (T.props === 'alps') { const pine = M('#2f7a3a'), snow = M('#ffffff'), trunk = M('#5a3a20'); ring(26, 9.5, 20, (x, z) => { const s = rand(.8, 1.5); L.push({ x, z, s, c: null }); }); instanced(scene, new THREE.CylinderGeometry(.22, .3, 1.2, 6).translate(0, .6, 0), trunk, L); instanced(scene, new THREE.ConeGeometry(1.7, 5, 7).translate(0, 3.3, 0), pine, L); instanced(scene, new THREE.ConeGeometry(1.2, 1.4, 7).translate(0, 5.3, 0), snow, L);
     const B = []; ring(18, 7.6, 9.5, (x, z) => B.push({ x, z, s: rand(.6, 1.1), ry: rand(0, 6) })); instanced(scene, new THREE.SphereGeometry(1, 9, 6).scale(2.3, .9, 2.8), snow, B); }
   if (T.props === 'beach') { ring(14, 10, 18, (x, z) => L.push({ x, z, s: rand(.8, 1.2) })); instanced(scene, new THREE.CylinderGeometry(.22, .34, 5.5, 7).translate(0, 2.75, 0), M('#8a5a30'), L); instanced(scene, new THREE.SphereGeometry(1.9, 8, 6).scale(1, .45, 1).translate(0, 5.6, 0), M('#3aa84a'), L);
-    const Tq = []; ring(10, 6.8, 7.4, (x, z) => Tq.push({ x, z, s: 1 })); instanced(scene, new THREE.CylinderGeometry(.08, .12, 2.2, 6).translate(0, 1.1, 0), M('#5a3a20'), Tq); ARENA.flames = instanced(scene, new THREE.ConeGeometry(.24, .7, 6).translate(0, 2.55, 0), neon('#ffb040'), Tq, false); }
+    const Tq = []; ring(10, 6.8, 7.4, (x, z) => Tq.push({ x, z, s: 1 })); instanced(scene, new THREE.CylinderGeometry(.08, .12, 2.2, 6).translate(0, 1.1, 0), M('#5a3a20'), Tq); ARENA.flames = instanced(scene, new THREE.ConeGeometry(.24, .7, 6).translate(0, 2.55, 0), neon('#ffb040'), Tq, false, false); }
   if (T.props === 'mines') { const cm = new THREE.MeshStandardMaterial({ color: '#ffffff', emissive: '#7af8ff', emissiveIntensity: .7, roughness: .25 }); ring(30, 7.6, 16, (x, z) => L.push({ x, z, s: rand(.6, 1.8), ry: rand(0, 6), c: pick(['#7af8ff', '#c84aff', '#bff4ff']) })); instanced(scene, new THREE.ConeGeometry(.55, 2.6, 5).translate(0, 1.3, 0), cm, L);
     const R = []; ring(16, 11, 20, (x, z) => R.push({ x, z, s: rand(1, 3), ry: rand(0, 6) })); instanced(scene, new THREE.DodecahedronGeometry(1.1, 0), M('#3a2a30', { roughness: .95 }), R);
     const Lp = []; ring(8, 6.6, 6.8, (x, z) => Lp.push({ x, z, s: 1 })); instanced(scene, new THREE.CylinderGeometry(.09, .11, 3.2, 8).translate(0, 1.6, 0), M('#2a2e3a'), Lp); instanced(scene, new THREE.SphereGeometry(.34, 10, 8).translate(0, 3.3, 0), neon('#ffd080'), Lp, false); }
@@ -8187,7 +8210,7 @@ function buildArena(id = 'city') {
   for (const [r, c, w] of [[5.56, T.rings[0], .05], [4.7, T.rings[1], .035], [4.45, T.rings[2], .025]]) { const m = new THREE.Mesh(new THREE.TorusGeometry(r, w, 6, 96).rotateX(Math.PI / 2), neon(c)); m.position.y = .35; scene.add(m); }
   for (const [r, c] of [[6.1, T.floorRings[0]], [6.6, T.floorRings[1]], [7.3, T.floorRings[2]]]) { const m = new THREE.Mesh(new THREE.RingGeometry(r, r + .09, 96).rotateX(-Math.PI / 2), neon(c)); m.position.y = .012; scene.add(m); }
   const N_B = 84, bulbs = []; for (let i = 0; i < N_B; i++) { const a = i / N_B * Math.PI * 2; bulbs.push({ x: Math.cos(a) * 5.8, y: .17, z: Math.sin(a) * 5.8, s: .085, c: '#ffffff' }); }
-  ARENA.bulbs = instanced(scene, new THREE.SphereGeometry(1, 8, 6), neon('#ffffff'), bulbs, false);
+  ARENA.bulbs = instanced(scene, new THREE.SphereGeometry(1, 8, 6), neon('#ffffff'), bulbs, false, false);
   // the podium pillars: dark glass-and-metal bodies, a glowing top in the place's colour, neon edges, and the number
   ARENA.podium = new THREE.Group(); scene.add(ARENA.podium); ARENA.blocks = []; ARENA.halos = []; ARENA.numTex = [];
   const PLACES = [[0, 1.3, '#ffd23a', '#fffbe0', '#ff8a1e', '1', 'ST'], [-2.35, .95, '#7fe0ff', '#ffffff', '#4a7ae8', '2', 'ND'], [2.35, .65, '#ff8a4a', '#ffe2c8', '#d83a2a', '3', 'RD']];
