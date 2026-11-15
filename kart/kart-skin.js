@@ -191,6 +191,10 @@ export const METAL_ON = false;
 // (v329, the user: "just a white colour of the kart with black carbon details, and their little shadows") every kart's
 // body is white for now; the carbon parts stay black, the lights and logo keep the racer's own colours
 export const KART_WHITE = '#f3f4f8';
+// (v330, the user: "remove the square on the front for the logos, and the rectangles on the sides; when I say to add the
+// garage back, add them back") no logo plates on the kart or the helmet, no number boards on the sides, and the helmet
+// is white and carbon like the kart. Set SHOW_LOGOS = true (and KART_WHITE = '') to bring the garage looks back.
+export const SHOW_LOGOS = false;
 export const metalOf = (c) => {
   if (!METAL_ON) return null;
   const k = String(c || '').toLowerCase(); if (METALS[k]) return METALS[k];
@@ -549,6 +553,7 @@ export function dressKart(THREE, kart, skin = DEFAULT_SKIN) {
     if (g.userData.y0 === undefined) g.userData.y0 = g.position.y; g.position.y = r;   // (the smaller tyre still touches the ground)
     g.add(buildWheel(THREE, r, w, side, s)); g.add(buildBrake(THREE, r, w, side, s));
   }
+  if (!SHOW_LOGOS) { const old = kart.nodes.LogoAnchor.getObjectByName('LogoPlate'); if (old) kart.nodes.LogoAnchor.remove(old); return kart; }
   const p = setPlate(kart.nodes.LogoAnchor, logoPlate(THREE, s.logo, s.logoColor, s.body));
   p.position.y = -.08; p.scale.setScalar(1.22);   // a bit bigger and further forward, so it covers the panel's painted fox
   return kart;
@@ -567,9 +572,12 @@ function neckCap(THREE) {
 }
 // put a look on a loaded (or cloned) helmet: main + accent colours, lights and the logo above the visor
 export function dressHelmet(THREE, helmet, skin = DEFAULT_HELMET) {
-  const s = { ...DEFAULT_HELMET, ...skin }, m = cleanMaterials(THREE, s.main, s.accent, s.light, { gloss: true });
+  const s = { ...DEFAULT_HELMET, ...skin, ...(KART_WHITE ? { main: KART_WHITE } : {}) }, m0 = cleanMaterials(THREE, s.main, s.accent, s.light, { gloss: true });
+  // (v330) white and carbon: the accent parts become the kart's black carbon fibre
+  const m = KART_WHITE ? [m0[0], m0[1], m0[2], carbonMat(THREE), m0[4], m0[5]] : m0;
   helmet.nodes.Shell.traverse((o) => { if (o.isMesh) o.material = m; });
-  setPlate(helmet.nodes.LogoAnchor, logoPlate(THREE, s.logo, s.logoColor, s.main)).scale.setScalar(1.25);
+  if (SHOW_LOGOS) setPlate(helmet.nodes.LogoAnchor, logoPlate(THREE, s.logo, s.logoColor, s.main)).scale.setScalar(1.25);
+  else { const old = helmet.nodes.LogoAnchor.getObjectByName('LogoPlate'); if (old) helmet.nodes.LogoAnchor.remove(old); }
   if (!helmet.getObjectByName('NeckCap')) helmet.add(neckCap(THREE));
   return helmet;
 }

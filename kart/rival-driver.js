@@ -168,6 +168,8 @@ export function rivalSuit(map, color, pick = null, tag = 'suit', extra = null) {
     const hit = pick ? pick(hsl) : hsl.s > .35 && (hsl.h < .07 || hsl.h > .93);
     if (!hit) continue;
     // keep the shading (lightness relative to the suit's mid red), take the rival's hue and saturation
+    // (v330) a white helmet stays white: bright and neutral, keeping the shading
+    if (th.s < .12 && th.l > .8) { c.setHSL(th.h, th.s, clamp01(.86 + (hsl.l - .45) * .55, .55, .97)); a[i] = c.r * 255; a[i + 1] = c.g * 255; a[i + 2] = c.b * 255; continue; }
     const l = clamp01(th.l + (hsl.l - .45) * .9, .08, .9);
     c.setHSL(th.h, Math.max(.45, th.s), l);
     a[i] = c.r * 255; a[i + 1] = c.g * 255; a[i + 2] = c.b * 255;

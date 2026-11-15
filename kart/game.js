@@ -17,12 +17,12 @@ import * as THREE from './lib/three.module.min.js';
 import { RoomEnvironment } from './lib/RoomEnvironment.js?v=2';
 import { buildFoxino, buildKart, buildHelmet, setDetail } from './models.js?v=52';
 import * as L from './learn.js?v=52';
-import { carbonMat, loadDefaultKart, dressKart, loadHelmet, dressHelmet, DEFAULT_SKIN, DEFAULT_HELMET, BODY_COLORS, LIGHT_COLORS, LOGOS, logoIconURL, logoCanvas, isInk, inkFromCanvas, inkLayer, WHEEL_SIZE, makeMetal, metalOf, swatchCSS } from './kart-skin.js?v=23';
+import { carbonMat, loadDefaultKart, dressKart, loadHelmet, dressHelmet, DEFAULT_SKIN, DEFAULT_HELMET, BODY_COLORS, LIGHT_COLORS, LOGOS, logoIconURL, logoCanvas, isInk, inkFromCanvas, inkLayer, WHEEL_SIZE, makeMetal, metalOf, swatchCSS, SHOW_LOGOS, KART_WHITE } from './kart-skin.js?v=24';
 import { buildRearWing, REAR_WINGS } from './rear-wings.js?v=1';   // (v270) the nine rear wings for the garage start
 import { GLTFLoader } from './lib/GLTFLoader.js?v=2';
 import { mergeGeometries } from './lib/BufferGeometryUtils.js?v=2';
 import { BUILDERS } from './racers.js?v=2';
-import { bakeSeatedDriver, rivalSuit, helmetPaint, DRIVER_POSE } from './rival-driver.js?v=4';   // (2026-11-13) the AI rivals drive as the Tripo racing driver
+import { bakeSeatedDriver, rivalSuit, helmetPaint, DRIVER_POSE } from './rival-driver.js?v=5';   // (2026-11-13) the AI rivals drive as the Tripo racing driver
 
 /* ---------- CHARACTERS: the 5 racers. Foxino is the Higgsfield 3D model; the other four are built in racers.js.
    `color` is their kart and name-tag colour; `hue` is only used if a model can't be built (then a recoloured Foxino drives). ---------- */
@@ -1038,7 +1038,7 @@ function addKartDetails(k) {
   if (!k) return;
   if (!kartDetailsLoad) kartDetailsLoad = gltf('models/kart-details.glb?v=1', 15000).then((g) => {
     const white = new THREE.MeshPhysicalMaterial({ color: '#f2f4f8', roughness: .35, metalness: .05, clearcoat: .6, clearcoatRoughness: .2, side: THREE.DoubleSide });
-    g.scene.traverse((o) => { if (o.isMesh) { o.material = carbonMat(THREE); o.castShadow = true; } });   /* (v310, the user: "make the white carbon fibre black") every detail part is black carbon now, the white ones too */
+    g.scene.traverse((o) => { if (o.isMesh) { o.material = carbonMat(THREE); o.castShadow = true; if (!SHOW_LOGOS && o.name === 'WhiteNumberBoards') o.visible = false; } });   // (v330: the side number boards are for the garage's logos)   /* (v310, the user: "make the white carbon fibre black") every detail part is black carbon now, the white ones too */
     g.scene.name = 'KartDetails'; return g.scene;
   }).catch((e) => { console.warn('kart details did not load', e); return null; });
   return kartDetailsLoad.then((d) => { if (d && !k.getObjectByName('KartDetails')) k.add(d.clone(true)); });
@@ -1129,7 +1129,7 @@ function dressShip(g, look) {
 }
 // your starship's look: the kart's colours until you paint the starship on its own in the garage
 const shipSkin = () => ({ ...DEFAULT_SKIN, ...(save.kart.skin || {}), ...(save.kart.ship || {}) });
-const helmetLook = (skin) => { const s = { ...DEFAULT_SKIN, ...(skin || {}) }; return { ...DEFAULT_HELMET, main: s.body, light: s.light, logo: s.logo, logoColor: s.logoColor || s.light }; };
+const helmetLook = (skin) => { const s = { ...DEFAULT_SKIN, ...(skin || {}) }; return { ...DEFAULT_HELMET, main: KART_WHITE || s.body, light: s.light, logo: s.logo, logoColor: s.logoColor || s.light }; };
 /* (v209, the user: "make the hands of the character hold the wheel — you should see they are holding it") the baked
    drivers have their hands on the rim at 10 and 2, but the wheel turns up to ±0.9 rad and the hands stayed put, so the
    wheel spun out of them. Now every hand turns WITH the rim: four morph targets (the wheel at −0.9, −0.45, +0.45, +0.9)
