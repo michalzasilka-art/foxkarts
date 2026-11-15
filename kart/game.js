@@ -980,6 +980,11 @@ async function loadBeachProps0() {
     return m.geometry.clone().applyMatrix4(m.matrixWorld); };
   try {
     const [p1, p2, p3, castle, h1, h2, h3, h4] = await Promise.all(['palm-1', 'palm-2', 'palm-3', 'castle', 'house-1', 'house-2', 'house-3', 'house-4'].map((n) => one(`models/beach-${n}.glb?v=1`)));
+    // (v324, the user: "make the wood of the palms a bit lighter, a bit more brown") the two dark trunk browns lifted
+    for (const g of [p1, p2, p3]) { const ca = g.attributes.color, c = new THREE.Color(), h = {}; if (!ca) continue;
+      for (let i = 0; i < ca.count; i++) { c.setRGB(ca.getX(i), ca.getY(i), ca.getZ(i)); c.getHSL(h, THREE.SRGBColorSpace);
+        if (h.h > .04 && h.h < .14 && h.l < .4) { c.setHSL(h.h, Math.min(1, h.s * 1.05), h.l + .2, THREE.SRGBColorSpace); ca.setXYZ(i, c.r, c.g, c.b); } }
+      ca.needsUpdate = true; }
     BASE.beach = { palms: [p1, p2, p3], castle, houses: [h1, h2, h3, h4] };
   } catch (e) { console.warn('Beach models did not load; the shape-built palms, castle and houses stay', e); }
 }
@@ -1436,8 +1441,10 @@ const TRACK_DEFS = {
     // soft dunes, always above the sea; between 21.5 % and 34.5 % the road dives 5 m underground (the tunnel between the two sand castles)
     height: (f) => keyed(f, [[0, 1.2], [.06, 1.2], [.12, 2.4], [.19, 1.6], [.215, 1.6], [.25, -3.6], [.31, -3.6], [.345, 1.6], [.37, 1.6], [.44, 3.2], [.5, 1.4], [.6, 2.6], [.7, 1.2], [.8, 3], [.9, 1.6], [.96, 1.2], [1, 1.2]]),
     tunnel: [.215, .345, 1.6], hill: [16, 85],   // (castle A, castle B, the surface height; the hill's height and radius)
-    sky: [['#3a7ad0', 0], ['#86b8e8', .3], ['#d2dfe8', .5], ['#efeee8', .72], ['#fff3e0', 1]], fog: ['#e6eef2', 150, 820],   // (v70) a cloudy day
-    hemi: [0xf4fbff, 0xcdb890, .95], sun: [0xfff2cc, 2.35], envI: .6, road: '#c9a46c', line: 'rgba(255,255,255,.9)', kerb: ['#ffffff', '#1ab8c8'],
+    // (v324, the user: "make the beach map on the sunset, like the leaderboard of the beach") the podium's sunset: violet
+    // overhead, pink and orange to a golden horizon; warm light from a low sun, so long shadows
+    sky: [['#2a1a5a', 0], ['#8a2a7a', .26], ['#ff5a6a', .5], ['#ff9a4a', .7], ['#ffd27a', .86], ['#ffe6b0', 1]], fog: ['#ffc59a', 160, 820],
+    hemi: [0xffd8c0, 0x9a6a50, .8], sun: [0xffa060, 2.4], sunOff: [-15, 11, -16], envI: .45, road: '#c9a46c', line: 'rgba(255,255,255,.9)', kerb: ['#ffffff', '#1ab8c8'],
     pad: ['#ffffff', '#7af8ff', '#1ab8c8'], music: 0,
   },
   mines: {   // v67: a dark gold mine — a rock tunnel lit by lanterns, rails and minecarts beside the road; the City word set
@@ -2816,7 +2823,7 @@ const THEMES = {
       const sand = canvasTex(256, 256, (x) => { x.fillStyle = '#e8d2a0'; x.fillRect(0, 0, 256, 256); for (let k = 0; k < 2600; k++) { x.fillStyle = Math.random() < .5 ? 'rgba(255,255,255,.14)' : 'rgba(120,90,40,.12)'; x.fillRect(rand(0, 256), rand(0, 256), rand(1, 3), rand(1, 3)); } }, [60, 60]);
       added[0].material = new THREE.MeshStandardMaterial({ map: sand, roughness: .95 });
       // the four far planes become the sea: a little lower than the sand, glossy blue with a soft glow
-      const sea = new THREE.MeshStandardMaterial({ color: '#1aa8d8', roughness: .15, metalness: .1, emissive: '#0a4a7a', emissiveIntensity: .35 });
+      const sea = new THREE.MeshStandardMaterial({ color: '#2a7ab0', roughness: .15, metalness: .1, emissive: '#7a3a6a', emissiveIntensity: .35 });   // (v324: the sunset sea, deep blue with a pink-violet glow like the podium)
       for (const m of added.slice(1)) { m.material = sea; m.position.y -= .35; }
       // the beach stretch: the sand drops away beyond the beach, so the sea (drawn in scenery) lies on top of it
       const g = added[0].geometry, pa = g.attributes.position, ox = added[0].position.x, oz = added[0].position.z; let dirty = false;
@@ -2848,7 +2855,7 @@ const THEMES = {
         const sd = W.wide.side, only = (i) => W.openSide[i] === sd, lo = (a, b) => (sd > 0 ? [a, b] : [-b, -a]);
         scene.add(new THREE.Mesh(strip(...lo(HALF + 4.4, HALF + 7.6), .02, .02, { only }), M('#c4a070', { roughness: .95 })));
         scene.add(new THREE.Mesh(strip(...lo(HALF + 7.3, HALF + 8.6), .07, .07, { only }), new THREE.MeshStandardMaterial({ color: '#eaf8ff', roughness: .4, transparent: true, opacity: .85 })));
-        scene.add(new THREE.Mesh(strip(...lo(HALF + 8.4, HALF + 70), .06, .06, { only }), new THREE.MeshStandardMaterial({ color: '#1688c4', roughness: .1, metalness: .15, emissive: '#063a66', emissiveIntensity: .3, transparent: true, opacity: .96 })));
+        scene.add(new THREE.Mesh(strip(...lo(HALF + 8.4, HALF + 70), .06, .06, { only }), new THREE.MeshStandardMaterial({ color: '#2a6ea8', roughness: .1, metalness: .15, emissive: '#6a2a5a', emissiveIntensity: .3, transparent: true, opacity: .96 })));
       }
       const vcm = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: .85, flatShading: true });
       // palms: a leaning trunk, a crown of drooping leaves, coconuts
@@ -2867,7 +2874,7 @@ const THEMES = {
       for (const l of [palms, brollies, huts, rocks]) for (const d of l) d.y = W.groundAt(d.x, d.z) - .1;
       const BP = BASE.beach;
       if (BP) { const palmM = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: .85, flatShading: true, side: THREE.DoubleSide });   // (the fronds are single sheets)
-        BP.palms.forEach((g, i) => instanced(scene, g, palmM, palms.filter((_, k) => k % 3 === i), i === 0)); }
+        BP.palms.forEach((g, i) => instanced(scene, g, palmM, palms.filter((_, k) => k % 3 === i), true)); }   // (v324: all palms cast sunset shadows)
       else { instanced(scene, palmGeo(), vcm, palms.filter((p) => palms.indexOf(p) % 2 === 0)); instanced(scene, palmGeo(), vcm, palms.filter((p) => palms.indexOf(p) % 2 === 1), false); }
       // beach umbrellas (the colour per umbrella) and small huts
       const brolly = new THREE.Group(); { const pole = new THREE.Mesh(new THREE.CylinderGeometry(.05, .05, 2.6, 6), M('#f4f4f4')); pole.position.y = 1.3; brolly.add(pole); const top = new THREE.Mesh(new THREE.ConeGeometry(1.5, .7, 10), M('#ffffff')); top.position.y = 2.6; brolly.add(top); }
@@ -2907,9 +2914,10 @@ const THEMES = {
         pier.position.set(s0.x + s0.nx * side * (HALF + 12), 0, s0.z + s0.nz * side * (HALF + 12)); pier.rotation.y = Math.atan2(s0.nx * side, s0.nz * side); scene.add(pier); }
       // a cloudy day: a sky full of big soft clouds, some of them grey underneath
       const clouds = []; for (let k = 0; k < 46; k++) { const a = rand(0, 6.28), r = rand(60, 360); clouds.push({ x: MID.x + Math.cos(a) * r, y: rand(50, 110), z: MID.z + Math.sin(a) * r, s: rand(1.6, 3.6), ry: rand(0, 6) }); }
-      instanced(scene, cloudGeo(), new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1, emissive: '#ffffff', emissiveIntensity: .22 }), clouds.filter((_, k) => k % 3), false);
-      instanced(scene, cloudGeo('#d8dde6'), new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1, emissive: '#dde4ee', emissiveIntensity: .18 }), clouds.filter((_, k) => !(k % 3)), false);
-      const sun = new THREE.Mesh(new THREE.SphereGeometry(30, 20, 14), new THREE.MeshBasicMaterial({ color: '#fff8d0', fog: false })); sun.position.set(MID.x - 460, 260, MID.z - 500); scene.add(sun);
+      instanced(scene, cloudGeo('#ffd0b0'), new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1, emissive: '#ff9a7a', emissiveIntensity: .3 }), clouds.filter((_, k) => k % 3), false);   // (v324: sunset-lit clouds)
+      instanced(scene, cloudGeo('#c87aa0'), new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1, emissive: '#a05a8a', emissiveIntensity: .25 }), clouds.filter((_, k) => !(k % 3)), false);
+      const sun = new THREE.Mesh(new THREE.SphereGeometry(44, 20, 14), new THREE.MeshBasicMaterial({ color: '#ffd27a', fog: false })); sun.position.set(MID.x - 470, 70, MID.z - 500); scene.add(sun);   // (v324: low over the sea, where the light comes from)
+      { const halo = new THREE.Mesh(new THREE.SphereGeometry(80, 20, 14), new THREE.MeshBasicMaterial({ color: '#ff9a4a', transparent: true, opacity: .28, fog: false, depthWrite: false })); halo.position.copy(sun.position); scene.add(halo); }
       // the sand-castle tunnel: the road dips into a trench between castle A and castle B; a sand lid closes the trench at
       // the surface with a sand road running over it, sand skirts hang down its edges, lanterns light the inside
       if (def.tunnel) {
@@ -6767,7 +6775,7 @@ let JOYF = null;
 //   keys     90 % of the lock in about 0.3 s, quicker still when you swap sides (was 0.46 s)
 //   tap sides stays as the user tuned it (v226)
 const STEER = { lineExp: .72, lineMax: 90, lineRate: 16, joyExp: .72, joyMax: 72, joyRate: 14, padExp: 1.25, tiltDead: 3, tiltGain: 3.2, tiltRate: 10, keyRate: 7.5,
-  outExp: 1.6, tapMin: 34, tapMax: 50, tapRate: 8 };   // (v269: the wheel → steering "soft middle" curve and TAP SIDES, here so the debug hub can tune them)
+  outExp: 1.6, tapMin: 34, tapMax: 50, tapRate: 8, tapStraight: .78, tapBend: 1.35 };   // (v269: the wheel → steering "soft middle" curve and TAP SIDES, here so the debug hub can tune them)
 // (v281, the user: the option to change the joystick sensitivity) JOYSTICK SENSITIVITY in Settings → CONTROLS, 50–150 %
 // (save.joySens 0.5…1.5, 1 = the tuned feel above). It works on the joystick, the line and a controller's stick:
 // higher = a small push turns more (a straighter push curve), the full lock a little wider and the wheel follows a little
@@ -6783,6 +6791,15 @@ const sensRate = (r) => r * (.7 + .3 * joySens());
 // round 90° in about half a second at race speed; now about 0.8 s). The sensitivity moves that ceiling: about 55 % at 50 %,
 // 70 % at 100 %, 85 % at 150 %. (The line, the keys and a controller still reach the full lock.)
 const joyWheel = () => Math.min(90, STEER.joyMax * (1 + (joySens() - 1) * .28));
+// (v324) how hard the road bends just ahead of the player (the sharpest turn over the next ~4–40 m), as a steering factor for
+// TAP SIDES: .78 on a straight, rising to 1.35 in a hairpin; smoothed so it never jumps under the finger
+let TAPK = 1;
+function tapBendK() {
+  const r = race && race.player; if (!r || r.s == null) return 1;
+  let b = 0; for (let d = 4; d <= 40; d += 6) b = Math.max(b, bendAt((r.s + d) % TRACK.L));
+  const want = STEER.tapStraight + (STEER.tapBend - STEER.tapStraight) * clamp((b - .4) / .6, 0, 1);   // (measured: a straight looks .25–.4 ahead, a hairpin 1–1.7)
+  TAPK += (want - TAPK) * .08; return TAPK;
+}
 function updateWheel(dt) {
   { const jf = steerWant() === 'joy'; if (jf !== JOYF) { JOYF = jf; document.body.classList.toggle('joyfloat', jf); } }
   const kb = ((kdown('left') || ARR.l) ? -1 : 0) + ((kdown('right') || ARR.r) ? 1 : 0);   // (v263: the ARROWS steer like the keys)
@@ -6800,8 +6817,11 @@ function updateWheel(dt) {
     // the wheel snaps to a gentle 34° the moment you press (no easing in), a hold past ~0.4 s slowly opens it to 50°
     // for the hairpins, and letting go straightens it straight away (no 0.25 s tail); the steering assist stays out of it
     const dir = FOLLOW.x != null ? (FOLLOW.x < 0 ? -1 : 1) : FOLLOW.dir, hT = (performance.now() - FOLLOW.t0) / 1000;
-    const tgt = dir * (STEER.tapMin + (STEER.tapMax - STEER.tapMin) * clamp((hT - .4) / .8, 0, 1));
-    WHEEL.rot = WHEEL.rot * dir < STEER.tapMin - 4 ? dir * (STEER.tapMin - 4) : WHEEL.rot + (tgt - WHEEL.rot) * Math.min(1, dt * STEER.tapRate);
+    // (v324, the user: "on straight lines less sensitive, on harder turns more sensitive") the turn follows the road
+    // ahead: on a straight a tap turns gently (about 75 % of before), in a tight bend firmly (up to about 135 %)
+    const k = tapBendK(), lo = STEER.tapMin * k, hi = STEER.tapMax * k;
+    const tgt = dir * (lo + (hi - lo) * clamp((hT - .4) / .8, 0, 1));
+    WHEEL.rot = WHEEL.rot * dir < lo - 4 ? dir * (lo - 4) : WHEEL.rot + (tgt - WHEEL.rot) * Math.min(1, dt * STEER.tapRate);
   }
   else if (STICK.held != null && !kb) { const joy = CTL === 'joy'; WHEEL.rot += (STICK.x * (joy ? joyWheel() : STEER.lineMax) - WHEEL.rot) * Math.min(1, dt * sensRate(joy ? STEER.joyRate : STEER.lineRate)); }
   else
@@ -8005,7 +8025,7 @@ function updateRace(dt) {
     WORLD.crowd.instanceMatrix.needsUpdate = WORLD.heads.instanceMatrix.needsUpdate = true;
   }
   // the sun's shadow follows the player
-  WORLD.sun.position.set(P.x + 10, P.y + 22, P.z + 8); WORLD.sun.target.position.set(P.x, P.y, P.z);
+  { const o = TDEF.sunOff || [10, 22, 8]; WORLD.sun.position.set(P.x + o[0], P.y + o[1], P.z + o[2]); } WORLD.sun.target.position.set(P.x, P.y, P.z);
   for (const sp of WORLD.spin) sp.m.rotation[sp.axis] += sp.v * dt;
   for (const fn of WORLD.anim) fn(dt, performance.now() / 1000);
   // ? boxes spin and bob; snow falls round the camera
@@ -8428,7 +8448,7 @@ window.FK.rampCheck = (old) => TRACK_ORDER.map((id) => {
   const res = (old && old[id] || pr.RAMP_AT).map((f) => { const s = f * TRACK.L; return { f: +f.toFixed(3), drift: RS.map((R) => { TRACK.pts = R; const w = +rampDrift(s).toFixed(1); TRACK.pts = b0; return w; }), turn: RS.map((R) => { TRACK.pts = R; const w = +rampTurn(s).toFixed(2); TRACK.pts = b0; return w; }) }; });
   ({ TRACK, TB, BOUNDS, MID, BUSY, RAMP_AT, PAD_AT, GATE_AT, PIT_AT, HALF } = keep); return { id, L: Math.round(pr.TRACK.L), ramps: res };
 });
-window.FK.bendAt = (s) => bendAt(s);   // (v293) test hook
+window.FK.bendAt = (s) => bendAt(s); window.FK.tapBendK = () => tapBendK();   // (v293) test hook
 window.FK.P = () => race && race.player;   // (v293) test hook: your racer (the action camera tests)
 window.FK.BASE = BASE;
 // test hook: why the steering mode is what it is
