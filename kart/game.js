@@ -1007,7 +1007,7 @@ async function loadCityProps() {
 /* (v325, the user: "redesign the tribunes in the style of each map", modelled in Blender on the Windows PC) one 22 m stand
    section per map (models/stand-<map>.glb: front edge at z = 0 facing the road, seats at 0.6/1.4/2.2/3 m going back).
    STAND_MAPS lists the maps whose stand has arrived; the others keep the shape-built stands; Gold Mines has none. */
-const STAND_MAPS = ['alps'];
+const STAND_MAPS = ['alps', 'beach'];
 async function loadStand(id) {
   if (!STAND_MAPS.includes(id)) return null; BASE.stand = BASE.stand || {}; if (BASE.stand[id]) return BASE.stand[id];
   const g = await gltf(`models/stand-${id}.glb?v=1`, 20000);
