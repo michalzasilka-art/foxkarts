@@ -17,7 +17,7 @@ import * as THREE from './lib/three.module.min.js';
 import { RoomEnvironment } from './lib/RoomEnvironment.js?v=2';
 import { buildFoxino, buildKart, buildHelmet, setDetail } from './models.js?v=52';
 import * as L from './learn.js?v=52';
-import { carbonMat, loadDefaultKart, dressKart, loadHelmet, dressHelmet, DEFAULT_SKIN, DEFAULT_HELMET, BODY_COLORS, LIGHT_COLORS, LOGOS, logoIconURL, logoCanvas, isInk, inkFromCanvas, inkLayer, WHEEL_SIZE, makeMetal, metalOf, swatchCSS } from './kart-skin.js?v=22';
+import { carbonMat, loadDefaultKart, dressKart, loadHelmet, dressHelmet, DEFAULT_SKIN, DEFAULT_HELMET, BODY_COLORS, LIGHT_COLORS, LOGOS, logoIconURL, logoCanvas, isInk, inkFromCanvas, inkLayer, WHEEL_SIZE, makeMetal, metalOf, swatchCSS } from './kart-skin.js?v=23';
 import { buildRearWing, REAR_WINGS } from './rear-wings.js?v=1';   // (v270) the nine rear wings for the garage start
 import { GLTFLoader } from './lib/GLTFLoader.js?v=2';
 import { mergeGeometries } from './lib/BufferGeometryUtils.js?v=2';
@@ -1355,8 +1355,16 @@ function skinFor(ch, player, over) {
   const light = RIVAL_LIGHT[ch.id] || '#ffa424';
   return { body: css(ch.color), light, logo: ch.id === 'foxino' ? 'fox' : RIVAL_LOGO[ch.sticker] || 'none', logoColor: light };
 }
+// (v329, the user: "make their little shadows") a soft dark patch on the road under every kart (on the racer's root, so it
+// stays on the ground while the kart hops and bounces); the sun's shadow stays too
+let KSHADOW = null;
+function kartShadow() {
+  if (!KSHADOW) { const t = canvasTex(128, 128, (x) => { const g = x.createRadialGradient(64, 64, 4, 64, 64, 64); g.addColorStop(0, 'rgba(0,0,0,.62)'); g.addColorStop(.55, 'rgba(0,0,0,.36)'); g.addColorStop(1, 'rgba(0,0,0,0)'); x.fillStyle = g; x.fillRect(0, 0, 128, 128); });
+    KSHADOW = { geo: new THREE.PlaneGeometry(1.75, 2.75).rotateX(-Math.PI / 2), mat: new THREE.MeshBasicMaterial({ map: t, transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2, toneMapped: false }) }; }
+  const m = new THREE.Mesh(KSHADOW.geo, KSHADOW.mat); m.position.y = .03; m.renderOrder = 1; m.name = 'KartShadow'; return m;
+}
 function makeRacerModel(ch, kartColor, sticker, player = false, skinOver = null, ship = false) {
-  const root = new THREE.Group(), body = new THREE.Group(); root.add(body);
+  const root = new THREE.Group(), body = new THREE.Group(); root.add(body); root.add(kartShadow());
   if (ship && BASE.ship && BASE.dk) {
     // (v184) on Star Loop everyone flies the starship: your own paint, or each rival's colours
     const look = player && !skinOver ? shipSkin() : skinFor(ch, player, skinOver);

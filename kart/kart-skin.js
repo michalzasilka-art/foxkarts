@@ -185,7 +185,14 @@ function metalStops(c) {
   const out = (s2, l2) => '#' + hsl2rgb(h, Math.min(1, s2), Math.min(1, l2)).map((v) => Math.round(Math.max(0, Math.min(1, v)) * 255).toString(16).padStart(2, '0')).join('');
   return [out(S * 1.1, L * .3), out(S, L * .58), out(S, L), out(S * .8, L + (1 - L) * .25)];
 }
+// (v329, the user: "remove the metal colours, put their normal colour for now") the brushed metal is switched off:
+// every paint is ordinary glossy paint again (set METAL_ON to bring it back)
+export const METAL_ON = false;
+// (v329, the user: "just a white colour of the kart with black carbon details, and their little shadows") every kart's
+// body is white for now; the carbon parts stay black, the lights and logo keep the racer's own colours
+export const KART_WHITE = '#f3f4f8';
 export const metalOf = (c) => {
+  if (!METAL_ON) return null;
   const k = String(c || '').toLowerCase(); if (METALS[k]) return METALS[k];
   if (!/^#[0-9a-f]{6}$/.test(k)) return null;
   if (!metalMade.has(k)) metalMade.set(k, { stops: metalStops(k) });
@@ -531,7 +538,7 @@ function setPlate(anchor, plate) { const old = anchor.getObjectByName('LogoPlate
 /* ---------- dressing ---------- */
 // put a look on a loaded (or cloned) kart: paint, lights, logo and the wheels
 export function dressKart(THREE, kart, skin = DEFAULT_SKIN) {
-  const s = { ...DEFAULT_SKIN, ...skin }, mats = cleanMaterials(THREE, s.body, s.light, s.light);
+  const s = { ...DEFAULT_SKIN, ...skin, ...(KART_WHITE ? { body: KART_WHITE } : {}) }, mats = cleanMaterials(THREE, s.body, s.light, s.light);
   kart.nodes.Body.material = mats;
   const sw = kart.nodes.SteeringWheelMesh; if (sw) sw.material = [mats[1], mats[1], mats[2], mats[3], mats[4], mats[5]];   // (a dark grip: the wheel's paint parts go carbon)
   // the neon strips along the body, in the light colour
