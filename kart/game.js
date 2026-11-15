@@ -1007,7 +1007,7 @@ async function loadCityProps() {
 /* (v325, the user: "redesign the tribunes in the style of each map", modelled in Blender on the Windows PC) one 22 m stand
    section per map (models/stand-<map>.glb: front edge at z = 0 facing the road, seats at 0.6/1.4/2.2/3 m going back).
    STAND_MAPS lists the maps whose stand has arrived; the others keep the shape-built stands; Gold Mines has none. */
-const STAND_MAPS = ['alps', 'beach', 'city'];
+const STAND_MAPS = ['alps', 'beach', 'city', 'space'];
 async function loadStand(id) {
   if (!STAND_MAPS.includes(id)) return null; BASE.stand = BASE.stand || {}; if (BASE.stand[id]) return BASE.stand[id];
   const g = await gltf(`models/stand-${id}.glb?v=1`, 20000);
@@ -3640,17 +3640,26 @@ const THEMES = {
         const p = at(f * TRACK.L), m = new THREE.Mesh(new THREE.TorusGeometry(HALF + 2.2, .32, 10, 48), new THREE.MeshBasicMaterial({ color: pick(['#7af8ff', '#ff5db1', '#ffe14a']) }));
         m.position.set(p.x, p.y + 1.6, p.z); m.rotation.y = Math.atan2(p.p.tx, p.p.tz); scene.add(m);
       }
+      grandstands(scene, W, '#7af8ff');   // (v328) the floating stands on jet engines (only the Blender ones: no box stands in space)
     },
   },
 };
 // grandstands with a cheering crowd on both sides of the start (Alps and Robo City)
 function grandstands(scene, W, roof) {
-  const model = BASE.stand && BASE.stand[TDEF.id];
-  if (model) {   // (v325) the map's own stand from Blender, four sections like the old ones
-    for (const side of [-1, 1]) for (let s0 = -34; s0 <= 18; s0 += 26) {
-      const back = W.pitIdx && PITS && side === PITS.side && W.pitIdx[Math.round(((s0 + TRACK.L) % TRACK.L) / STEP) % TRACK.N] ? 21 : 0;
-      const p = at((s0 + TRACK.L) % TRACK.L, side * (HALF + 9.5 + back)), g = model.clone(true); g.position.set(p.x, groundY(p.x, p.z), p.z); g.rotation.y = Math.atan2(-side * p.p.nx, -side * p.p.nz); scene.add(g);
-    }
+  // (v325) the map's own stand from Blender, four sections like the old ones; if its file is still loading, they go up
+  // the moment it arrives (a world can be built before its map's files are in)
+  const id = (W.def || TDEF).id;
+  if (STAND_MAPS.includes(id)) {
+    const place = (model) => {
+      if (!model || W.standsUp) return; W.standsUp = true;
+      for (const side of [-1, 1]) for (let s0 = -34; s0 <= 18; s0 += 26) {
+        const back = W.pitIdx && PITS && side === PITS.side && W.pitIdx[Math.round(((s0 + TRACK.L) % TRACK.L) / STEP) % TRACK.N] ? 21 : 0;
+        const p = at((s0 + TRACK.L) % TRACK.L, side * (HALF + 9.5 + back)), g = model.clone(true);
+        g.position.set(p.x, W.groundAt ? groundY(p.x, p.z) : (p.y || 0) - 2.5, p.z);   // (space has no ground: the stand floats beside the road, its seats level with it)
+        g.rotation.y = Math.atan2(-side * p.p.nx, -side * p.p.nz); scene.add(g); (W.standRefs = W.standRefs || []).push(g);
+      }
+    };
+    if (BASE.stand && BASE.stand[id]) place(BASE.stand[id]); else loadStand(id).then(place).catch((e) => console.warn('stand model did not load', e));
     W.crowd = null; return;
   }
   const standM = M('#e8eef8', { roughness: .6 }), roofM = M(roof, { roughness: .5 }), crowd = [], heads = [], all = new THREE.Group();
