@@ -1731,6 +1731,20 @@ body.portrait #tutb{top:calc(250px + var(--st,0px))}   /* under the gate card */
 body.portrait #tapTip .tbtn{width:72px;height:72px}body.portrait #tapTip span{font-size:22px}body.portrait #tapTip p{font-size:16px;bottom:auto;top:35%}
 @keyframes ttTap{0%,100%{transform:scale(1)}40%{transform:scale(.86)}}
 @keyframes ttRing{0%{transform:scale(1);opacity:.95}100%{transform:scale(1.85);opacity:0}}
+
+/* (v332) NITRO: a tank that fills 1/9 per right pit answer; tap to fire it. PIT +N s: the time wrong pit answers add */
+#nitro{position:fixed;left:-200px;top:-200px;width:68px;height:68px;border-radius:18px;border:4px solid #0a0c1c;background:linear-gradient(180deg,#2a3a66,#141c38);box-shadow:0 5px 0 #0a0c1c;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;padding:0 0 6px;color:#fff;font:400 13px 'Lilita One',sans-serif;letter-spacing:.04em;overflow:hidden;z-index:6;touch-action:manipulation;opacity:.75;transition:opacity .2s,transform .12s}
+#nitro .ntank{position:absolute;inset:0;pointer-events:none}
+#nitro .ntank i{position:absolute;left:0;right:0;bottom:0;height:calc(var(--k,0) * 100%);background:linear-gradient(180deg,#9af3ff,#25b6ff 55%,#1b6dff);transition:height .35s cubic-bezier(.2,1.4,.4,1)}
+#nitro b,#nitro span#nitroN{position:relative;text-shadow:0 2px 0 #0a0c1c,0 0 3px #0a0c1c}
+#nitro span#nitroN{font-size:11px;opacity:.9}
+#nitro.ready{opacity:1;box-shadow:0 5px 0 #0a0c1c,0 0 16px #4fd8ff}
+#nitro:active{transform:translateY(3px)}
+#nitro.gain{animation:nGain .5s cubic-bezier(.2,1.6,.4,1)}
+@keyframes nGain{40%{transform:scale(1.22)}}
+#penB{position:fixed;left:-200px;top:-200px;padding:3px 8px;border-radius:999px;background:#ff8a3a;border:3px solid #0a0c1c;color:#fff;font:400 13px 'Lilita One',sans-serif;white-space:nowrap;z-index:6;pointer-events:none}
+#penB.bump{animation:nGain .45s cubic-bezier(.2,1.6,.4,1)}
+body.portrait:has(#dialog:not([hidden])) #nitro{visibility:hidden}
 </style>
 </head>
 <body>
@@ -1801,6 +1815,7 @@ body.portrait #tapTip .tbtn{width:72px;height:72px}body.portrait #tapTip span{fo
     <div id="wheelHint" class="out">Turn the wheel to steer</div>
     <div id="ctlHint" class="out" hidden></div>
     <div id="tapTip" aria-hidden="true"><div class="tt L"><div class="tbtn"><i></i><b></b></div><span class="out">TAP LEFT</span></div><div class="tt R"><div class="tbtn"><i></i><b></b></div><span class="out">TAP RIGHT</span></div><p class="out">Hold a side to keep turning</p></div>
+    <button class="hit" id="nitro" hidden aria-label="Nitro"><span class="ntank"><i></i></span><b>NITRO</b><span id="nitroN">0/9</span></button><div id="penB" class="out" hidden></div>
     <button class="hit" id="slot"><span id="slotIcon"></span><span class="stars" id="slotStars"></span><span class="tap out" id="slotTap"></span></button>
     <div id="count" class="out"></div>
     <div id="gp" class="out" hidden></div><div id="gq" hidden></div>
@@ -1867,7 +1882,7 @@ addEventListener('unhandledrejection',function(e){if(window.FK&&FK.ready||window
 <script src="packages.js?v=1"></script>
 <script src="/shared/pack-picker.js?v=8"></script>
 <script type="importmap">{"imports":{"three":"./lib/three.module.min.js"}}</script>
-<link rel="modulepreload" href="lib/three.module.min.js"><link rel="modulepreload" href="game.js?v=331"><link rel="modulepreload" href="rear-wings.js?v=1"><link rel="modulepreload" href="models.js?v=52"><link rel="modulepreload" href="learn.js?v=52"><link rel="modulepreload" href="kart-skin.js?v=24"><link rel="modulepreload" href="lib/GLTFLoader.js?v=2"><link rel="modulepreload" href="lib/BufferGeometryUtils.js?v=2"><link rel="modulepreload" href="racers.js?v=2"><link rel="modulepreload" href="rival-driver.js?v=5"><link rel="modulepreload" href="lib/RoomEnvironment.js?v=2">
-<script type="module" src="game.js?v=331"></script>
+<link rel="modulepreload" href="lib/three.module.min.js"><link rel="modulepreload" href="game.js?v=332"><link rel="modulepreload" href="rear-wings.js?v=1"><link rel="modulepreload" href="models.js?v=52"><link rel="modulepreload" href="learn.js?v=52"><link rel="modulepreload" href="kart-skin.js?v=24"><link rel="modulepreload" href="lib/GLTFLoader.js?v=2"><link rel="modulepreload" href="lib/BufferGeometryUtils.js?v=2"><link rel="modulepreload" href="racers.js?v=2"><link rel="modulepreload" href="rival-driver.js?v=5"><link rel="modulepreload" href="lib/RoomEnvironment.js?v=2">
+<script type="module" src="game.js?v=332"></script>
 </body>
 </html>

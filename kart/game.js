@@ -4521,12 +4521,39 @@ function confettiAt(el, n = 24, spread = 1) {
     an.onfinish = () => d.remove();
   }
 }
+/* (v332, the user) NITRO and PIT TIME. In a pit stop every RIGHT answer puts 1/9 of a tank of nitro in (a stop has 9
+   questions, so a perfect stop fills it); the NITRO button beside the power-up slot fires the whole tank as a boost
+   (a full tank is a long one). Every WRONG answer no longer keeps you in the pit: it adds +1 s of PIT TIME to your
+   result instead, so at the finish a rival who crosses the line less than that behind you still beats you. */
+const NITRO_STEP = 1 / 9;
+function pitNitro(ok) {
+  if (!race) return;
+  if (ok) { race.nitro = Math.min(1, (race.nitro || 0) + NITRO_STEP); nitroHud(true); }
+  else if (!race.party) { race.pen = (race.pen || 0) + 1; nitroHud(); const b = $('penB'); if (b) { b.classList.remove('bump'); void b.offsetWidth; b.classList.add('bump'); } }
+}
+function useNitro() {
+  if (!race || !race.started || race.ended || race.dialog || race.pitHold || (race.nitro || 0) < NITRO_STEP * .5) return;
+  const P = race.player, k = race.nitro; race.nitro = 0;
+  giveBoost(P, .8 + 4.2 * k, 1.55); P.fireT = Math.max(P.fireT || 0, .8 + 4.2 * k); sfx.turbo(3); buzz(40); toast(`NITRO!${k >= .99 ? '\n<small>a full tank!</small>' : ''}`, '#4fd8ff', 30); nitroHud();
+}
+let nitroF = 0;
+function nitroHud(gain = false) {
+  const N = $('nitro'), B = $('penB'); if (!N) return;
+  const on = !!race && race.started && !race.ended && !race.formation && !race.tut;
+  N.hidden = !on; if (B) { B.hidden = !on || !(race.pen > 0); if (race && race.pen > 0) B.textContent = `PIT +${race.pen} s`; }
+  if (!on) return;
+  const k = race.nitro || 0; N.style.setProperty('--k', k.toFixed(3)); N.classList.toggle('ready', k >= NITRO_STEP * .5); $('nitroN').textContent = `${Math.round(k * 9)}/9`;
+  if (gain) { N.classList.remove('gain'); void N.offsetWidth; N.classList.add('gain'); }
+  // beside the power-up slot, whatever the layout puts the slot
+  if ((nitroF = (nitroF + 1) % 15) === 1 || gain) { const r = $('slot').getBoundingClientRect(); if (r.width) { const w = N.offsetWidth || 64; N.style.left = `${Math.round(r.left - w - 14)}px`; N.style.top = `${Math.round(r.top + r.height - (N.offsetHeight || 64))}px`;
+    if (B) { B.style.left = `${Math.round(r.left - w - 14)}px`; B.style.top = `${Math.round(r.top + r.height - (N.offsetHeight || 64) - 30)}px`; } } }
+}
 function runQuiz(sets, tag, onDone, onAns = null) {
   const P = race.player, R0 = race, lr = race.learn, D = $('dialog'), got = {};
   if (QDEV()) {   // (v250, the user: "dev mode removes all the questions") the crew just does the job: a short stop, full marks
     // (v255, the user: "in dev mode the pit stop counts as if all 9 questions were right — all the boosts") every set is a
     // PERFECT 100 % (the most a stop can give), the parts light up as the crew works, and the board shows it before you go
-    const pct = {}; sets.forEach(([k, n], i) => { pct[k] = 100; setTimeout(() => { if (race !== R0) return; race.pitPhase = k; race.quizK = k; partGlow(P, (PART_GLOW[k] || [])[0]); }, i * 700); for (let a = 0; a < n; a++) setTimeout(() => { if (race === R0) pitUpFx(P, k, a, true, !!(onAns && onAns(k, a, true))); }, i * 700 + 150 + a * 180); });
+    const pct = {}; sets.forEach(([k, n], i) => { pct[k] = 100; setTimeout(() => { if (race !== R0) return; race.pitPhase = k; race.quizK = k; partGlow(P, (PART_GLOW[k] || [])[0]); }, i * 700); for (let a = 0; a < n; a++) setTimeout(() => { if (race === R0) { pitUpFx(P, k, a, true, !!(onAns && onAns(k, a, true))); if (tag === 'PIT STOP') pitNitro(true); } }, i * 700 + 150 + a * 180); });
     setTimeout(() => {
       if (race !== R0) return; partGlow(P, null); race.pitPhase = 'board'; race.quizK = null; D.hidden = false;
       pitScoreCard(D, sets.map(([k]) => k), pct, tag, () => {
@@ -4560,9 +4587,10 @@ function runQuiz(sets, tag, onDone, onAns = null) {
     D.innerHTML = '<div class="veil pit"></div>';
     questionCard(D.firstChild, `${tag} · ${S.name}`, L.makeQuestion(it), (ok, fast) => {
       const g = got[q.k]; g.n++; g.res.push(!!ok); if (ok) g.sum += PIT_RIGHT + PIT_FAST * clamp(fast || 0, 0, 1);
+      if (tag === 'PIT STOP') pitNitro(!!ok);   // (v332) right = +1/9 of the nitro tank, wrong = +1 s pit time on your result
       pitUpFx(P, q.k, q.i, !!ok, !!(onAns && onAns(q.k, q.i, !!ok)));   // (v267) the upgrade goes onto your kart as you answer (v270: the garage's wing takes over the label)
       partGlow(P, null); step(j + 1);
-    }, TUNE.pitSecs + (L.level() === 0 ? 2 : 0), null, tag !== 'GARAGE' && 'oneSec');   // (v302, the user: after a wrong pit answer only a 1 s wait, then the next one)   // (v273, the user: the start doesn't wait for the clock after a wrong answer; pit stops still do)
+    }, TUNE.pitSecs + (L.level() === 0 ? 2 : 0), null, tag === 'GARAGE' ? false : tag === 'PIT STOP' ? 'quick' : 'oneSec');   // (v332, the user: a wrong pit answer "won't hold you in the pit": it flashes the right one and costs +1 s at the finish instead)   // (v302, the user: after a wrong pit answer only a 1 s wait, then the next one)   // (v273, the user: the start doesn't wait for the clock after a wrong answer; pit stops still do)
     // (v160) where you are in the set: three dots in the set's colour; the phone sheet slides up only on the first card
     const card = D.querySelector(".qcard"), top = card && card.querySelector(".qtop");
     if (top) top.insertAdjacentHTML("afterbegin", `<div class="qprog" style="--c:${S.col}">${Array.from({ length: q.n }, (_, k) => `<i class="${k < q.i ? (got[q.k].res[k] ? "done ok" : "done no") : k === q.i ? "now" : ""}"></i>`).join("")}</div>`);
@@ -6776,6 +6804,7 @@ addEventListener('keydown', (e) => {
   keys[e.code] = true;
   if (Object.values(KEYS).flat().includes(e.code) || e.code === 'Space') { e.preventDefault(); setCtl('keys'); }
   if (e.code === 'Space' && race && !e.repeat) useItem();
+  if ((e.code === 'KeyN' || e.code === 'ShiftLeft') && race && !e.repeat) useNitro();
   if ((e.code === 'Escape' || e.code === 'KeyP') && screen === 'race' && race && race.started && !race.ended && !race.dialog) pauseMenu();
   const n = '123456'.indexOf(e.key); if (n >= 0) { const o = document.querySelectorAll('#dialog .qcard .opts .btn, #quiz .qcard .opts .btn')[n]; if (o) o.click(); }
   if ((e.code === 'Enter' || e.code === 'NumpadEnter') && !e.repeat) { const ok = document.querySelector('#dialog #qok, #dialog #resume'); if (ok) ok.click(); }
@@ -6897,6 +6926,7 @@ function updateWheel(dt) {
   const s = clamp(WHEEL.rot / 90, -1, 1); return Math.sign(s) * Math.abs(s) ** STEER.outExp;
 }
 tap($('slot'), () => useItem());
+tap($('nitro'), () => useNitro()); $('nitro').addEventListener('touchstart', (e) => { e.preventDefault(); Snd.init(); useNitro(); }, { passive: false });
 $('slot').addEventListener('touchstart', (e) => { e.preventDefault(); Snd.init(); useItem(); }, { passive: false });
 tap($('pauseB'), () => pauseMenu());
 
@@ -6964,6 +6994,7 @@ function pollPad(dt) {
   const racing = screen === 'race' && race && race.started && !race.ended && !race.dialog;
   if (racing) {
     if (pressed(2)) useItem();
+    if (pressed(3)) useNitro();
     if (pressed(9) || pressed(8)) pauseMenu();   // (Menu / Options, or View / Share)
     setPadFocus(null);
   } else {
@@ -7114,7 +7145,8 @@ function driveOutOfGarage(r, done, cam = true) {
 // Whoever is through the questions first is ahead; once you are through, nobody can pass you any more.
 const resClock = () => race.raceTime + (race.afterT || 0) + (race.resOff || 0);
 const doneAt = (r) => (r.player && race.finQuiz ? resClock() : r.doneR);
-const total = (r) => (r.finished ? (r.doneR != null ? 2e9 - doneAt(r) : 1e9 - r.finishTime - (r.quizT || 0)) : r.lap * TRACK.L + r.s);   // (finished: lap time + the finish questions)
+const penOf = (r) => (r.player && race && !race.party ? race.pen || 0 : 0);   // (v332) the pit time: +1 s for every wrong pit answer
+const total = (r) => (r.finished ? (r.doneR != null ? 2e9 - doneAt(r) - penOf(r) : 1e9 - r.finishTime - (r.quizT || 0) - penOf(r)) : r.lap * TRACK.L + r.s);   // (finished: lap time + the finish questions)
 const ranking = () => race.racers.slice().sort((a, b) => total(b) - total(a));
 
 const INTRO = 2.8;   // seconds of camera fly-round before the lights
@@ -7875,16 +7907,24 @@ function pauseMenu() {
   tap($('resume'), () => { closeDialog(); race.dialog = null; race.slowTarget = 1; if (race.started) Music.start(); });
   tap($('quit'), () => { closeDialog(); cup = null; endRace(); goMenu(); });
 }
-function endRace() { Music.stop(); if (!race) return; for (const p of race.projectiles) WORLD.scene.remove(p.m); for (const t of race.traps) WORLD.scene.remove(t.m); freeRacers(race.racers); race = null; Snd.engineOff(); }
+function endRace() { Music.stop(); $('nitro').hidden = true; $('penB').hidden = true; if (!race) return; for (const p of race.projectiles) WORLD.scene.remove(p.m); for (const t of race.traps) WORLD.scene.remove(t.m); freeRacers(race.racers); race = null; Snd.engineOff(); }
 function finish() {
-  Snd.skid(0); race.ended = true; race.slowTarget = .35;
+  Snd.skid(0); race.ended = true; race.slowTarget = .35; nitroHud();
+  // (v332) with pit time, the result waits until that many seconds have gone by after you (the rivals race on at full
+  // speed), so everybody who crosses the line within them is placed ahead of you
+  const P = race.player, R0 = race;
+  if (!race.party && race.pen > 0 && P.doneR != null && !race.penWaited) {
+    race.penWaited = true; race.slowTarget = 1; toast(`PIT TIME +${race.pen} s\n<small>wrong pit answers… who gets past?</small>`, '#ff8a3a', 34);
+    const until = P.doneR + race.pen, chk = () => { if (race !== R0) return; if (resClock() >= until || race.racers.every((r) => r.finished)) finish(); else setTimeout(chk, 120); };
+    setTimeout(chk, 120); return;
+  }
   const place = ranking().indexOf(race.player) + 1;
   toast(place === 1 ? 'YOU WIN!' : `${ord(place)} PLACE!`, '#ffe14a', 70); Music.stop(); L.say(place === 1 ? 'You win! You are first!' : `You are ${['first', 'second', 'third', 'fourth', 'fifth'][place - 1]}!`); sfx.fanfare(); Snd.engineOff(); race.player.drift = 0;
   if (race.party && party) { try { party.P.finish({ time: race.player.finishTime, place }); if (party.P.isHost && party.P.endRace) party.P.endRace(); } catch (e) {} }
   setTimeout(() => showResults(place), 2200);
 }
 const fmtTime = (t) => `${Math.floor(t / 60)}:${(t % 60).toFixed(1).padStart(4, '0')}`;
-const raceTimeOf = (r) => (r.finished ? fmtTime(r.doneR != null ? r.doneR : r.finishTime + (r.quizT || 0)) : '—');
+const raceTimeOf = (r) => (r.finished ? fmtTime((r.doneR != null ? r.doneR : r.finishTime + (r.quizT || 0)) + penOf(r)) : '—');
 // one row of the leaderboard: medal or place, face, name, time (or cup points); your own row is gold
 const leaderRow = (r, i, right) => `<div class="row${r.player ? ' me' : ''}"><b class="pl">${i < 3 ? ico(`icon-medal-${i + 1}`, 'medal') : i + 1}</b><span class="face" style="${faceStyle(r.ch)}"></span><span class="nm">${r.player ? 'You' : r.ch.name}</span><i class="tm">${right}</i></div>`;
 // (v209, the user: "make the round end a bit different, with a tab of what you've learned") three tabs: RACE, LEARNED, LICENCE
@@ -7907,7 +7947,7 @@ function showResults(place) {
   $('rTitle').textContent = place === 1 ? 'YOU WIN!' : `${ord(place)} PLACE`;
   // (v278, the user: "so it fits on one screen… the ones that aren't in the top 3 in the leaderboard, the top 3 times under them in the top image")
   $('order').innerHTML = order.slice(3).map((r, i) => leaderRow(r, i + 3, raceTimeOf(r))).join('');
-  $('rsub').innerHTML = `${ico('icon-timer')} ${fmtTime(myT)}${race.player.quizT ? ` + ${race.player.quizT.toFixed(0)} s for 3 questions` : ''}${newBest ? ' · <b style="color:var(--yellow)">NEW BEST!</b>' : save.times[TDEF.id] ? ` · best ${fmtTime(save.times[TDEF.id])}` : ''}<br>${TUNE.coinsForPlace[place - 1]} for ${ord(place)} place + ${race.coinsGot} from the track · Coins: ${save.coins}${TUNE.energy ? ` · Energy: ${save.energy}/${TUNE.maxEnergy}` : ""}`;
+  $('rsub').innerHTML = `${ico('icon-timer')} ${fmtTime(myT)}${race.player.quizT ? ` + ${race.player.quizT.toFixed(0)} s for 3 questions` : ''}${race.pen ? ` + <b style="color:#ff8a3a">${race.pen} s pit time</b>` : ''}${newBest ? ' · <b style="color:var(--yellow)">NEW BEST!</b>' : save.times[TDEF.id] ? ` · best ${fmtTime(save.times[TDEF.id])}` : ''}<br>${TUNE.coinsForPlace[place - 1]} for ${ord(place)} place + ${race.coinsGot} from the track · Coins: ${save.coins}${TUNE.energy ? ` · Energy: ${save.energy}/${TUNE.maxEnergy}` : ""}`;
   { // the English from this race: every word practised (green = right), and the ones fixed after a mistake
     const lr = race.learn, seen = new Map(); for (const p of lr.practised) seen.set(p.id, { label: p.label, ok: (seen.get(p.id) || { ok: true }).ok && p.ok, fixed: lr.fixed.has(p.id) });
     const words = [...seen.values()], right = lr.practised.filter((p) => p.ok).length, n = lr.practised.length, pc = n ? Math.round(right / n * 100) : 0;
@@ -8028,7 +8068,7 @@ function updateRace(dt) {
   for (const r of race.racers) { useRoute(r); drive(r, gdt); } playerRoute();   // (v194) each racer on its own route through the section
   updateRouteGates(); updateTrackType(Math.min(dt, .05));
   if (race.party && party && race.started) { const now = performance.now(); if (!race.sentAt || now - race.sentAt > 66) { race.sentAt = now; const P = race.player; try { party.P.sendState({ t: race.raceTime, x: +P.x.toFixed(2), y: +P.y.toFixed(2), z: +P.z.toFixed(2), a: +P.angle.toFixed(3), v: +P.speed.toFixed(1), lap: P.lap, s: +P.steerVis.toFixed(2), d: P.drift, air: P.air, fin: P.finished }); } catch (e) {} } }
-  updateGates(); updateFormGates(); updatePit(dt); updateCrew(dt); if (race && race.tut) updateTut(dt);
+  updateGates(); updateFormGates(); updatePit(dt); updateCrew(dt); nitroHud(); if (race && race.tut) updateTut(dt);
   if (race.aimOpen && (race.ended || !race.item || race.player.finished)) closeTargets();
   if ((race.standF = (race.standF || 0) + 1) % 12 === 1) drawStandings();
   updateRocks(gdt); updateWarns(); updateLamps();
