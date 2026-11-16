@@ -2460,6 +2460,7 @@ function buildWorld(def) {
   W.sparkMat = new THREE.LineBasicMaterial({ color: '#ffffff', transparent: true, opacity: .95, toneMapped: false, depthWrite: false });
   W.sparkGlow = new THREE.MeshBasicMaterial({ color: '#ffd400', transparent: true, opacity: .9, toneMapped: false, depthWrite: false, side: THREE.DoubleSide });
   W.flameMat = new THREE.MeshBasicMaterial({ color: '#ffb02a', transparent: true, opacity: .9 });
+  W.nitroMat = new THREE.MeshBasicMaterial({ color: '#6a7bff', transparent: true, opacity: .92, toneMapped: false });   // (v334) the NITRO flame: blue and purple
   W.trapMat = iceMat; STRIP_SKIP = null;
   W.camera = new THREE.PerspectiveCamera(66, 9 / 16, .1, 1500);
   renderer.compile(scene, W.camera);
@@ -4486,7 +4487,7 @@ function updateCrew(dt) {
 function pitStop() {
   const P = race.player, R0 = race;
   race.pitDue = false; race.dialog = 'pitstop'; race.pitBrake = true; race.slowTarget = 1;
-  P.boostT = 0; P.fireT = 0; P.boostMul = 1; P.spinT = 0; P.slideT = 0;   // however you came in, you come in clean
+  P.boostT = 0; P.fireT = 0; P.nitroT = 0; P.boostMul = 1; P.spinT = 0; P.slideT = 0;   // however you came in, you come in clean
   race.steerTo = null; race.steerGate = null; race.holdLat = bayLat(); if (P.drift) endDrift(P);
   sfx.pad(); buzz(30); toast('PIT STOP!', '#ffc324', 44); drawPitHud(); pitBoxState('work');
   const brake = () => {
@@ -4534,7 +4535,7 @@ function pitNitro(ok) {
 function useNitro() {
   if (!race || !race.started || race.ended || race.dialog || race.pitHold || (race.nitro || 0) < NITRO_STEP * .5) return;
   const P = race.player, k = race.nitro; race.nitro = 0;
-  giveBoost(P, .8 + 4.2 * k, 1.55); P.fireT = Math.max(P.fireT || 0, .8 + 4.2 * k); sfx.turbo(3); buzz(40); toast(`NITRO!${k >= .99 ? '\n<small>a full tank!</small>' : ''}`, '#4fd8ff', 30); nitroHud();
+  giveBoost(P, .8 + 4.2 * k, 1.55); P.nitroT = Math.max(P.nitroT || 0, .8 + 4.2 * k); sfx.turbo(3); buzz(40); toast(`NITRO!${k >= .99 ? '\n<small>a full tank!</small>' : ''}`, '#4fd8ff', 30); nitroHud();
 }
 let nitroF = 0;
 function nitroHud(gain = false) {
@@ -4587,7 +4588,7 @@ function runQuiz(sets, tag, onDone, onAns = null) {
     D.innerHTML = '<div class="veil pit"></div>';
     questionCard(D.firstChild, `${tag} · ${S.name}`, L.makeQuestion(it), (ok, fast) => {
       const g = got[q.k]; g.n++; g.res.push(!!ok); if (ok) g.sum += PIT_RIGHT + PIT_FAST * clamp(fast || 0, 0, 1);
-      if (tag === 'PIT STOP') pitNitro(!!ok);   // (v332) right = +1/9 of the nitro tank, wrong = +1 s pit time on your result
+      if (tag === 'PIT STOP' && !ok) pitNitro(false);   // (v332) a wrong pit answer = +1 s pit time on your result (the right one's nitro comes from questionCard, v334)
       pitUpFx(P, q.k, q.i, !!ok, !!(onAns && onAns(q.k, q.i, !!ok)));   // (v267) the upgrade goes onto your kart as you answer (v270: the garage's wing takes over the label)
       partGlow(P, null); step(j + 1);
     }, TUNE.pitSecs + (L.level() === 0 ? 2 : 0), null, tag === 'GARAGE' ? false : tag === 'PIT STOP' ? 'quick' : 'oneSec');   // (v332, the user: a wrong pit answer "won't hold you in the pit": it flashes the right one and costs +1 s at the finish instead)   // (v302, the user: after a wrong pit answer only a 1 s wait, then the next one)   // (v273, the user: the start doesn't wait for the clock after a wrong answer; pit stops still do)
@@ -4971,7 +4972,7 @@ function updateFormGates() {
       let best = -1, bd = Infinity; g.lanes.forEach((li, k) => { const dd = Math.abs(P.lat - g.lat[li]); if (dd < bd) { bd = dd; best = k; } });
       const ok = best >= 0 && g.opts[best] === g.it, gp = $('gp'); race.fg.n++;
       gateCard(g, P, { ok, li: best >= 0 ? g.lanes[best] : -1 }); race.gqHold = true; setTimeout(() => { if ($('gq') && $('gq').dataset.g === String(g.s)) gateCard(null); race && (race.gqHold = false); }, 1300);
-      L.record(g.it, ok, race.learn.queue); race.learn.practised.push({ id: g.it.id, label: `${g.it.e} ${g.it.w}`, ok });
+      L.record(g.it, ok, race.learn.queue); race.learn.practised.push({ id: g.it.id, label: `${g.it.e} ${g.it.w}`, ok }); if (ok) pitNitro(true);
       setPanel(g.panels[g.lanes[g.opts.indexOf(g.it)]], g.it.e, 'ok');
       if (ok) { race.fg.right++; giveBoost(P, .6, 1.15); save.coins += 3; sfx.right(); sfx.coin(); L.say(`Yes! ${g.it.w}!`); burst(P.x, P.y + 1.5, P.z, '#ffe14a', 10); gp.classList.add('ok'); gp.textContent = `${g.it.e} ${g.it.w} +3`; }
       else { Snd.tone(330, .25, 'triangle', .05, .8); L.say(g.it.w); gp.classList.add('no'); gp.textContent = `${g.it.e} ${g.it.w}`; }
@@ -5005,7 +5006,7 @@ function updateGates() {
       if (race.steerGate === g) { race.steerTo = null; race.steerGate = null; }   // through the gate: the wheel is yours again
       let best = -1, bd = Infinity; g.lanes.forEach((li, k) => { const dd = Math.abs(P.lat - g.lat[li]); if (dd < bd) { bd = dd; best = k; } });   // (the gate walls make sure it is one of the open arches)
       const ok = best >= 0 && g.opts[best] === g.it, gp = $('gp');
-      L.record(g.it, ok, race.learn.queue); race.learn.gates.push(ok); race.learn.practised.push({ id: g.it.id, label: `${g.it.e} ${g.it.w}`, ok });
+      L.record(g.it, ok, race.learn.queue); race.learn.gates.push(ok); if (ok) pitNitro(true); race.learn.practised.push({ id: g.it.id, label: `${g.it.e} ${g.it.w}`, ok });
       const right = g.lanes[g.opts.indexOf(g.it)]; setPanel(g.panels[right], g.it.e, 'ok');
       if (ok) { giveBoost(P, .8, 1.2); sfx.right(); L.say(`Yes! ${g.it.w}!`); burst(P.x, P.y + 1.5, P.z, '#ffe14a', 10); gp.classList.add('ok'); gp.textContent = `OK ${g.it.w}`; }
       else { Snd.tone(330, .25, 'triangle', .05, .8); L.say(g.it.w); gp.classList.add('no'); }
@@ -6603,6 +6604,7 @@ function questionCard(host, title, q, done, limit = 0, ctl = null, waitWrong = f
     if (answered) return; answered = true;
     const fast = o ? tLeft : 0;   // (v154) nothing for an answer the clock beat you to
     const ok = o === q.answer, change = L.record(q.it, ok, race && race.learn ? race.learn.queue : null);
+    if (ok && race && !race.ended && !race.tut) pitNitro(true);   /* (the garage start's right answers fill it too) */   // (v334, the user: every right answer = +1/9 of the nitro tank; a wrong one gives nothing)
     if (race && race.learn) { const lr = race.learn; lr.practised.push({ id: q.it.id, label: q.it.kind === 'word' ? `${q.it.e} ${q.it.w}` : q.answer, ok }); if (ok && lr.missed.has(q.it.id)) lr.fixed.add(q.it.id); if (!ok) lr.missed.add(q.it.id); }
     if (bt) bt.classList.add(ok ? 'ok' : 'grey'); for (const x of opts.children) if (x.textContent === q.answer) x.classList.add('ok');
     const sent = host.querySelector('#qsent');
@@ -7676,13 +7678,19 @@ function placeAll0(dt) {
     if (r.fireT > 0) { r.fireT -= dt; const k = Math.min(1, r.fireT / .4);
       if (!r.flame2) { r.flame2 = new THREE.Mesh(FLAME_GEO, WORLD.flameMat); r.flame2.position.set(.25, .42, -1.25); r.flame.parent.add(r.flame2); }
       for (const fl of [r.flame, r.flame2]) { fl.visible = true; fl.scale.set((1.9 + Math.random() * .6) * (.5 + k * .5), (1.9 + Math.random() * .6) * (.5 + k * .5), (2.6 + Math.random() * 1.6) * (.4 + k * .6)); } }
+    else if (r.nitroT > 0) { r.nitroT -= dt; const k = Math.min(1, r.nitroT / .4);   // (v334) NITRO: twin long flames in blue and purple
+      if (!r.flame2) { r.flame2 = new THREE.Mesh(FLAME_GEO, WORLD.flameMat); r.flame2.position.set(.25, .42, -1.25); r.flame.parent.add(r.flame2); }
+      WORLD.nitroMat.color.setHSL(.66 + Math.sin(t * 9) * .07, 1, .62);
+      for (const fl of [r.flame, r.flame2]) { fl.material = WORLD.nitroMat; fl.visible = true; fl.scale.set((1.8 + Math.random() * .6) * (.5 + k * .5), (1.8 + Math.random() * .6) * (.5 + k * .5), (2.8 + Math.random() * 1.8) * (.4 + k * .6)); } }
     else if (r.flame2) r.flame2.visible = false;
+    if (!(r.nitroT > 0) && r.flame.material === WORLD.nitroMat) { r.flame.material = WORLD.flameMat; if (r.flame2) r.flame2.material = WORLD.flameMat; }
     if (r.beam) { const on = !!(TDEF.magnet && r.air === 'ramp' && r.vy < 0); r.beam.visible = on; if (on) { r.beam.scale.set(1 + Math.sin(t * 30) * .08, Math.max(.5, r.y - trackY(r) + .3), 1 + Math.cos(t * 30) * .08); r.beam.position.y = .3; } }
     if (!dt || !race.started || ro) continue;   // (no puffs inside a corkscrew: they live in the flat frame)
     const f = fwd(r.angle), side = { x: -f.z, z: f.x };
     // exhaust, boost flames
-    if (Math.random() < dt * (r.fireT > 0 ? 70 : r.boostT > 0 ? 40 : 8)) {
-      if (r.boostT > 0) puff(r.x - f.x * 1.25 - side.x * .25, r.y + .45, r.z - f.z * 1.25 - side.z * .25, pick(['#ff8a1e', '#ffd23a', '#ff5a10']), .55, .35);
+    if (Math.random() < dt * (r.fireT > 0 || r.nitroT > 0 ? 70 : r.boostT > 0 ? 40 : 8)) {
+      if (r.nitroT > 0) for (const sx of [-.3, .3]) puff(r.x - f.x * (1.4 + Math.random() * .6) + side.x * sx, r.y + .4 + Math.random() * .25, r.z - f.z * (1.4 + Math.random() * .6) + side.z * sx, pick(['#5a6bff', '#9a5aff', '#4fd8ff', '#c08aff']), rand(.6, .95), .5, rand(-.6, .6), rand(.6, 1.8), rand(-.6, .6));
+      else if (r.boostT > 0) puff(r.x - f.x * 1.25 - side.x * .25, r.y + .45, r.z - f.z * 1.25 - side.z * .25, pick(['#ff8a1e', '#ffd23a', '#ff5a10']), .55, .35);
       if (r.fireT > 0) for (const sx of [-.3, .3]) puff(r.x - f.x * (1.4 + Math.random() * .6) + side.x * sx, r.y + .4 + Math.random() * .25, r.z - f.z * (1.4 + Math.random() * .6) + side.z * sx, pick(['#ff7a12', '#ffd23a', '#ff4a0a', '#fff2a0']), rand(.7, 1.05), .5, rand(-.6, .6), rand(.6, 1.8), rand(-.6, .6));
       else puff(r.x - f.x * 1.1 - side.x * .25, r.y + .5, r.z - f.z * 1.1 - side.z * .25, '#c8ccd8', .3, .5);
     }
@@ -7823,7 +7831,12 @@ function useItem() {
   if (it.type === 'boost') { giveBoost(P, it.strong ? 2.2 : 1.2, it.strong ? 1.6 : 1.35); sfx.boost(); toast('BOOST!', '#ff8a1e', 44); }
   else if (it.type === 'shield') { P.shield = 1; P.shieldT = it.strong ? 999 : 10; sfx.shield(); toast(it.strong ? 'SHIELD ON!' : 'SHIELD (10 s)', '#7ad8ff', 40); }
   else if (it.type === 'trap') { dropTrap(P, it.strong); }
-  else { pickTarget(it.strong); return; }
+  else {   // (v333, the user: "the rocket targets the nearest player in front of you") it fires at once, homing on the racer just
+    // ahead of you on the track (when you are 1st, the one just behind, so it is never wasted)
+    const me = total(P), live = race.racers.filter((r) => !r.player && !r.finished);
+    const ahead = live.filter((r) => total(r) > me).sort((a, b) => total(a) - total(b)), behind = live.filter((r) => total(r) <= me).sort((a, b) => total(b) - total(a));
+    const target = ahead[0] || behind[0]; if (!target) return;
+    race.item = null; drawSlot(); fire(target, it.strong, !ahead.length); return; }
   race.item = null; drawSlot();
 }
 // trap: drop the track's hazard (an ice puddle, an oil slick, space goo) behind you; a rival who drives over it spins out
@@ -7865,10 +7878,10 @@ addEventListener('keydown', (e) => {
   const n = +e.key; if (n >= 1 && n <= 9) { const b = $('targets').querySelectorAll('.tgt')[n - 1]; if (b) { e.preventDefault(); b.click(); } }
   else if (e.code === 'Escape') { e.preventDefault(); closeTargets(); }
 });
-function fire(target, strong) {
+function fire(target, strong, back = false) {
   const P = race.player, m = WORLD.rocket.clone(); m.position.set(P.x, P.y + 1, P.z); WORLD.scene.add(m);
   race.projectiles.push({ m, x: P.x, z: P.z, y: P.y + 1, target, speed: 57, life: 6, smoke: '#dddddd', onHit: () => { hit(target, 'rocket', strong); toast(`${target.ch.name} is spinning!`, '#ffe14a', 32); } });
-  sfx.rocket(); toast(`Rocket to ${target.ch.name}!`, '#fff');
+  sfx.rocket(); toast(back ? `You're 1st! Rocket back to ${target.ch.name}!` : `Rocket to ${target.ch.name}!`, '#fff');
 }
 function updateProjectiles(dt) {
   for (let i = race.projectiles.length - 1; i >= 0; i--) {
@@ -8102,7 +8115,7 @@ function updateRace(dt) {
   // the field of view is vertical: sideways screens need less of it (66° on an upright screen, about 50° on a phone turned sideways)
   const cam = WORLD.camera, base = cam.aspect > 1 ? clamp(66 - (cam.aspect - 1) * 15, 46, 66) : (race.formation ? 80 : 74);   // (v206: upright, a wider view — widest on the formation lap)
   if (cam.userData.fov0 === undefined) cam.userData.fov0 = cam.fov; cam.fov = cam.userData.fov0 + (race.act ? race.act.fov : 0);   // (v293) a wider view at speed, in a boost and in the air
-  const fov = Math.min(P.fireT > 0 ? 86 : 80, base + clamp((P.speed - 22) * .6, 0, 6) + (P.boostT > 0 ? 8 : 0) + (P.fireT > 0 ? 6 : 0));   // (capped so follow + boost never goes fish-eye) cam.fov += (fov - cam.fov) * Math.min(1, dt * 4);
+  const fov = Math.min(P.fireT > 0 || P.nitroT > 0 ? 86 : 80, base + clamp((P.speed - 22) * .6, 0, 6) + (P.boostT > 0 ? 8 : 0) + (P.fireT > 0 || P.nitroT > 0 ? 6 : 0));   // (capped so follow + boost never goes fish-eye) cam.fov += (fov - cam.fov) * Math.min(1, dt * 4);
   // during a pit-stop question the card sits on the left, so the picture slides right to keep your kart in view
   race.viewX = (race.viewX || 0) + ((inQ() && race.dialog !== 'aim' && cam.aspect > 1 ? .2 : 0) - (race.viewX || 0)) * Math.min(1, dt * 6);
   // (sideways, the picture is also lifted a little, so your kart sits well above the bottom edge)
@@ -8113,7 +8126,8 @@ function updateRace(dt) {
   // a racer right under the camera would block the view: hide it until it moves away
   for (const r of race.racers) if (!r.player) r.model.root.visible = (r.x - WORLD.camera.position.x) ** 2 + (r.z - WORLD.camera.position.z) ** 2 > 3.4 ** 2;
   // speed lines at the edges of the screen when you go really fast
-  const fire = race.ended ? 0 : clamp((P.fireT || 0) / .4, 0, 1);   // (v300) FIRE_LOOK on screen
+  const fire = race.ended ? 0 : clamp(Math.max(P.fireT || 0, P.nitroT || 0) / .4, 0, 1);   // (v300) FIRE_LOOK on screen (v334: blue-purple for nitro)
+  fireEl.classList.toggle('nitro', (P.nitroT || 0) > 0);
   const sl = race.ended ? 0 : Math.max(clamp((P.speed - 25) / 10, 0, .55) + (P.boostT > 0 ? .45 : 0), fire); speedEl.style.opacity = sl.toFixed(2);
   speedEl.classList.toggle('fire', fire > 0); fireEl.style.opacity = (fire * (.75 + Math.random() * .25)).toFixed(2);
   if (sl > 0) speedEl.style.transform = `scale(${1.02 + Math.random() * .05}) rotate(${(Math.random() * 6).toFixed(1)}deg)`;
