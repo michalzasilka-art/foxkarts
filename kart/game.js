@@ -4590,13 +4590,20 @@ function nitroHud(gain = false) {
   const N = $('nitro'), B = $('penB'); if (!N) return;
   const on = !!race && race.started && !race.ended && !race.formation && !race.tut;
   N.hidden = !on; if (B) { B.hidden = !on || !(race.pen > 0); if (race && race.pen > 0) B.textContent = `PIT +${race.pen} s`; }
-  if (!on) return;
+  if (!on) { nitroOff(); return; }
   const k = race.nitro || 0; N.style.setProperty('--k', k.toFixed(3)); N.classList.toggle('ready', k >= NITRO_STEP * .5); $('nitroN').textContent = `${Math.round(k * 9)}/9`;
   if (gain) { N.classList.remove('gain'); void N.offsetWidth; N.classList.add('gain'); }
-  // beside the power-up slot, whatever the layout puts the slot
-  if ((nitroF = (nitroF + 1) % 15) === 1 || gain) { const r = $('slot').getBoundingClientRect(); if (r.width) { const w = N.offsetWidth || 64; N.style.left = `${Math.round(r.left - w - 14)}px`; N.style.top = `${Math.round(r.top + r.height - (N.offsetHeight || 64))}px`;
-    if (B) { B.style.left = `${Math.round(r.left - w - 14)}px`; B.style.top = `${Math.round(r.top + r.height - (N.offsetHeight || 64) - 30)}px`; } } }
+  // (v336, the user) the NITRO button sits in the bottom corner on the power-up side: bottom RIGHT normally, bottom LEFT
+  // with the right-hand controls (body.ctl-right); the power-up button moves one step in beside it. Sized like the power-up.
+  if ((nitroF = (nitroF + 1) % 15) === 1 || gain) { const S = $('slot'), left = document.body.classList.contains('ctl-right');
+    S.style.marginRight = S.style.marginLeft = ''; const r0 = S.getBoundingClientRect(); if (r0.width && S.offsetWidth) {
+      const z = r0.width / S.offsetWidth;   // (big screens draw the HUD larger with CSS zoom: work in the HUD's own pixels)
+      const sz = Math.round(clamp(S.offsetHeight * .86, 62, 96)), gap = 12; N.style.width = N.style.height = sz + 'px';
+      if (left) S.style.marginLeft = (sz + gap) + 'px'; else S.style.marginRight = (sz + gap) + 'px';
+      const x = left ? r0.left / z : r0.right / z - sz, y = r0.bottom / z - sz; N.style.left = `${Math.round(x)}px`; N.style.top = `${Math.round(y)}px`;
+      if (B) { B.style.left = `${Math.round(left ? x : x + sz - (B.offsetWidth || 70))}px`; B.style.top = `${Math.round(y - 30)}px`; } } }
 }
+function nitroOff() { const S = $('slot'); if (S) S.style.marginRight = S.style.marginLeft = ''; }
 function runQuiz(sets, tag, onDone, onAns = null) {
   const P = race.player, R0 = race, lr = race.learn, D = $('dialog'), got = {};
   if (QDEV()) {   // (v250, the user: "dev mode removes all the questions") the crew just does the job: a short stop, full marks
@@ -7968,7 +7975,7 @@ function pauseMenu() {
   tap($('resume'), () => { closeDialog(); race.dialog = null; race.slowTarget = 1; if (race.started) Music.start(); });
   tap($('quit'), () => { closeDialog(); cup = null; endRace(); goMenu(); });
 }
-function endRace() { Music.stop(); $('nitro').hidden = true; $('penB').hidden = true; if (!race) return; for (const p of race.projectiles) WORLD.scene.remove(p.m); for (const t of race.traps) WORLD.scene.remove(t.m); freeRacers(race.racers); race = null; Snd.engineOff(); }
+function endRace() { Music.stop(); $('nitro').hidden = true; $('penB').hidden = true; nitroOff(); if (!race) return; for (const p of race.projectiles) WORLD.scene.remove(p.m); for (const t of race.traps) WORLD.scene.remove(t.m); freeRacers(race.racers); race = null; Snd.engineOff(); }
 function finish() {
   Snd.skid(0); race.ended = true; race.slowTarget = .35; nitroHud();
   // (v332) with pit time, the result waits until that many seconds have gone by after you (the rivals race on at full
