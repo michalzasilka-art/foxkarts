@@ -4583,7 +4583,7 @@ function pitNitro(ok) {
 function useNitro() {
   if (!race || !race.started || race.ended || race.dialog || race.pitHold || (race.nitro || 0) < NITRO_STEP * .5) return;
   const P = race.player, k = race.nitro; race.nitro = 0;
-  giveBoost(P, .8 + 4.2 * k, 1.55); P.nitroT = Math.max(P.nitroT || 0, .8 + 4.2 * k); sfx.turbo(3); buzz(40); toast(`NITRO!${k >= .99 ? '\n<small>a full tank!</small>' : ''}`, '#4fd8ff', 30); nitroHud();
+  const dur = .7 + 3.3 * k; giveBoost(P, dur, 1.45); P.nitroT = Math.max(P.nitroT || 0, dur);   // (v337, the user: "nerf the nitro a bit": a full tank 4 s at x1.45, was 5 s at x1.55) sfx.turbo(3); buzz(40); toast(`NITRO!${k >= .99 ? '\n<small>a full tank!</small>' : ''}`, '#4fd8ff', 30); nitroHud();
 }
 let nitroF = 0;
 function nitroHud(gain = false) {
@@ -4591,7 +4591,7 @@ function nitroHud(gain = false) {
   const on = !!race && race.started && !race.ended && !race.formation && !race.tut;
   N.hidden = !on; if (B) { B.hidden = !on || !(race.pen > 0); if (race && race.pen > 0) B.textContent = `PIT +${race.pen} s`; }
   if (!on) { nitroOff(); return; }
-  const k = race.nitro || 0; N.style.setProperty('--k', k.toFixed(3)); N.classList.toggle('ready', k >= NITRO_STEP * .5); $('nitroN').textContent = `${Math.round(k * 9)}/9`;
+  const k = race.nitro || 0; N.style.setProperty('--k', k.toFixed(3)); N.classList.toggle('ready', k >= NITRO_STEP * .5); N.classList.toggle('full', k >= .99); $('nitroN').textContent = `${Math.round(k * 9)}/9`;
   if (gain) { N.classList.remove('gain'); void N.offsetWidth; N.classList.add('gain'); }
   // (v336, the user) the NITRO button sits in the bottom corner on the power-up side: bottom RIGHT normally, bottom LEFT
   // with the right-hand controls (body.ctl-right); the power-up button moves one step in beside it. Sized like the power-up.
