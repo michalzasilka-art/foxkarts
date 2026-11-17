@@ -402,7 +402,7 @@ function openSettings(tab = 'game', onClose) {
   };
   for (const b of S.querySelectorAll('.tog')) { const k = b.dataset.k, show = () => b.classList.toggle('on', !!GET[k]()); show(); tap(b, async () => { sfx.click(); const r = await SETF[k](!GET[k]()); store(); if (r !== false) show(); }); }
   const seg = S.querySelector('#gfxSeg');
-  if (seg) { const H = { low: 'Fast on every phone. No shadows, a lower resolution, simpler light.', default: 'The balance: shadows and lantern light; a slow phone lowers it by itself.', high: 'Every pixel, sharp wide shadows, six lantern lights with shadows. For strong devices.' };
+  if (seg) { const H = { low: 'Fast on every phone. No shadows, a lower resolution, simpler light.', default: 'The balance: shadows, soft light in the corners, lantern light; a slow phone lowers it by itself.', high: 'Every pixel, sharp wide shadows, soft light in the corners, six lantern lights with shadows. For strong devices.' };
     const show = () => { const g = gfxOf(save); for (const b of seg.children) b.classList.toggle('on', b.dataset.v === g); $('gfxHelp').textContent = H[g]; }; show();
     for (const b of seg.children) tap(b, () => { sfx.click(); save.gfx = b.dataset.v; save.lowq = 0; store(); applyGfx(); show(); }); }
   const aseg = S.querySelector('#asSeg');
@@ -462,6 +462,54 @@ const pixelRatioFor = (q, g = gfxOf(typeof save !== 'undefined' ? save : null)) 
 renderer.setPixelRatio((() => { try { const sv = JSON.parse(localStorage.getItem('foxino-kart-v1') || '{}'); return pixelRatioFor(+sv.lowq || 0, gfxOf(sv)); } catch (e) { return pixelRatioFor(0, 'default'); } })());
 renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 1.1;   // (Neutral tone mapping looks brighter but runs at 1/6 the speed in Safari)
+/* (v335, 2026-11-17, the user: "put this lighting setting you just did in Adventures to FoxKarts") the Foxino Adventures look:
+   the scene is drawn into a render target, then ONE full-screen pass adds a cheap screen-space ambient occlusion (darker
+   creases and the foot of things), a soft-focus background, a gentle pastel grade (lifted coloured shadows, warm highlights)
+   and a light vignette. Tone mapping (ACES, as before) happens in that pass, and the painted sky is left untouched by it.
+   Levels: 2 = everything, 1 = grade + vignette only, 0 = the old direct drawing. HIGH = 2; DEFAULT = 2, and the slow-phone
+   fallback (save.lowq) steps it to 1, then 0; LOW = 0. window.FK_POST = 0 switches it off for tests. */
+const POST = { rt: null, mat: null, sc: null, cam: new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1), sz: new THREE.Vector2() };
+function postLevel() { if (window.FK_POST === 0) return 0; const g = gfxOf(save); if (g === 'low') return 0; if (g === 'high') return 2; const q = +save.lowq || 0; return q >= 2 ? 0 : q === 1 ? 1 : 2; }
+function postInit(w, h) {
+  const dt = new THREE.DepthTexture(w, h); dt.type = THREE.UnsignedIntType;
+  POST.rt = new THREE.WebGLRenderTarget(w, h, { type: THREE.HalfFloatType, samples: 4, depthTexture: dt, depthBuffer: true });
+  POST.mat = new THREE.ShaderMaterial({ depthTest: false, depthWrite: false,
+    uniforms: { tC: { value: POST.rt.texture }, tD: { value: dt }, uRes: { value: new THREE.Vector2(w, h) }, uNear: { value: .1 }, uFar: { value: 1500 }, uAO: { value: 1 }, uAOFar: { value: 150 }, uBlur: { value: 1 }, uFocus: { value: 8 }, uVig: { value: .3 } },
+    vertexShader: 'varying vec2 vUv; void main() { vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }',
+    fragmentShader: `uniform sampler2D tC, tD; uniform vec2 uRes; uniform float uNear, uFar, uAO, uAOFar, uBlur, uFocus, uVig; varying vec2 vUv;
+      float raw(vec2 uv) { return texture2D(tD, uv).x; }
+      float lin(vec2 uv) { float z = raw(uv) * 2.0 - 1.0; return 2.0 * uNear * uFar / (uFar + uNear - z * (uFar - uNear)); }
+      void main() {
+        vec2 px = 1.0 / uRes; float d = lin(vUv); bool sky = raw(vUv) > .99999; vec3 c = texture2D(tC, vUv).rgb;
+        // soft focus far away: 8 taps in a ring, only behind the focus distance
+        float bl = sky ? 0.0 : uBlur * smoothstep(uFocus * 1.6, uFocus * 5.0, d);
+        if (bl > .01) { vec3 acc = c; float r = 2.6 * bl; for (int i = 0; i < 8; i++) { float a = float(i) * .785398; acc += texture2D(tC, vUv + vec2(cos(a), sin(a)) * px * r * (1.0 + float(i - (i / 2) * 2))).rgb; } c = mix(c, acc / 9.0, bl); }
+        // ambient occlusion: darker where the neighbours are closer than us
+        if (uAO > .01 && !sky && d < uAOFar) { float occ = 0.0; float rad = clamp(18.0 / d, 2.0, 22.0);
+          for (int i = 0; i < 10; i++) { float a = float(i) * 2.399963 + .5; float rr = rad * (.35 + .65 * fract(float(i) * .618)); vec2 o = vec2(cos(a), sin(a)) * rr * px; float dd = lin(vUv + o);
+            float diff = d - dd; occ += smoothstep(.02, .35, diff) * (1.0 - smoothstep(.6, 2.2, diff)); }
+          occ = clamp(occ / 10.0, 0.0, 1.0) * (1.0 - smoothstep(uAOFar * .6, uAOFar, d)); c *= mix(vec3(1.0), vec3(.62, .6, .78), occ * uAO * .85); }
+        // tone mapping as before (ACES), but not on the painted sky, which was never tone mapped
+        if (!sky) c = ACESFilmicToneMapping(c);
+        // the grade: lifted coloured shadows, warm highlights, soft contrast
+        float L = dot(c, vec3(.299, .587, .114));
+        c = mix(vec3(L), c, 1.04);
+        c += vec3(.012, .01, .03) * (1.0 - smoothstep(0.0, .35, L));
+        c *= mix(vec3(1.0), vec3(1.03, 1.01, .96), smoothstep(.3, 1.0, L));
+        vec2 q = vUv - .5; c *= 1.0 - dot(q, q) * uVig;
+        gl_FragColor = vec4(c, 1.0);
+        #include <colorspace_fragment>
+      }` });
+  const quad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), POST.mat); quad.frustumCulled = false; POST.sc = new THREE.Scene(); POST.sc.add(quad);
+}
+// draw a scene with the look: o.focus = metres to the sharp part, o.blur = how soft the far part gets (0..1)
+function draw(sc, cam, o = {}) {
+  const lv = postLevel(); if (!lv) { renderer.render(sc, cam); return; }
+  renderer.getDrawingBufferSize(POST.sz); const w = Math.max(1, POST.sz.x | 0), h = Math.max(1, POST.sz.y | 0);
+  if (!POST.rt) postInit(w, h); else if (POST.rt.width !== w || POST.rt.height !== h) { POST.rt.setSize(w, h); POST.mat.uniforms.uRes.value.set(w, h); }
+  const U = POST.mat.uniforms; U.uAO.value = lv > 1 ? (window.FK_AO ?? 1) : 0; U.uBlur.value = lv > 1 ? (o.blur ?? 1) : 0; U.uFocus.value = o.focus ?? 8; U.uNear.value = cam.near; U.uFar.value = cam.far; U.uAOFar.value = o.aoFar ?? 150; U.uVig.value = o.vig ?? .3;
+  renderer.setRenderTarget(POST.rt); renderer.render(sc, cam); renderer.setRenderTarget(null); renderer.render(POST.sc, POST.cam);
+}
 // if the phone takes the graphics away (low memory), reload: everything is saved
 canvas.addEventListener('webglcontextlost', (e) => {
   e.preventDefault(); if (TUNE.energy && race && !race.ended) save.energy = Math.min(TUNE.maxEnergy, save.energy + 1);   // a race cut short gives its energy back
@@ -8160,7 +8208,8 @@ function updateRace(dt) {
   if (rank !== race.lastRank) { $('pos').innerHTML = `${rank}<sup>${ord(rank).slice(-2)}</sup>`; if (race.lastRank && race.started) { const e = $('pos'); e.classList.remove('pop'); void e.offsetWidth; e.classList.add('pop'); if (rank < race.lastRank) Snd.tone(1200, .12, 'triangle', .05, 1.3); } race.lastRank = rank; } $('lap').textContent = race.formation ? 'FORMATION' : `LAP ${clamp(P.lap, 1, TUNE.laps)}/${TUNE.laps}`; $('rcoins').textContent = `${P.coins}`;
   drawMinimap();
   if (race.started && !race.ended) { Snd.engineSet(P.speed * race.slow * .75); Snd.skid(P.drift && !P.air && race.slow > .5 ? 1 + P.driftLvl : 0); }
-  renderer.render(WORLD.scene, WORLD.camera);
+  if (WORLD.shieldMat) WORLD.shieldMat.opacity = postLevel() ? .15 : .26;   // (v335: see-through things blend in linear light in the new pass and look stronger)
+  draw(WORLD.scene, WORLD.camera, { focus: 30, blur: .45 });   // (v335) the Adventures look
 }
 
 // (v108) the finals arena: the winners' stage at night — a synthwave sky over a neon city, a glowing grid floor, a round
@@ -8403,7 +8452,7 @@ function updatePodium(dt) {
   if (podT) { const on = !R.hidden && screen === 'podium' && !!ARENA.blocks; podT.hidden = !on;
     if (on) { cam.updateMatrixWorld(); [...podT.children].forEach((d, i) => { const b = ARENA.blocks[i]; _hp.set(b.position.x, .34, 1.12).project(cam); d.style.left = (_hp.x + 1) / 2 * w + 'px'; d.style.top = (1 - _hp.y) / 2 * h + 5 + 'px'; }); } }
   (SHOW.podRacers || []).forEach((m, i) => { m.body.position.y = Math.abs(Math.sin(t * 3 + i)) * .12; m.driver.rotation.z = Math.sin(t * 4 + i) * .15; });
-  if (ARENA.scene) { updateArena(Math.min(dt, .05), cam); renderer.render(ARENA.scene, cam); } else renderer.render(SHOW.scene, cam);
+  if (ARENA.scene) { updateArena(Math.min(dt, .05), cam); draw(ARENA.scene, cam, { focus: D, blur: .7 }); } else draw(SHOW.scene, cam, { focus: D });
 }
 const _hp = new THREE.Vector3();
 function updateShowroom(dt) {
@@ -8435,7 +8484,7 @@ function updateShowroom(dt) {
   for (let i = 0; i < 5; i++) SHOW.cam[i] += (goal[i] - SHOW.cam[i]) * Math.min(1, dt * 4);
   cam.position.set(0, SHOW.cam[0], SHOW.cam[1]); cam.lookAt(0, SHOW.cam[4], 0);
   cam.setViewOffset(w, h, w * SHOW.cam[3], h * SHOW.cam[2], w, h);
-  showClip(); renderer.render(SHOW.scene, cam);
+  showClip(); draw(SHOW.scene, cam, { focus: Math.hypot(SHOW.cam[1], SHOW.cam[0] - SHOW.cam[4]) * 1.1 });
   // the name plate floats over the racer's head, the "tap your racer" hint sits under the stand
   if (screen === 'menu') {
     const z = SHOW.zoom || 1; _hp.set(0, 1.9, 0).project(cam);
@@ -8576,7 +8625,7 @@ window.FK.step = (n = 60, dt = 1 / 30) => { for (let i = 0; i < n && race; i++) 
 window.FK.endNow = () => { const P = race.player; P.lap = TUNE.laps + 1; P.finished = true; P.finishTime = race.raceTime; if (!race.party) P.doneR = resClock(); finish(); };
 // test hook: render the lobby (or, in a race, the track) from any point looking at any point
 window.FK.showRoute = (r) => { const W = WORLD; if (!W || !W.routeGroups) return null; W.routeGroups.forEach((g, i) => { g.visible = i === r; }); TRACK.pts = TRACK.routes[r]; const { i0, i1 } = TRACK.sec, P = TRACK.routes[r]; return { i0, i1, N: TRACK.N, pts: P.slice(i0 - 30, i1 + 30).filter((_, k) => k % 6 === 0).map((q) => [+q.x.toFixed(1), +q.y.toFixed(1), +q.z.toFixed(1), +q.tx.toFixed(3), +q.tz.toFixed(3)]) }; };   // (v199) test hook
-window.FK.look = (px, py, pz, lx, ly, lz) => { screen = 'shot'; const sc = race && WORLD ? WORLD.scene : SHOW.scene, c = race && WORLD ? WORLD.camera : SHOW.camera; c.clearViewOffset(); c.position.set(px, py, pz); c.up.set(0, 1, 0); c.lookAt(lx, ly, lz); c.updateProjectionMatrix(); renderer.render(sc, c); };
+window.FK.look = (px, py, pz, lx, ly, lz) => { screen = 'shot'; const sc = race && WORLD ? WORLD.scene : SHOW.scene, c = race && WORLD ? WORLD.camera : SHOW.camera; c.clearViewOffset(); c.position.set(px, py, pz); c.up.set(0, 1, 0); c.lookAt(lx, ly, lz); c.updateProjectionMatrix(); draw(sc, c, { focus: 30, blur: .45 }); };
 window.FK.shot = (yaw, dist, y, lookY) => {
   screen = 'shot'; SHOW.turn.rotation.y = 0; const c = SHOW.camera; c.clearViewOffset();
   c.position.set(Math.sin(yaw) * dist, y, Math.cos(yaw) * dist); c.lookAt(0, lookY, 0); renderer.render(SHOW.scene, c);
