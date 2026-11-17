@@ -5541,6 +5541,15 @@ function buildArcade(scene, W, def) {
     scene.add(m); W.coins.push({ m, x: p.x, z: p.z, y: p.y + .85, on: true });
   } });
 }
+// (v338) the nitro jets: per exhaust a soft blue-violet outer flame and a white-cyan core, both glowing (additive), ~1 m long
+const NJ_OUT = new THREE.ConeGeometry(.17, 1.3, 12, 1, true).rotateX(-Math.PI / 2).translate(0, 0, -.65), NJ_IN = new THREE.ConeGeometry(.085, .8, 10, 1, true).rotateX(-Math.PI / 2).translate(0, 0, -.4);
+let NJ_MAT = null;
+function nitroJets(parent) {
+  if (!NJ_MAT) NJ_MAT = [new THREE.MeshBasicMaterial({ color: '#5a6bff', transparent: true, opacity: .55, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, toneMapped: false }),
+    new THREE.MeshBasicMaterial({ color: '#c8f4ff', transparent: true, opacity: .95, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, toneMapped: false })];
+  const g = new THREE.Group(); for (const x of [-.25, .25]) { const j = new THREE.Group(); j.position.set(x, .42, -1.2); j.add(new THREE.Mesh(NJ_OUT, NJ_MAT[0]), new THREE.Mesh(NJ_IN, NJ_MAT[1])); j.renderOrder = 2; g.add(j); }
+  g.visible = false; parent.add(g); return g;
+}
 function puff(x, y, z, color, size = .5, life = .45, vx = 0, vy = .8, vz = 0, grav = 0) {
   const p = WORLD.puffs.find((q) => q.life <= 0); if (!p) return;
   p.s.visible = true; p.s.position.set(x, y, z); p.s.material.color.set(color); p.size = size; p.life = p.max = life; p.v = [vx, vy, vz]; p.g = grav;
@@ -7733,18 +7742,20 @@ function placeAll0(dt) {
     if (r.fireT > 0) { r.fireT -= dt; const k = Math.min(1, r.fireT / .4);
       if (!r.flame2) { r.flame2 = new THREE.Mesh(FLAME_GEO, WORLD.flameMat); r.flame2.position.set(.25, .42, -1.25); r.flame.parent.add(r.flame2); }
       for (const fl of [r.flame, r.flame2]) { fl.visible = true; fl.scale.set((1.9 + Math.random() * .6) * (.5 + k * .5), (1.9 + Math.random() * .6) * (.5 + k * .5), (2.6 + Math.random() * 1.6) * (.4 + k * .6)); } }
-    else if (r.nitroT > 0) { r.nitroT -= dt; const k = Math.min(1, r.nitroT / .4);   // (v334) NITRO: twin long flames in blue and purple
-      if (!r.flame2) { r.flame2 = new THREE.Mesh(FLAME_GEO, WORLD.flameMat); r.flame2.position.set(.25, .42, -1.25); r.flame.parent.add(r.flame2); }
-      WORLD.nitroMat.color.setHSL(.66 + Math.sin(t * 9) * .07, 1, .62);
-      for (const fl of [r.flame, r.flame2]) { fl.material = WORLD.nitroMat; fl.visible = true; fl.scale.set((1.8 + Math.random() * .6) * (.5 + k * .5), (1.8 + Math.random() * .6) * (.5 + k * .5), (2.8 + Math.random() * 1.8) * (.4 + k * .6)); } }
+    else if (r.nitroT > 0) { r.nitroT -= dt; const k = Math.min(1, r.nitroT / .35);   // (v338, the user: "the nitro once used is very buggy") two short glowing jets
+      // (the old one stretched the orange cone 3-5x at random every frame: huge flat purple spikes towards the camera, over the kart)
+      if (!r.nitroFx) r.nitroFx = nitroJets(r.flame.parent);
+      r.flame.visible = false; if (r.flame2) r.flame2.visible = false; r.nitroFx.visible = true;
+      r.nitroFx.children.forEach((j, i) => { const f = 1 + Math.sin(t * 38 + i * 2.1) * .12 + Math.sin(t * 23 + i) * .08; j.scale.set(.85 + .15 * k, .85 + .15 * k, f * (.35 + .65 * k)); }); }
     else if (r.flame2) r.flame2.visible = false;
+    if (r.nitroFx && !(r.nitroT > 0)) r.nitroFx.visible = false;
     if (!(r.nitroT > 0) && r.flame.material === WORLD.nitroMat) { r.flame.material = WORLD.flameMat; if (r.flame2) r.flame2.material = WORLD.flameMat; }
     if (r.beam) { const on = !!(TDEF.magnet && r.air === 'ramp' && r.vy < 0); r.beam.visible = on; if (on) { r.beam.scale.set(1 + Math.sin(t * 30) * .08, Math.max(.5, r.y - trackY(r) + .3), 1 + Math.cos(t * 30) * .08); r.beam.position.y = .3; } }
     if (!dt || !race.started || ro) continue;   // (no puffs inside a corkscrew: they live in the flat frame)
     const f = fwd(r.angle), side = { x: -f.z, z: f.x };
     // exhaust, boost flames
-    if (Math.random() < dt * (r.fireT > 0 || r.nitroT > 0 ? 70 : r.boostT > 0 ? 40 : 8)) {
-      if (r.nitroT > 0) for (const sx of [-.3, .3]) puff(r.x - f.x * (1.4 + Math.random() * .6) + side.x * sx, r.y + .4 + Math.random() * .25, r.z - f.z * (1.4 + Math.random() * .6) + side.z * sx, pick(['#5a6bff', '#9a5aff', '#4fd8ff', '#c08aff']), rand(.6, .95), .5, rand(-.6, .6), rand(.6, 1.8), rand(-.6, .6));
+    if (Math.random() < dt * (r.fireT > 0 ? 70 : r.nitroT > 0 ? 22 : r.boostT > 0 ? 40 : 8)) {
+      if (r.nitroT > 0) for (const sx of [-.25, .25]) puff(r.x - f.x * (2.3 + Math.random() * .5) + side.x * sx, r.y + .38 + Math.random() * .12, r.z - f.z * (2.3 + Math.random() * .5) + side.z * sx, pick(['#7a8bff', '#4fd8ff', '#a8e8ff']), rand(.3, .5), .35, rand(-.3, .3), rand(.3, .9), rand(-.3, .3));   // (v338: fewer, smaller, further back: they hid the kart)
       else if (r.boostT > 0) puff(r.x - f.x * 1.25 - side.x * .25, r.y + .45, r.z - f.z * 1.25 - side.z * .25, pick(['#ff8a1e', '#ffd23a', '#ff5a10']), .55, .35);
       if (r.fireT > 0) for (const sx of [-.3, .3]) puff(r.x - f.x * (1.4 + Math.random() * .6) + side.x * sx, r.y + .4 + Math.random() * .25, r.z - f.z * (1.4 + Math.random() * .6) + side.z * sx, pick(['#ff7a12', '#ffd23a', '#ff4a0a', '#fff2a0']), rand(.7, 1.05), .5, rand(-.6, .6), rand(.6, 1.8), rand(-.6, .6));
       else puff(r.x - f.x * 1.1 - side.x * .25, r.y + .5, r.z - f.z * 1.1 - side.z * .25, '#c8ccd8', .3, .5);
@@ -8184,8 +8195,9 @@ function updateRace(dt) {
   const fire = race.ended ? 0 : clamp(Math.max(P.fireT || 0, P.nitroT || 0) / .4, 0, 1);   // (v300) FIRE_LOOK on screen (v334: blue-purple for nitro)
   fireEl.classList.toggle('nitro', (P.nitroT || 0) > 0);
   const sl = race.ended ? 0 : Math.max(clamp((P.speed - 25) / 10, 0, .55) + (P.boostT > 0 ? .45 : 0), fire); speedEl.style.opacity = sl.toFixed(2);
-  speedEl.classList.toggle('fire', fire > 0); fireEl.style.opacity = (fire * (.75 + Math.random() * .25)).toFixed(2);
-  if (sl > 0) speedEl.style.transform = `scale(${1.02 + Math.random() * .05}) rotate(${(Math.random() * 6).toFixed(1)}deg)`;
+  const nit = (P.nitroT || 0) > 0 && !(P.fireT > 0); speedEl.classList.toggle('fire', fire > 0); speedEl.classList.toggle('nitro', nit); fireEl.style.opacity = (fire * (nit ? .55 : .75 + Math.random() * .25)).toFixed(2);
+  if (nit) speedEl.style.opacity = Math.min(sl, .5).toFixed(2);   // (v338: the nitro's speed lines are blue and calmer, not big orange bars)
+  if (sl > 0) speedEl.style.transform = nit ? `scale(${1.03 + Math.sin(performance.now() / 60) * .01})` : `scale(${1.02 + Math.random() * .03}) rotate(${(Math.random() * 1.5).toFixed(1)}deg)`;   // (v338: less shaking, it read as a glitch)
   for (const c of WORLD.coins) if (c.on) c.m.rotation.y += dt * 4;
   WORLD.padTex.offset.y = (WORLD.padTex.offset.y - dt * 1.6) % 1;
   for (const b of WORLD.balloons) b.position.y = b.userData.y + Math.sin(performance.now() / 700 + b.userData.p) * .25;
