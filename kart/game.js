@@ -4583,7 +4583,7 @@ function pitNitro(ok) {
 function useNitro() {
   if (!race || !race.started || race.ended || race.dialog || race.pitHold || (race.nitro || 0) < NITRO_STEP * .5) return;
   const P = race.player, k = race.nitro; race.nitro = 0;
-  const dur = .7 + 3.3 * k; giveBoost(P, dur, 1.45); P.nitroT = Math.max(P.nitroT || 0, dur);   // (v337, the user: "nerf the nitro a bit": a full tank 4 s at x1.45, was 5 s at x1.55) sfx.turbo(3); buzz(40); toast(`NITRO!${k >= .99 ? '\n<small>a full tank!</small>' : ''}`, '#4fd8ff', 30); nitroHud();
+  const dur = .7 + 3.3 * k; giveBoost(P, dur, 1.45); P.nitroT = Math.max(P.nitroT || 0, dur); { const nb = $('nitroBurst'); if (nb) { nb.classList.remove('go'); void nb.offsetWidth; nb.classList.add('go'); } }   // (the custom NITRO burst)   // (v337, the user: "nerf the nitro a bit": a full tank 4 s at x1.45, was 5 s at x1.55) sfx.turbo(3); buzz(40); toast(`NITRO!${k >= .99 ? '\n<small>a full tank!</small>' : ''}`, '#4fd8ff', 30); nitroHud();
 }
 let nitroF = 0;
 function nitroHud(gain = false) {

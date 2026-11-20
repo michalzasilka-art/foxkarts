@@ -1755,6 +1755,19 @@ body.portrait #tapTip .tbtn{width:72px;height:72px}body.portrait #tapTip span{fo
 #penB{position:fixed;left:-200px;top:-200px;padding:3px 8px;border-radius:999px;background:#ff8a3a;border:3px solid #0a0c1c;color:#fff;font:400 13px 'Lilita One',sans-serif;white-space:nowrap;z-index:6;pointer-events:none}
 #penB.bump{animation:nGain .45s cubic-bezier(.2,1.6,.4,1)}
 body.portrait:has(#dialog:not([hidden])) #nitro{visibility:hidden}
+/* (2026-11-20, the user: a custom graphic for the nitro, made in ChatGPT) the chrome-and-neon ring is the button's rim, the blue
+   fill rises inside its window, the fox nitro canister sits on top; firing it flashes the electric NITRO burst on screen */
+#nitro{overflow:visible;border:0;background:none;box-shadow:none;filter:drop-shadow(0 4px 0 rgba(10,12,28,.85))}
+#nitro .ntank{inset:13%;border-radius:50%;overflow:hidden;background:radial-gradient(circle at 50% 35%,#34477e,#141c38 75%)}
+#nitro .nring{position:absolute;inset:-6%;width:112%;height:112%;pointer-events:none;object-fit:contain}
+#nitro .nico{width:76%;height:76%;margin-top:-10%;z-index:1}
+#nitro span#nitroN{z-index:2;bottom:4%}
+#nitro.ready{box-shadow:none;filter:drop-shadow(0 4px 0 rgba(10,12,28,.85)) drop-shadow(0 0 10px #4fd8ff)}
+#nitro.full{animation:nFull2 1.1s ease-in-out infinite}
+@keyframes nFull2{50%{filter:drop-shadow(0 4px 0 rgba(10,12,28,.85)) drop-shadow(0 0 18px #9af3ff) brightness(1.15)}}
+#nitroBurst{position:fixed;left:50%;top:58%;width:min(96vw,640px);transform:translate(-50%,-50%) scale(.4);opacity:0;pointer-events:none;z-index:5}
+#nitroBurst.go{animation:nBurst .85s cubic-bezier(.15,.9,.3,1) forwards}
+@keyframes nBurst{0%{opacity:0;transform:translate(-50%,-50%) scale(.35)}18%{opacity:1;transform:translate(-50%,-50%) scale(1.05)}60%{opacity:.9;transform:translate(-50%,-50%) scale(1.15)}100%{opacity:0;transform:translate(-50%,-50%) scale(1.35)}}
 
 #fireGlow.nitro{filter:hue-rotate(205deg) saturate(1.3)}
 #speed.fire.nitro{filter:sepia(1) saturate(4) hue-rotate(165deg) brightness(1.15)}   /* (v338) blue nitro speed lines */   /* (v334) the nitro glow is blue-purple */
@@ -1828,7 +1841,7 @@ body.portrait:has(#dialog:not([hidden])) #nitro{visibility:hidden}
     <div id="wheelHint" class="out">Turn the wheel to steer</div>
     <div id="ctlHint" class="out" hidden></div>
     <div id="tapTip" aria-hidden="true"><div class="tt L"><div class="tbtn"><i></i><b></b></div><span class="out">TAP LEFT</span></div><div class="tt R"><div class="tbtn"><i></i><b></b></div><span class="out">TAP RIGHT</span></div><p class="out">Hold a side to keep turning</p></div>
-    <button class="hit" id="nitro" hidden aria-label="Nitro"><span class="ntank"><i></i></span><img class="nico" src="ui/icon-nitro.png?v=1" alt=""><b>NITRO</b><span id="nitroN">0/9</span></button><div id="penB" class="out" hidden></div>
+    <button class="hit" id="nitro" hidden aria-label="Nitro"><span class="ntank"><i></i></span><img class="nring" src="ui/nitro-ring.png?v=1" alt=""><img class="nico" src="ui/nitro-can.png?v=1" alt=""><b>NITRO</b><span id="nitroN">0/9</span></button><div id="penB" class="out" hidden></div><img id="nitroBurst" src="ui/nitro-burst.webp?v=1" alt="">
     <button class="hit" id="slot"><span id="slotIcon"></span><span class="stars" id="slotStars"></span><span class="tap out" id="slotTap"></span></button>
     <div id="count" class="out"></div>
     <div id="gp" class="out" hidden></div><div id="gq" hidden></div>
@@ -1895,7 +1908,7 @@ addEventListener('unhandledrejection',function(e){if(window.FK&&FK.ready||window
 <script src="packages.js?v=1"></script>
 <script src="/shared/pack-picker.js?v=8"></script>
 <script type="importmap">{"imports":{"three":"./lib/three.module.min.js"}}</script>
-<link rel="modulepreload" href="lib/three.module.min.js"><link rel="modulepreload" href="game.js?v=338"><link rel="modulepreload" href="rear-wings.js?v=1"><link rel="modulepreload" href="models.js?v=52"><link rel="modulepreload" href="learn.js?v=52"><link rel="modulepreload" href="kart-skin.js?v=24"><link rel="modulepreload" href="lib/GLTFLoader.js?v=2"><link rel="modulepreload" href="lib/BufferGeometryUtils.js?v=2"><link rel="modulepreload" href="racers.js?v=2"><link rel="modulepreload" href="rival-driver.js?v=5"><link rel="modulepreload" href="lib/RoomEnvironment.js?v=2">
-<script type="module" src="game.js?v=338"></script>
+<link rel="modulepreload" href="lib/three.module.min.js"><link rel="modulepreload" href="game.js?v=339"><link rel="modulepreload" href="rear-wings.js?v=1"><link rel="modulepreload" href="models.js?v=52"><link rel="modulepreload" href="learn.js?v=52"><link rel="modulepreload" href="kart-skin.js?v=24"><link rel="modulepreload" href="lib/GLTFLoader.js?v=2"><link rel="modulepreload" href="lib/BufferGeometryUtils.js?v=2"><link rel="modulepreload" href="racers.js?v=2"><link rel="modulepreload" href="rival-driver.js?v=5"><link rel="modulepreload" href="lib/RoomEnvironment.js?v=2">
+<script type="module" src="game.js?v=339"></script>
 </body>
 </html>
