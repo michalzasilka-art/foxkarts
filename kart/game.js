@@ -5142,7 +5142,7 @@ const TRACK_TYPES = {
     { n: 'SNOW ROAD', road: ['#f2f6ff', 'snow'], kerb: ['#ffffff', '#9fc4ff'], side: 'banks', c: '#ffffff', fx: 'snow' },
     { n: 'ICE ROAD', road: ['#9fdcff', 'ice'], kerb: ['#e8f8ff', '#3a8ad8'], side: 'crystals', c: ['#7af8ff', '#bff4ff', '#ffffff'], fx: 'sparkle' },
     { n: 'NIGHT RUN', road: ['#2a2e48', 'asphalt'], kerb: ['#ffe14a', '#1b1f3a'], side: 'lamps', c: '#ffd080', dark: .62, fog: '#0b1030' },
-    { n: 'WOODEN BRIDGE', road: ['#a87040', 'planks'], kerb: ['#6a4020', '#c08a50'], side: 'rail', c: '#8a5a30', under: 'posts' },
+    { n: 'ICE BRIDGE', road: ['#a6dcff', 'glacier'], kerb: ['#ffffff', '#5aaeff'], side: 'icerail', c: ['#bff4ff', '#7af8ff', '#e8fbff'], roof: 'icearch', under: 'icepillars', fx: 'sparkle' },   // (2026-11-21, the user: "make the ICE bridge in Alpine Peaks better and more icy": was the WOODEN BRIDGE; a glacier deck, ice rails with icicles, frozen arches; the grip stays normal)
     { n: 'ICE TUNNEL', road: ['#8cc8ff', 'ice'], kerb: ['#e8f8ff', '#5aa8ff'], side: 'crystals', c: ['#bff4ff', '#7af8ff'], roof: 'tunnel', rc: '#a8d8ff', dark: .3, fx: 'sparkle' },
     { n: 'VILLAGE STREET', road: ['#8a8a96', 'cobbles'], kerb: ['#e0e0e8', '#6a6a78'], c: ['#f0c0a0', '#a0c8f0', '#f0e0a0', '#c0e0b0', '#f0b0c0'], roof: 'bunting' },   // (v272, the user: no houses around the track here)
     { n: 'FOREST TRAIL', road: ['#6a4a2a', 'dirt'], kerb: ['#4a6a2a', '#2a4a1a'], side: 'pines', c: ['#2f7a3a', '#3a9a4a', '#1f6a2a'] },
@@ -5214,6 +5214,13 @@ function ttTex(kind, c) {
         x.strokeStyle = 'rgba(30,80,160,.5)'; x.lineWidth = 1.5; for (let k = 0; k < 8; k++) { x.beginPath(); let px = Math.random() * W, py = Math.random() * H; x.moveTo(px, py); for (let j = 0; j < 4; j++) { px += rand(-30, 30); py += rand(-30, 30); x.lineTo(px, py); } x.stroke(); } break;
       case 'asphalt': spk(1200, 'rgba(255,255,255,.07)', 'rgba(0,0,0,.2)'); dashes('#ffe14a'); edges('rgba(255,255,255,.85)'); break;
       case 'wet': spk(500, 'rgba(255,255,255,.06)', 'rgba(0,0,0,.25)'); x.fillStyle = 'rgba(255,255,255,.1)'; for (let k = 0; k < 10; k++) x.fillRect(Math.random() * W, Math.random() * H, rand(2, 6), rand(40, 160)); dashes('rgba(255,255,255,.8)'); edges('rgba(255,255,255,.7)'); break;
+      case 'glacier': {   // clear blue ice blocks: bright seams, deep cracks, frost and a few bubbles
+        for (let y = 0; y < H; y += 64) { x.fillStyle = shade(rand(.9, 1.08)); x.fillRect(0, y, W, 62); x.fillStyle = 'rgba(255,255,255,.55)'; x.fillRect(0, y + 62, W, 2); }
+        x.fillStyle = 'rgba(255,255,255,.4)'; for (let y = 0; y < H; y += 128) x.fillRect(63, y, 2, 64); for (let y = 64; y < H; y += 128) { x.fillRect(31, y, 2, 64); x.fillRect(95, y, 2, 64); }
+        x.strokeStyle = 'rgba(20,70,150,.55)'; x.lineWidth = 1.4; for (let k = 0; k < 10; k++) { x.beginPath(); let px = Math.random() * W, py = Math.random() * H; x.moveTo(px, py); for (let j = 0; j < 5; j++) { px += rand(-22, 22); py += rand(-26, 26); x.lineTo(px, py); } x.stroke(); }
+        x.strokeStyle = 'rgba(255,255,255,.35)'; x.lineWidth = 2.5; for (let k = 0; k < 9; k++) { const y0 = Math.random() * H; x.beginPath(); x.moveTo(0, y0); x.lineTo(W, y0 + rand(-40, 40)); x.stroke(); }
+        spk(700, 'rgba(255,255,255,.55)', 'rgba(190,235,255,.5)'); for (let k = 0; k < 40; k++) { x.fillStyle = 'rgba(255,255,255,.6)'; x.beginPath(); x.arc(Math.random() * W, Math.random() * H, rand(1, 2.6), 0, 6.3); x.fill(); }
+        edges('rgba(255,255,255,.7)'); break; }
       case 'planks': for (let y = 0; y < H; y += 26) { x.fillStyle = shade(rand(.8, 1.15)); x.fillRect(0, y, W, 24); x.fillStyle = 'rgba(0,0,0,.45)'; x.fillRect(0, y + 24, W, 2); x.fillStyle = 'rgba(0,0,0,.4)'; x.fillRect(18, y + 11, 3, 3); x.fillRect(107, y + 11, 3, 3); x.fillStyle = 'rgba(0,0,0,.1)'; for (let k = 0; k < 3; k++) x.fillRect(Math.random() * W, y + 2, rand(10, 40), 1); } break;
       case 'cobbles': x.fillStyle = shade(.55); x.fillRect(0, 0, W, H); for (let y = 0; y < H + 8; y += 16) for (let xx = (y / 16) % 2 ? 8 : 0; xx < W + 8; xx += 16) { x.fillStyle = shade(rand(.8, 1.15)); x.beginPath(); x.ellipse(xx, y, 7, 6.5, 0, 0, 7); x.fill(); } break;
       case 'dirt': spk(900, 'rgba(0,0,0,.22)', 'rgba(255,220,160,.14)'); x.fillStyle = 'rgba(0,0,0,.2)'; x.fillRect(28, 0, 16, H); x.fillRect(84, 0, 16, H); break;
@@ -5306,11 +5313,11 @@ function styleStretch(g, def, r) {
   const T = list[Math.min(r, list.length - 1)]; if (!T || !T.road) return;
   const { i0, i1 } = TRACK.sec, inS = (i) => i >= i0 && i < i1, space = def.id === 'space', KH = def.kerbH || .12, cave = !!def.tube;
   const add = (m) => { g.add(m); return m; };
-  const kind = T.road[1], glossy = /ice|wet|glass|gold/.test(kind), glow = /grid|lava|glass/.test(kind) || space;
+  const kind = T.road[1], glossy = /ice|wet|glass|gold|glacier/.test(kind), glow = /grid|lava|glass/.test(kind) || space;
   // (v267, the user: "make the default road the same texture as the normal road… but you can make their ice or snow")
   // only SNOW and ICE lay their own surface (and kerbs) on the road; every other type keeps the map's own road and
   // changes only what is beside it, above it and in the air
-  const surf = kind === 'snow' || kind === 'ice';
+  const surf = kind === 'snow' || kind === 'ice' || kind === 'glacier';   // (glacier: the ice bridge's deck; it LOOKS like ice, the grip stays normal)
   const tex = ttTex(kind, T.road[0]);
   const rm = new THREE.MeshStandardMaterial({ map: tex, roughness: glossy ? .18 : .85, metalness: glossy ? .25 : 0, fog: !def.clearRoad, side: space ? THREE.DoubleSide : THREE.FrontSide,
     emissive: glow ? '#ffffff' : '#000000', emissiveMap: glow ? tex : null, emissiveIntensity: glow ? (kind === 'lava' ? .9 : .45) : 0, transparent: kind === 'glass', opacity: kind === 'glass' ? .82 : 1 });
@@ -5329,7 +5336,18 @@ function styleStretch(g, def, r) {
   const lamps = (c, step = 18, l = lo + .3) => { const P = pts(step, l, 0, hh); inst(ttGeo('post'), std('#2a2e3a', { roughness: .5 }), P); inst(ttGeo('orb'), lit(c), P); };
   const neon = (step = 7) => inst(ttGeo('bar'), new THREE.MeshBasicMaterial({ color: '#ffffff', toneMapped: false, fog: false }), pts(step, HALF + 1.25, 0, hh + .35), (d) => ({ ry: yawT(d.p), c: col(d.k) }));
   const rocks = (c, step = 7, l = lo + .6, spread = 3) => inst(ttGeo('rock'), std(c, { roughness: .95 }), pts(step, l, spread, hh), (d) => ({ s: rand(.5, 1.5), ry: rand(0, 6.3) }));
+  const iceM = (o = {}) => new THREE.MeshStandardMaterial({ color: '#9fd8ff', emissive: '#3a9cff', emissiveIntensity: .38, roughness: .05, metalness: .2, transparent: true, opacity: .72, depthWrite: false, fog: !def.clearRoad, ...o });
+  const icicles = (L, len = .7) => { const geo = TT_GEO['icicle' + len] || (TT_GEO['icicle' + len] = new THREE.ConeGeometry(.09, len, 5).rotateX(Math.PI).translate(0, -len / 2, 0)); inst(geo, iceM({ opacity: .9 }), L, (d) => ({ sy: rand(.5, 1.5), s: rand(.7, 1.2), ry: rand(0, 6.3) })); };
   switch (T.side) {
+    case 'icerail': {   // ice posts with snow caps, two clear ice rails, icicles hanging under the top rail, ice crystals outside
+      const RL = HALF + 1.4, m = iceM(), P = pts(4, RL, 0, H0);
+      inst(TT_GEO.icepost || (TT_GEO.icepost = new THREE.CylinderGeometry(.16, .22, 1.25, 6).translate(0, .62, 0)), m, P, (d) => ({ ry: rand(0, 1) }));
+      inst(TT_GEO.snowcap || (TT_GEO.snowcap = new THREE.SphereGeometry(.24, 7, 5).scale(1, .55, 1).translate(0, 1.27, 0)), std('#ffffff', { roughness: .95 }), P);
+      for (const sd of [-1, 1]) { add(new THREE.Mesh(strip(sd * RL, sd * RL, 1.02, 1.16, { only: inS }), m)); add(new THREE.Mesh(strip(sd * RL, sd * RL, .52, .6, { only: inS }), m)); }
+      icicles(pts(1, RL, 0, H0 + 1.02).filter(() => Math.random() < .7), .55);
+      inst(ttGeo('crystal'), new THREE.MeshStandardMaterial({ color: '#ffffff', emissive: col(1), emissiveIntensity: .6, roughness: .2, fog: !def.clearRoad }), pts(6, lo + .9, 2.2, H0), (d) => ({ s: rand(.4, 1.1), ry: rand(0, 6.3), c: col(d.k) }));
+      inst(ttGeo('bank'), std('#ffffff', { roughness: .95 }), pts(9, lo + 2.6, 2.4, H0), (d) => ({ s: rand(.5, .9), ry: rand(0, 6.3) }));
+      break; }
     case 'banks': inst(ttGeo('bank'), std(col(0)), pts(7, lo + .3, 1.4, H0), (d) => ({ s: rand(.7, 1.3), ry: rand(0, 6.3) })); break;
     case 'dunes': inst(ttGeo('bank'), std(col(0)), pts(9, HALF + 3.5, 5, H0), (d) => ({ sx: rand(1.6, 2.6), sy: rand(1.1, 1.9), sz: rand(1.6, 2.8), ry: rand(0, 6.3) })); break;
     case 'crystals': case 'coral': { const m = new THREE.MeshStandardMaterial({ color: '#ffffff', emissive: col(0), emissiveIntensity: T.side === 'coral' ? .25 : .7, roughness: .25, fog: !def.clearRoad });
@@ -5361,12 +5379,21 @@ function styleStretch(g, def, r) {
     case 'gold': { const P = pts(10, lo + .2, 1.5, hh); const m = std('#ffd23a', { metalness: .8, roughness: .25 }); inst(ttGeo('goldbar'), m, P, (d) => ({ ry: rand(0, 6.3) })); inst(ttGeo('goldbar'), m, P, (d) => ({ y: d.y + .4, ry: rand(0, 6.3) })); inst(ttGeo('goldbar'), m, P, (d) => ({ y: d.y + .8, ry: rand(0, 6.3), s: .8 })); lamps('#fff0b0', 22, lo - .3); break; }
   }
   if (T.under === 'posts') inst(ttGeo('pierpost'), std('#6a4a30'), pts(6, HALF + .4, 0, 0));
+  if (T.under === 'icepillars') {   // frozen pillars under the deck edges, icicles all along the deck's lips
+    inst(TT_GEO.icepillar || (TT_GEO.icepillar = new THREE.CylinderGeometry(.5, .75, 7, 6).translate(0, -3.4, 0)), iceM({ opacity: .9 }), pts(8, HALF + .5, 0, H0), (d) => ({ ry: rand(0, 1) }));
+    icicles(pts(1, HALF + .95, 0, H0 - .05).filter(() => Math.random() < .6), 1.0); }
   // a roof
   if (T.roof === 'tunnel' && T.concrete) concreteRoof(T, add, inst, pts, inS, lit);
   else if (T.roof === 'tunnel') { const R = HALF + 1.7, geo = TT_GEO['arch' + R] || (TT_GEO['arch' + R] = new THREE.TorusGeometry(R, .3, 7, 22, Math.PI)), m = std(T.rc || '#6a6a74', { side: THREE.DoubleSide, roughness: .9 });
     inst(geo, m, pts(8, 0, 0, 0, true), (d) => ({ ry: yawT(d.p) }));
     add(new THREE.Mesh(strip(-R, R, R - .15, R - .15, { only: inS }), m)); for (const s of [-1, 1]) add(new THREE.Mesh(strip(s * R, s * R, 0, R - .15, { only: inS }), m));
     if (!T.side || T.side === 'lamps') {} else lamps('#fff4c0', 20, R - .6); }
+  if (T.roof === 'icearch') {   // frozen arches over the deck every ~9 points, icicles hanging from each crown and shoulder
+    const R = HALF + 1.5, geo = TT_GEO['icearch' + R] || (TT_GEO['icearch' + R] = new THREE.TorusGeometry(R, .42, 6, 20, Math.PI)), A = pts(26, 0, 0, H0, true);   // (one frozen arch every ~26 points: a bridge, not a tunnel)
+    inst(geo, iceM({ side: THREE.DoubleSide }), A, (d) => ({ ry: yawT(d.p) }));
+    const tips = []; for (const d of A) for (const a of [.35, .6, .9, 1.25, 1.57, 1.9, 2.25, 2.55, 2.8]) { const q = rolled(d.p, Math.cos(a) * R, H0 + Math.sin(a) * R - .3); tips.push({ x: q[0], y: q[1], z: q[2] }); }
+    icicles(tips, .8);
+    inst(TT_GEO.archsnow || (TT_GEO.archsnow = new THREE.SphereGeometry(.5, 8, 5).scale(1.4, .5, .8).translate(0, R + .2, 0)), std('#ffffff', { roughness: .95 }), A, (d) => ({ ry: yawT(d.p) })); }
   if (T.roof === 'station' && T.concrete) concreteRoof(T, add, inst, pts, inS, lit);
   else if (T.roof === 'station') { const R = HALF + 2.6, m = std(T.rc || '#2a2e40', { side: THREE.DoubleSide, roughness: .5, metalness: .3 });
     add(new THREE.Mesh(strip(-R, R, 6.2, 6.2, { only: inS }), m)); for (const s of [-1, 1]) add(new THREE.Mesh(strip(s * R, s * R, -.6, 6.2, { only: inS }), m));
