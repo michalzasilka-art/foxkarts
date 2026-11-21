@@ -5143,7 +5143,7 @@ const TRACK_TYPES = {
     { n: 'ICE ROAD', road: ['#9fdcff', 'ice'], kerb: ['#e8f8ff', '#3a8ad8'], side: 'crystals', c: ['#7af8ff', '#bff4ff', '#ffffff'], fx: 'sparkle' },
     { n: 'NIGHT RUN', road: ['#2a2e48', 'asphalt'], kerb: ['#ffe14a', '#1b1f3a'], side: 'lamps', c: '#ffd080', dark: .62, fog: '#0b1030' },
     { n: 'ICE BRIDGE', road: ['#a6dcff', 'glacier'], kerb: ['#ffffff', '#5aaeff'], side: 'icerail', c: ['#bff4ff', '#7af8ff', '#e8fbff'], roof: 'icearch', under: 'icepillars', fx: 'sparkle' },   // (2026-11-21, the user: "make the ICE bridge in Alpine Peaks better and more icy": was the WOODEN BRIDGE; a glacier deck, ice rails with icicles, frozen arches; the grip stays normal)
-    { n: 'ICE TUNNEL', road: ['#8cc8ff', 'ice'], kerb: ['#e8f8ff', '#5aa8ff'], side: 'crystals', c: ['#bff4ff', '#7af8ff'], roof: 'tunnel', rc: '#a8d8ff', dark: .3, fx: 'sparkle' },
+    { n: 'ICE TUNNEL', road: ['#8cc8ff', 'ice'], tex: 'glacier', kerb: ['#e8f8ff', '#5aa8ff'], side: 'crystals', c: ['#bff4ff', '#7af8ff', '#e8fbff'], roof: 'icevault', dark: .22, fog: '#0a2848', fx: 'sparkle' },   // (2026-11-22, the user: "Do the ice tunnel": a frozen vault of clear blue ice with ribs, icicles and glowing ice; its ice grip is unchanged)
     { n: 'VILLAGE STREET', road: ['#8a8a96', 'cobbles'], kerb: ['#e0e0e8', '#6a6a78'], c: ['#f0c0a0', '#a0c8f0', '#f0e0a0', '#c0e0b0', '#f0b0c0'], roof: 'bunting' },   // (v272, the user: no houses around the track here)
     { n: 'FOREST TRAIL', road: ['#6a4a2a', 'dirt'], kerb: ['#4a6a2a', '#2a4a1a'], side: 'pines', c: ['#2f7a3a', '#3a9a4a', '#1f6a2a'] },
     { n: 'FROZEN LAKE', road: ['#c8ecff', 'ice'], kerb: ['#ffffff', '#9fd8ff'], side: 'lake', c: ['#8fd0ff', '#ffffff'], fx: 'sparkle' },
@@ -5318,7 +5318,7 @@ function styleStretch(g, def, r) {
   // only SNOW and ICE lay their own surface (and kerbs) on the road; every other type keeps the map's own road and
   // changes only what is beside it, above it and in the air
   const surf = kind === 'snow' || kind === 'ice' || kind === 'glacier';   // (glacier: the ice bridge's deck; it LOOKS like ice, the grip stays normal)
-  const tex = ttTex(kind, T.road[0]);
+  const tex = ttTex(T.tex || kind, T.road[0]);   // (T.tex: a look of its own, e.g. the ice tunnel's glacier blocks, the surface (grip) stays `kind`)
   const rm = new THREE.MeshStandardMaterial({ map: tex, roughness: glossy ? .18 : .85, metalness: glossy ? .25 : 0, fog: !def.clearRoad, side: space ? THREE.DoubleSide : THREE.FrontSide,
     emissive: glow ? '#ffffff' : '#000000', emissiveMap: glow ? tex : null, emissiveIntensity: glow ? (kind === 'lava' ? .9 : .45) : 0, transparent: kind === 'glass', opacity: kind === 'glass' ? .82 : 1 });
   if (surf) add(new THREE.Mesh(strip(-HALF, HALF, .05, .05, { uvLen: 12, only: inS }), rm)).receiveShadow = true;
@@ -5388,6 +5388,20 @@ function styleStretch(g, def, r) {
     inst(geo, m, pts(8, 0, 0, 0, true), (d) => ({ ry: yawT(d.p) }));
     add(new THREE.Mesh(strip(-R, R, R - .15, R - .15, { only: inS }), m)); for (const s of [-1, 1]) add(new THREE.Mesh(strip(s * R, s * R, 0, R - .15, { only: inS }), m));
     if (!T.side || T.side === 'lamps') {} else lamps('#fff4c0', 20, R - .6); }
+  if (T.roof === 'icevault') {   // a curved shell of frosted blue ice (8 facets), clear ice ribs, icicles all over the ceiling, glowing ice lamps at the wall feet
+    const R = HALF + 1.9, seg = 8, ang = (k) => Math.PI * k / seg;
+    if (!TT_TEX.icevault) TT_TEX.icevault = canvasTex(128, 512, (x) => { const g = x.createLinearGradient(0, 0, 128, 0); g.addColorStop(0, '#7fc4f0'); g.addColorStop(.5, '#bfe8ff'); g.addColorStop(1, '#7fc4f0'); x.fillStyle = g; x.fillRect(0, 0, 128, 512);
+      x.strokeStyle = 'rgba(255,255,255,.55)'; x.lineWidth = 2; for (let k = 0; k < 26; k++) { x.beginPath(); let px = Math.random() * 128, py = Math.random() * 512; x.moveTo(px, py); for (let j = 0; j < 4; j++) { px += rand(-14, 14); py += rand(10, 40); x.lineTo(px, py); } x.stroke(); }
+      x.strokeStyle = 'rgba(20,70,150,.45)'; x.lineWidth = 1.2; for (let k = 0; k < 14; k++) { x.beginPath(); let px = Math.random() * 128, py = Math.random() * 512; x.moveTo(px, py); for (let j = 0; j < 5; j++) { px += rand(-20, 20); py += rand(-20, 20); x.lineTo(px, py); } x.stroke(); }
+      for (let k = 0; k < 220; k++) { x.fillStyle = Math.random() < .5 ? 'rgba(255,255,255,.6)' : 'rgba(170,220,255,.5)'; x.fillRect(Math.random() * 128, Math.random() * 512, 2, 2); } }); TT_TEX.icevault.wrapS = TT_TEX.icevault.wrapT = THREE.RepeatWrapping;
+    const shell = new THREE.MeshStandardMaterial({ map: TT_TEX.icevault, color: '#a6d8ff', emissive: '#2a6ad0', emissiveIntensity: .5, emissiveMap: TT_TEX.icevault, roughness: .1, metalness: .15, side: THREE.DoubleSide, transparent: true, opacity: .97, fog: !def.clearRoad });
+    for (let k = 0; k < seg; k++) { const a0 = ang(k), a1 = ang(k + 1); add(new THREE.Mesh(strip(Math.cos(a0) * R, Math.cos(a1) * R, H0 + Math.sin(a0) * R, H0 + Math.sin(a1) * R, { uvLen: 10, only: inS }), shell)); }
+    const ribGeo = TT_GEO['icerib' + R] || (TT_GEO['icerib' + R] = new THREE.TorusGeometry(R - .12, .32, 6, 24, Math.PI)), A = pts(7, 0, 0, H0, true);
+    inst(ribGeo, iceM({ opacity: .85, emissiveIntensity: .6 }), A, (d) => ({ ry: yawT(d.p) }));
+    const tips = []; for (const d of pts(2, 0, 0, H0, true)) for (let a = .45; a < 2.75; a += .24) if (Math.random() < .8) { const r2 = R - .25, q = rolled(d.p, Math.cos(a) * r2 + rand(-.2, .2), H0 + Math.sin(a) * r2); tips.push({ x: q[0], y: q[1], z: q[2] }); }
+    icicles(tips, 1.3);
+    const L = pts(10, R - .35, 0, H0); inst(ttGeo('crystal'), new THREE.MeshBasicMaterial({ color: '#ffffff', toneMapped: false, fog: false }), L, (d) => ({ s: .45, ry: rand(0, 6.3), c: d.k % 2 ? '#7af8ff' : '#bff4ff' }));
+    inst(TT_GEO.iceblock || (TT_GEO.iceblock = new THREE.BoxGeometry(.9, .7, .9).translate(0, .3, 0)), iceM({ opacity: .9 }), pts(5, R - .7, .3, H0), (d) => ({ s: rand(.5, 1.1), ry: rand(0, 6.3) })); }
   if (T.roof === 'icearch') {   // frozen arches over the deck every ~9 points, icicles hanging from each crown and shoulder
     const R = HALF + 1.5, geo = TT_GEO['icearch' + R] || (TT_GEO['icearch' + R] = new THREE.TorusGeometry(R, .42, 6, 20, Math.PI)), A = pts(26, 0, 0, H0, true);   // (one frozen arch every ~26 points: a bridge, not a tunnel)
     inst(geo, iceM({ side: THREE.DoubleSide }), A, (d) => ({ ry: yawT(d.p) }));
