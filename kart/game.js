@@ -4589,13 +4589,13 @@ let nitroBtnHeld = false, nitroOnPrev = false, nitroSndT = 0, nitroClock = 0;
 const nitroHeld = () => nitroBtnHeld || !!keys.KeyN || !!keys.ShiftLeft || !!GPAD.nitro;
 function nitroTick() {
   const now = performance.now(), dt = nitroClock ? Math.min(.1, (now - nitroClock) / 1000) : 0; nitroClock = now;   /* (real time: a slow phone frame never makes the tank last longer) */
-  const N = $('nitro'); if (!race) { nitroOnPrev = false; return; }
+  const N = $('nitro'), NE = $('nitroEdge'); if (!race) { nitroOnPrev = false; if (NE) NE.classList.remove('on'); return; }
   const P = race.player, on = race.started && !race.ended && !race.dialog && !race.pitHold && !race.formation && nitroHeld() && (race.nitro || 0) > .001;
   if (on) {
     race.nitro = Math.max(0, race.nitro - (dt || 0) * NITRO_RATE); giveBoost(P, .15, 1.45); P.nitroT = Math.max(P.nitroT || 0, .15);
-    if (!nitroOnPrev) { const nb = $('nitroBurst'); if (nb) { nb.classList.remove('go'); void nb.offsetWidth; nb.classList.add('go'); } if (performance.now() - nitroSndT > 600) { sfx.turbo(3); buzz(40); nitroSndT = performance.now(); } }
+    if (!nitroOnPrev && performance.now() - nitroSndT > 600) { sfx.turbo(3); buzz(40); nitroSndT = performance.now(); }   // (v343: no picture in the middle any more)
   }
-  nitroOnPrev = on; if (N) N.classList.toggle('on', on);
+  nitroOnPrev = on; if (N) N.classList.toggle('on', on); if (NE) NE.classList.toggle('on', on);   // (v343) thin blue flames on the screen's edges only while the boost is on
 }
 let nitroF = 0;
 function nitroHud(gain = false) {
@@ -8250,8 +8250,8 @@ function updateRace(dt) {
   const fire = race.ended ? 0 : clamp(Math.max(P.fireT || 0, P.nitroT || 0) / .4, 0, 1);   // (v300) FIRE_LOOK on screen (v334: blue-purple for nitro)
   fireEl.classList.toggle('nitro', (P.nitroT || 0) > 0);
   const sl = race.ended ? 0 : Math.max(clamp((P.speed - 25) / 10, 0, .55) + (P.boostT > 0 ? .45 : 0), fire); speedEl.style.opacity = sl.toFixed(2);
-  const nit = (P.nitroT || 0) > 0 && !(P.fireT > 0); speedEl.classList.toggle('fire', fire > 0); speedEl.classList.toggle('nitro', nit); fireEl.style.opacity = (fire * (nit ? .55 : .75 + Math.random() * .25)).toFixed(2);
-  if (nit) speedEl.style.opacity = Math.min(sl, .5).toFixed(2);   // (v338: the nitro's speed lines are blue and calmer, not big orange bars)
+  const nit = (P.nitroT || 0) > 0 && !(P.fireT > 0); speedEl.classList.toggle('fire', fire > 0); speedEl.classList.toggle('nitro', nit); fireEl.style.opacity = nit ? '0' : (fire * (.75 + Math.random() * .25)).toFixed(2);   // (v343: the nitro shows only the thin edge flames)
+  if (nit) speedEl.style.opacity = '0';   // (v338: the nitro's speed lines are blue and calmer, not big orange bars)
   if (sl > 0) speedEl.style.transform = nit ? `scale(${1.03 + Math.sin(performance.now() / 60) * .01})` : `scale(${1.02 + Math.random() * .03}) rotate(${(Math.random() * 1.5).toFixed(1)}deg)`;   // (v338: less shaking, it read as a glitch)
   for (const c of WORLD.coins) if (c.on) c.m.rotation.y += dt * 4;
   WORLD.padTex.offset.y = (WORLD.padTex.offset.y - dt * 1.6) % 1;
