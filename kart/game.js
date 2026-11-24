@@ -4580,10 +4580,22 @@ function pitNitro(ok) {
   if (ok) { race.nitro = Math.min(1, (race.nitro || 0) + NITRO_STEP); nitroHud(true); }
   else if (!race.party) { race.pen = (race.pen || 0) + 1; nitroHud(); const b = $('penB'); if (b) { b.classList.remove('bump'); void b.offsetWidth; b.classList.add('bump'); } }
 }
-function useNitro() {
-  if (!race || !race.started || race.ended || race.dialog || race.pitHold || (race.nitro || 0) < NITRO_STEP * .5) return;
-  const P = race.player, k = race.nitro; race.nitro = 0;
-  const dur = .7 + 3.3 * k; giveBoost(P, dur, 1.45); P.nitroT = Math.max(P.nitroT || 0, dur); { const nb = $('nitroBurst'); if (nb) { nb.classList.remove('go'); void nb.offsetWidth; nb.classList.add('go'); } }   // (the custom NITRO burst)   // (v337, the user: "nerf the nitro a bit": a full tank 4 s at x1.45, was 5 s at x1.55) sfx.turbo(3); buzz(40); toast(`NITRO!${k >= .99 ? '\n<small>a full tank!</small>' : ''}`, '#4fd8ff', 30); nitroHud();
+/* (2026-11-24, the user: "When you get 1/9 per right question it doesnt mean that when you click when you have 9/9 you use all of your boost
+   make it 0-100% and you only use it by holding it") the tank is a 0-100 % meter (each right pit answer still adds 1/9, ~11 %). It boosts ONLY while
+   the NITRO button, N / Left Shift or the pad's Y is HELD: holding drains it steadily (a full tank lasts 4 s, at the same x1.45 as before);
+   letting go stops the boost and keeps the rest. */
+const NITRO_RATE = 1 / 4;
+let nitroBtnHeld = false, nitroOnPrev = false, nitroSndT = 0, nitroClock = 0;
+const nitroHeld = () => nitroBtnHeld || !!keys.KeyN || !!keys.ShiftLeft || !!GPAD.nitro;
+function nitroTick() {
+  const now = performance.now(), dt = nitroClock ? Math.min(.1, (now - nitroClock) / 1000) : 0; nitroClock = now;   /* (real time: a slow phone frame never makes the tank last longer) */
+  const N = $('nitro'); if (!race) { nitroOnPrev = false; return; }
+  const P = race.player, on = race.started && !race.ended && !race.dialog && !race.pitHold && !race.formation && nitroHeld() && (race.nitro || 0) > .001;
+  if (on) {
+    race.nitro = Math.max(0, race.nitro - (dt || 0) * NITRO_RATE); giveBoost(P, .15, 1.45); P.nitroT = Math.max(P.nitroT || 0, .15);
+    if (!nitroOnPrev) { const nb = $('nitroBurst'); if (nb) { nb.classList.remove('go'); void nb.offsetWidth; nb.classList.add('go'); } if (performance.now() - nitroSndT > 600) { sfx.turbo(3); buzz(40); nitroSndT = performance.now(); } }
+  }
+  nitroOnPrev = on; if (N) N.classList.toggle('on', on);
 }
 let nitroF = 0;
 function nitroHud(gain = false) {
@@ -4591,7 +4603,7 @@ function nitroHud(gain = false) {
   const on = !!race && race.started && !race.ended && !race.formation && !race.tut;
   N.hidden = !on; if (B) { B.hidden = !on || !(race.pen > 0); if (race && race.pen > 0) B.textContent = `PIT +${race.pen} s`; }
   if (!on) { nitroOff(); return; }
-  const k = race.nitro || 0; N.style.setProperty('--k', k.toFixed(3)); N.classList.toggle('ready', k >= NITRO_STEP * .5); N.classList.toggle('full', k >= .99); $('nitroN').textContent = `${Math.round(k * 9)}/9`;
+  const k = race.nitro || 0; N.style.setProperty('--k', k.toFixed(3)); N.classList.toggle('ready', k > .001); N.classList.toggle('full', k >= .99); $('nitroN').textContent = `${Math.round(k * 100)}%`;
   if (gain) { N.classList.remove('gain'); void N.offsetWidth; N.classList.add('gain'); }
   // (v336, the user) the NITRO button sits in the bottom corner on the power-up side: bottom RIGHT normally, bottom LEFT
   // with the right-hand controls (body.ctl-right); the power-up button moves one step in beside it. Sized like the power-up.
@@ -6911,13 +6923,12 @@ addEventListener('keydown', (e) => {
   keys[e.code] = true;
   if (Object.values(KEYS).flat().includes(e.code) || e.code === 'Space') { e.preventDefault(); setCtl('keys'); }
   if (e.code === 'Space' && race && !e.repeat) useItem();
-  if ((e.code === 'KeyN' || e.code === 'ShiftLeft') && race && !e.repeat) useNitro();
   if ((e.code === 'Escape' || e.code === 'KeyP') && screen === 'race' && race && race.started && !race.ended && !race.dialog) pauseMenu();
   const n = '123456'.indexOf(e.key); if (n >= 0) { const o = document.querySelectorAll('#dialog .qcard .opts .btn, #quiz .qcard .opts .btn')[n]; if (o) o.click(); }
   if ((e.code === 'Enter' || e.code === 'NumpadEnter') && !e.repeat) { const ok = document.querySelector('#dialog #qok, #dialog #resume'); if (ok) ok.click(); }
 });
 addEventListener('keyup', (e) => { keys[e.code] = false; });
-addEventListener('blur', () => { for (const k in keys) keys[k] = false; });
+addEventListener('blur', () => { for (const k in keys) keys[k] = false; nitroBtnHeld = false; });
 // the steering wheel: drag round it to turn (up to 110° each way); it springs back to the middle when you let go
 const wheelEl = $('wheel'), wheelSvg = $('wheelSvg'), WHEEL = { rot: 0, held: null, start: 0, base: 0 };
 const wheelAngle = (e) => { const b = wheelEl.getBoundingClientRect(), dx = e.clientX - (b.left + b.width / 2), dy = e.clientY - (b.top + b.height / 2); return { a: Math.atan2(dx, -dy) * 180 / Math.PI, d: Math.hypot(dx, dy), dx }; };
@@ -7033,7 +7044,11 @@ function updateWheel(dt) {
   const s = clamp(WHEEL.rot / 90, -1, 1); return Math.sign(s) * Math.abs(s) ** STEER.outExp;
 }
 tap($('slot'), () => useItem());
-tap($('nitro'), () => useNitro()); $('nitro').addEventListener('touchstart', (e) => { e.preventDefault(); Snd.init(); useNitro(); }, { passive: false });
+{ const nb = $('nitro'); let pid = null;   // (held, not tapped: see nitroTick; let go anywhere on the screen ends it)
+  nb.addEventListener('pointerdown', (e) => { e.preventDefault(); e.stopPropagation(); Snd.init(); nitroBtnHeld = true; pid = e.pointerId; });
+  for (const t of ['pointerup', 'pointercancel']) addEventListener(t, (e) => { if (e.pointerId === pid) { nitroBtnHeld = false; pid = null; } }, true);
+  nb.addEventListener('touchstart', (e) => e.preventDefault(), { passive: false }); nb.addEventListener('contextmenu', (e) => e.preventDefault());
+  for (const t of ['touchend', 'touchcancel']) nb.addEventListener(t, (e) => { if (!e.touches.length || ![...e.touches].some((x) => x.target === nb || nb.contains(x.target))) { nitroBtnHeld = false; pid = null; } }); }
 $('slot').addEventListener('touchstart', (e) => { e.preventDefault(); Snd.init(); useItem(); }, { passive: false });
 tap($('pauseB'), () => pauseMenu());
 
@@ -7097,11 +7112,10 @@ function pollPad(dt) {
   const dx = sx + (b(14) ? -1 : 0) + (b(15) ? 1 : 0), dy = (Math.abs(ay) < .55 ? 0 : Math.sign(ay)) + (b(12) ? -1 : 0) + (b(13) ? 1 : 0);
   const active = Math.abs(dx) > .05 || dy || gp.buttons.some((x) => x.pressed);
   if (active) { if (!GPAD.on) GPAD.on = true; if (CTL !== 'keys') setCtl('keys'); }   // (the pad shows the keyboard layout: no wheel, no DRIFT button)
-  GPAD.steer = clamp(dx, -1, 1); GPAD.gas = b(7) || b(0); GPAD.brake = b(6); GPAD.drift = b(4) || b(5) || b(1);
+  GPAD.steer = clamp(dx, -1, 1); GPAD.gas = b(7) || b(0); GPAD.brake = b(6); GPAD.drift = b(4) || b(5) || b(1); GPAD.nitro = b(3);
   const racing = screen === 'race' && race && race.started && !race.ended && !race.dialog;
   if (racing) {
     if (pressed(2)) useItem();
-    if (pressed(3)) useNitro();
     if (pressed(9) || pressed(8)) pauseMenu();   // (Menu / Options, or View / Share)
     setPadFocus(null);
   } else {
@@ -8188,7 +8202,7 @@ function updateRace(dt) {
   for (const r of race.racers) { useRoute(r); drive(r, gdt); } playerRoute();   // (v194) each racer on its own route through the section
   updateRouteGates(); updateTrackType(Math.min(dt, .05));
   if (race.party && party && race.started) { const now = performance.now(); if (!race.sentAt || now - race.sentAt > 66) { race.sentAt = now; const P = race.player; try { party.P.sendState({ t: race.raceTime, x: +P.x.toFixed(2), y: +P.y.toFixed(2), z: +P.z.toFixed(2), a: +P.angle.toFixed(3), v: +P.speed.toFixed(1), lap: P.lap, s: +P.steerVis.toFixed(2), d: P.drift, air: P.air, fin: P.finished }); } catch (e) {} } }
-  updateGates(); updateFormGates(); updatePit(dt); updateCrew(dt); nitroHud(); if (race && race.tut) updateTut(dt);
+  updateGates(); updateFormGates(); updatePit(dt); updateCrew(dt); nitroTick(); nitroHud(); if (race && race.tut) updateTut(dt);
   if (race.aimOpen && (race.ended || !race.item || race.player.finished)) closeTargets();
   if ((race.standF = (race.standF || 0) + 1) % 12 === 1) drawStandings();
   updateRocks(gdt); updateWarns(); updateLamps();
