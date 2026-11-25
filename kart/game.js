@@ -121,6 +121,7 @@ L.attach(save); L.setVoice(false);   // (v225, the user) no voice in the game an
 // the curriculum packages (shared with the other Fugio games); none chosen = the game's own mix
 const PACKS = window.FugioPacks ? FugioPacks.sort(window.GUMMY_PACKAGES || []) : (window.GUMMY_PACKAGES || []);
 save.packs = (save.packs || []).filter((id) => PACKS.some((p) => p.id === id));
+if (window.FUGIO_CONTENT && PACKS.length) save.packs = [PACKS[0].id];   // (2026-11-25: the English chosen in the Student library: just that)
 L.setPacks(PACKS, save.packs);
 L.onBeep(() => Snd.tone(988, .14, 'sine', .06));
 const store = () => { try { localStorage.setItem(SAVE_KEY, JSON.stringify(save)); } catch (e) {} };
