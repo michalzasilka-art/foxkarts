@@ -4536,7 +4536,7 @@ function updateCrew(dt) {
 function pitStop() {
   const P = race.player, R0 = race;
   race.pitDue = false; race.dialog = 'pitstop'; race.pitBrake = true; race.slowTarget = 1;
-  P.boostT = 0; P.fireT = 0; P.nitroT = 0; P.boostMul = 1; P.spinT = 0; P.slideT = 0;   // however you came in, you come in clean
+  P.boostT = 0; P.fireT = 0; P.nitroT = 0; P.boostMul = 1; P.spinT = 0; P.slideT = 0; P.spinA = 0; P.driftYaw = 0;   // however you came in, you come in clean (2026-11-27: a rocket just before the box no longer leaves the kart turned round)
   race.steerTo = null; race.steerGate = null; race.holdLat = bayLat(); if (P.drift) endDrift(P);
   sfx.pad(); buzz(30); toast('PIT STOP!', '#ffc324', 44); drawPitHud(); pitBoxState('work');
   const brake = () => {
@@ -4548,6 +4548,7 @@ function pitStop() {
     runQuiz([['fix', TUNE.pitN], ['spd', TUNE.pitN], ['imm', TUNE.pitN]], 'PIT STOP', (got) => {
       if (race !== R0) return;
       race.dialog = null; race.pitHold = false; race.slowTarget = 1; race.learn.pits++; race.pitAuto = false; pitLineOut(); { const G = P.model && P.model.glow; if (G) { G.want = 0; G.k = 0; G.s.visible = false; } if (WORLD.crew) crewWheelsReset(WORLD.crew); }   /* (v278: nothing of the stop stays on the kart as it leaves) */   // (v277: the crew sends you out along the line and hands you the wheel once you have merged)
+      P.spinT = P.slideT = P.spinA = P.driftYaw = 0; P.angle = angleOf(tp(P.idx));   /* (2026-11-27, the user) one default direction out of the box: always straight down the lane, whatever hit you */
       race.pitPhase = 'out'; pitBoxState('done'); giveBoost(P, 1.5, 1.5); sfx.turbo(2); drawPitHud();
     }, kitOnAns(P, R0));   // (v271) the pit stop's right SPEED answers grow the wing too (v274: and right TYRES answers the tyres)
   };
@@ -7541,6 +7542,7 @@ function drive(r, dt) {
   if (r.spinT > 0) { r.drift = 0; r.spinT -= dt; r.spinA += 13 * dt; r.speed *= Math.pow(.3, dt); if (r.spinT <= 0) r.spinA = 0; }
   else if (r.slideT > 0) { r.drift = 0; r.slideT -= dt; r.spinA = Math.sin(r.slideT * 14) * .7; r.speed *= Math.pow(.6, dt); if (r.slideT <= 0) r.spinA = 0; }
   else {
+    if (r.spinA) r.spinA = 0;   /* (2026-11-27) no spin and no slide: the kart always faces where it drives */
     if (r.player && !window.FK.auto && !autoDrive()) {
       steer = race.steer;
       const base = TUNE.turn * r.ch.turn * (1 + TUNE.handlingPerLevel * upLv('handling') + TUNE.pitFix * (r.fix || 0)) * clamp(r.speed / 9, .35, 1);   // (v151) + what the MAINTENANCE questions bought
